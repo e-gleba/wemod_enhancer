@@ -63,6 +63,9 @@ def pickle(payload: bytes) -> bytes:
     body += b"\0" * ((4 - len(body) % 4) % 4)
     return struct.pack("<I", len(body)) + body
 
+def size_pickle(value: int) -> bytes:
+    return struct.pack("<II", 4, value)
+
 def integrity(path: Path) -> dict:
     whole = hashlib.sha256(); blocks = []
     with path.open("rb") as f:
@@ -82,16 +85,16 @@ def pack_asar(root: Path, out: Path, header: dict):
             meta.pop("offset", None); continue
         meta["offset"] = str(offset); packed.append(src); offset += meta["size"]
     raw = json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode()
-    header_pickle = pickle(raw); size_pickle = pickle(struct.pack("<I", len(header_pickle)))
+    header_pickle = pickle(raw)
     tmp = out.with_suffix(out.suffix + ".tmp")
     with tmp.open("wb") as f:
-        f.write(size_pickle); f.write(header_pickle)
+        f.write(size_pickle(len(header_pickle))); f.write(header_pickle)
         for src in packed:
             with src.open("rb") as item: shutil.copyfileobj(item, f, 1024 * 1024)
-    tmp.replace(out)
-    check, data_offset = read_asar(out)
+    check, data_offset = read_asar(tmp)
     expected = data_offset + sum(int(meta["size"]) for _, meta in entries(check) if "link" not in meta and not meta.get("unpacked"))
-    if out.stat().st_size != expected: raise RuntimeError("ASAR verification failed: archive size mismatch")
+    if tmp.stat().st_size != expected: raise RuntimeError("ASAR verification failed: archive size mismatch")
+    tmp.replace(out)
 
 def patch_bundles(root: Path):
     candidates = [p for p in root.iterdir() if p.is_file() and (p.name == "index.js" or (p.name.startswith("app-") and p.name.endswith(".bundle.js")))]
