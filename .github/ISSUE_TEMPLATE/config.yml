@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/e-gleba/cmake_template/discussions
+    about: "Open-ended questions, architecture debates, or usage help belong in Discussions, not issues."
+  - name: Consulting Inquiry
+    url: https://e-gleba.github.io
+    about: "For paid CMake audits, CI/CD setup, or custom preset development, use the website or email i@egleba.ru."

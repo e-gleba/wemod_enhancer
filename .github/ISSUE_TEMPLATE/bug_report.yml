@@ -1,0 +1,69 @@
+---
+name: Bug Report
+description: Report a build failure, preset error, or unexpected behavior.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill every section so we can reproduce fast.
+  - type: input
+    id: preset
+    attributes:
+      label: Preset used
+      description: Exact preset name from `cmake --list-presets`
+      placeholder: "e.g. gcc-full, android-arm64-full, llvm-mingw-x86_64-full"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Host OS and version
+      placeholder: "e.g. Ubuntu 24.04, Fedora 40, Windows 11, macOS 14"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Tool versions
+      description: Output of `cmake --version`, `gcc --version` or `clang --version`, `ninja --version`
+      placeholder: "CMake 3.31.0, GCC 13.2, Ninja 1.12"
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal commands from clean clone to failure
+      placeholder: |
+        1. git clone ...
+        2. cmake --preset=gcc
+        3. cmake --build --preset=gcc-release
+        4. Error occurs
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / logs
+      description: Paste full terminal output or link to a gist. No screenshots of text.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-report checks
+      options:
+        - label: I searched existing issues (open + closed)
+          required: true
+        - label: I tested on latest `main` branch
+          required: true
+        - label: I can reproduce with the steps above on a clean machine
+          required: false

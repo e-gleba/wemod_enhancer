@@ -1,0 +1,31 @@
+# Desktop Entry Specification 1.5 (freedesktop.org)
+# https://specifications.freedesktop.org/desktop-entry/latest/
+
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=@PROJECT_NAME@
+GenericName=@PROJECT_DESCRIPTION@
+Comment=@PROJECT_DESCRIPTION@
+TryExec=@PROJECT_NAME@
+Exec=@PROJECT_NAME@ %U
+Icon=@PROJECT_NAME@
+Terminal=false
+Categories=Utility;
+Keywords=cpp;utility;linux;
+StartupNotify=true
+SingleMainWindow=true
+PrefersNonDefaultGPU=false
+MimeType=
+Actions=About;Help;
+
+[Desktop Action About]
+Name=About @PROJECT_NAME@
+Exec=xdg-open "@PROJECT_HOMEPAGE_URL@"
+Icon=help-about
+
+[Desktop Action Help]
+Name=Get Help Online
+Exec=xdg-open "@PROJECT_HOMEPAGE_URL@"
+Icon=help-contents
+

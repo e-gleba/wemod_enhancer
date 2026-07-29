@@ -1,0 +1,63 @@
+name: Renovate
+
+on:
+  # Manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: 'Dry run (no PRs created)'
+        required: false
+        default: false
+        type: boolean
+      logLevel:
+        description: 'Log level'
+        required: false
+        default: info
+        type: choice
+        options:
+          - debug
+          - info
+          - warn
+          - error
+
+  # Schedule: weekly on Monday at 6am UTC
+  schedule:
+    - cron: '0 6 * * 1'
+
+  # Also run on pushes to main that touch renovate config
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/renovate.json5'
+      - '.github/workflows/renovate.yml'
+
+concurrency:
+  group: renovate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.1.21
+        with:
+          configurationFile: .github/renovate.json5
+          token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
+        env:
+          RENOVATE_DRY_RUN: ${{ github.event.inputs.dryRun || 'false' }}
+          LOG_LEVEL: ${{ github.event.inputs.logLevel || 'info' }}
+          # Tell Renovate which repository to process
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Free tier optimizations
+          RENOVATE_PLATFORM_COMMIT: true
+          RENOVATE_AUTODISCOVER: false
+          RENOVATE_ONBOARDING: false

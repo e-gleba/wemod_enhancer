@@ -1,0 +1,134 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Object files and linker output for C
+*.ko
+*.elf
+*.ilk
+*.map
+*.exp
+
+# Shared objects (inc. Windows DLLs)
+*.so.*
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+*.lock
+
+# Kernel Module Compile Results
+*.mod*
+*.cmd
+.tmp_versions/
+modules.order
+Module.symvers
+Mkfile.old
+dkms.conf
+
+# CMake files
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# IntelliJ project files
+.idea/
+*.iml
+out/
+gen/
+
+# JetBrains IDE build directories
+.idea_modules/
+*.ipr
+*.iws
+build/
+cmake-build-*/
+
+# CLion files
+.cmake/
+
+# Downloaded modules
+cache/
+.cache/
+
+# Preset build directories
+.build/
+
+__pycache__
+
+llvm_mingw/
+
+# osxcross toolchain (auto-built)
+cmake/toolchains/osxcross_toolchain/
+cmake/toolchains/.osxcross-src/
+cmake/toolchains/.macos-toolchain-deps/
+cmake/toolchains/.macos-sdk-cache/
+
+# ─── Ghidra ───────────────────────────────────────────────────────────────────
+*.gpr
+*.rep/
+*.ghidra/
+*.lock
+*.ulock
+ghidra_scripts/__pycache__/
+ghidra_scripts/*.pyc
+
+# Ghidra analysis exports (keep .gzf only if intentional)
+*.gzf
+*.bytes
+
+# Sleigh compiler artifacts
+*.sla
+**/data/build.xml
+
+# Ghidra server
+repositories/
+ghidra.repos.config
+Ghidra/.ghidraSvrKeys
+wrapper.log*
+
+# Project strange dirs:
+OFF/
+cmake_system_information__/

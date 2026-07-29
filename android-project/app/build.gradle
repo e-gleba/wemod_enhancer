@@ -1,0 +1,215 @@
+final boolean isLibrary = project.hasProperty('BUILD_AS_LIBRARY')
+final boolean excludeNativeLibs = project.hasProperty('EXCLUDE_NATIVE_LIBS')
+final boolean useOrchestrator = project.hasProperty('USE_ORCHESTRATOR') && project.property('USE_ORCHESTRATOR') == 'true'
+
+if (isLibrary) {
+    apply plugin: libs.plugins.android.library.get().pluginId
+} else {
+    apply plugin: libs.plugins.android.application.get().pluginId
+}
+
+android {
+    compileSdk = 37
+    ndkVersion = '30.0.14904198 rc1'
+    namespace = "com.egleba.app"
+    buildToolsVersion = '37.0.0'
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        if (!isLibrary) {
+            applicationId = namespace
+        }
+
+        minSdk = 24
+        targetSdk = 37
+        versionCode = 1
+        versionName = "1.0.0"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DANDROID_PLATFORM=android-24",
+                        "-DANDROID_STL=c++_shared",
+                        "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+                        "-DCPM_SOURCE_CACHE=${System.getProperty('user.home')}/.cache/cpm-cmake"
+            }
+        }
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        if (useOrchestrator) {
+            testInstrumentationRunnerArguments clearPackageData: 'true'
+        }
+    }
+
+    buildFeatures {
+        prefab = true
+    }
+
+    buildTypes {
+        debug {
+            debuggable = true
+            jniDebuggable = true
+            testCoverageEnabled = true
+        }
+        release {
+            minifyEnabled = true
+            shrinkResources = !isLibrary
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig = signingConfigs.debug
+
+            ndk {
+                debugSymbolLevel = 'SYMBOL_TABLE'
+            }
+        }
+    }
+
+    if (!excludeNativeLibs) {
+        externalNativeBuild {
+            cmake {
+                path = file('../../CMakeLists.txt')
+                version = "3.31.6+"
+            }
+        }
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['../../assets']
+            if (!excludeNativeLibs) {
+                jniLibs.srcDirs = ['libs']
+            }
+        }
+        androidTest {
+            if (!excludeNativeLibs) {
+                jniLibs.srcDirs = ['libs']
+            }
+        }
+    }
+
+    if (isLibrary) {
+        libraryVariants.configureEach { variant ->
+            variant.outputs.configureEach {
+                if (outputFileName.endsWith('.aar')) {
+                    outputFileName = "${project.name}-${variant.name}.aar"
+                }
+            }
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+
+    testOptions {
+        animationsDisabled = true
+
+        if (useOrchestrator) {
+            execution = 'ANDROIDX_TEST_ORCHESTRATOR'
+        }
+
+        unitTests {
+            // [doc] https://developer.android.com/reference/tools/gradle-api/8.1/com/android/build/api/dsl/UnitTestOptions#isIncludeAndroidResources
+            // [info] merge resources/assets/manifest into unit tests (required for Robolectric)
+            includeAndroidResources = true
+
+            // [doc] https://developer.android.com/reference/tools/gradle-api/8.1/com/android/build/api/dsl/UnitTestOptions#isReturnDefaultValues
+            // [info] return null/zero instead of throwing "Method not mocked" for android.jar APIs
+            returnDefaultValues = true
+
+            // [doc] https://developer.android.com/reference/tools/gradle-api/8.1/com/android/build/api/dsl/UnitTestOptions#all(kotlin.Function1)
+            // [info] configures underlying Gradle Test tasks for all variants
+            all {
+                testLogging {
+                    // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.logging.TestLogging.html#org.gradle.api.tasks.testing.logging.TestLogging:events
+                    // [info] define which test lifecycle events show in terminal
+                    events 'passed', 'skipped', 'failed', 'standardOut', 'standardError'
+
+                    // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.logging.TestLogging.html#org.gradle.api.tasks.testing.logging.TestLogging:showStandardStreams
+                    // [info] pipe System.out and System.err output directly to console
+                    showStandardStreams = true
+
+                    // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.logging.TestLogging.html#org.gradle.api.tasks.testing.logging.TestLogging:showCauses
+                    // [info] display root cause of test failures
+                    showCauses = true
+
+                    // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.logging.TestLogging.html#org.gradle.api.tasks.testing.logging.TestLogging:showExceptions
+                    // [info] display exception messages for failed tests
+                    showExceptions = true
+
+                    // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.logging.TestLogging.html#org.gradle.api.tasks.testing.logging.TestLogging:showStackTraces
+                    // [info] print full stack traces for failures
+                    showStackTraces = true
+
+                    // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.logging.TestLogging.html#org.gradle.api.tasks.testing.logging.TestLogging:exceptionFormat
+                    // [info] use verbose 'full' format for traces instead of 'short' summary
+                    exceptionFormat = 'full'
+                }
+
+                // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.Test.html#org.gradle.api.tasks.testing.Test:maxParallelForks
+                // [info] execute tests in parallel using half of available CPU cores
+                maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
+
+                // [doc] https://docs.gradle.org/current/dsl/org.gradle.api.tasks.testing.Test.html#org.gradle.api.tasks.testing.Test:forkEvery
+                // [info] restart JVM worker every 100 classes to avoid memory leaks/state pollution
+                forkEvery = 100
+            }
+        }
+
+        // [doc] https://developer.android.com/reference/tools/gradle-api/8.4/com/android/build/api/dsl/ManagedDevices
+        // [doc] https://developer.android.com/studio/test/gradle-managed-devices
+        // [info] Gradle Managed Devices: AGP handles full AVD lifecycle (create, boot, test, shutdown, delete)
+        // [info] Containers: localDevices (ManagedVirtualDevice on host), allDevices (Unified Test Platform — local + Firebase Test Lab), groups (DeviceGroup task grouping)
+        // [info] Added in AGP 7.2.0. Use allDevices (not deprecated `devices`) for polymorphic device types.
+        managedDevices {
+            localDevices {
+                // [doc] https://developer.android.com/reference/tools/gradle-api/8.4/com/android/build/api/dsl/ManagedVirtualDevice
+                // [info] defines a virtual device managed entirely by Gradle (creation, boot, shutdown)
+                pixel_6_aosp_atd_30 {
+                    // [doc] https://developer.android.com/reference/tools/gradle-api/8.4/com/android/build/api/dsl/ManagedVirtualDevice#device()
+                    // [info] hardware profile to emulate (Pixel 6)
+                    device = 'Pixel 6'
+
+                    // [doc] https://developer.android.com/reference/tools/gradle-api/8.4/com/android/build/api/dsl/ManagedVirtualDevice#apiLevel()
+                    // [info] Android API level (30 is required/recommended for ATD)
+                    apiLevel = 30
+
+                    // [doc] https://developer.android.com/reference/tools/gradle-api/8.4/com/android/build/api/dsl/ManagedVirtualDevice#systemImageSource()
+                    // [info] 'aosp-atd' = Automated Test Device (no bloat, no UI, fast, headless optimized)
+                    systemImageSource = 'aosp-atd'
+
+                    // [doc] https://developer.android.com/reference/tools/gradle-api/8.4/com/android/build/api/dsl/ManagedVirtualDevice#require64Bit()
+                    // [info] force 64-bit image usage for better performance on modern hosts
+                    require64Bit = true
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+
+    androidTestImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.runner
+    androidTestImplementation libs.rules
+
+    if (useOrchestrator) {
+        androidTestUtil libs.orchestrator
+    }
+}

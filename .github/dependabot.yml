@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://json.schemastore.org/dependabot-2.0.json
+version: 2
+
+updates:
+  # ─── GitHub Actions ────────────────────────────────────────────────────────
+  # Keep CI/CD actions up to date (checkout, setup-python, cache, upload-artifact, etc.)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # ─── CPM (CMake Package Manager) dependencies ─────────────────────────────
+  # CPM deps are declared in cmake/cpm/*.cmake via cpmaddpackage() with GIT_TAG.
+  # Dependabot does not natively support CPM, so we use Renovate for CPM packages.
+  # See .github/renovate.json5 for CPM dependency management.

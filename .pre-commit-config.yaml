@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://json.schemastore.org/pre-commit-config.json
+repos:
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v4.6.0
+      hooks:
+          - id: trailing-whitespace
+          - id: end-of-file-fixer
+          - id: check-yaml
+          - id: check-json
+          - id: check-merge-conflict
+          - id: check-added-large-files
+          - id: detect-private-key
+          - id: mixed-line-ending
+            args: [--fix=lf]
+
+    # Markdown / text hygiene
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v4.6.0
+      hooks:
+          - id: pretty-format-json
+            args: [--autofix, --indent=2]
+            files: "\\.json$"
+          - id: text-unicode-encoding
+            files: "\\.(txt|md)$"
+
+    - repo: https://github.com/pocc/pre-commit-hooks
+      rev: v1.3.5
+      hooks:
+          - id: clang-format
+            files: "\\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$"
+          - id: cmake-format
+            files: "(CMakeLists\\.txt|\\.cmake)$"

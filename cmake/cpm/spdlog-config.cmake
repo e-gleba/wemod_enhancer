@@ -1,0 +1,17 @@
+cpmaddpackage(
+    NAME
+    spdlog
+    GIT_TAG
+    v1.17.0
+    EXCLUDE_FROM_ALL
+    ON
+    GITHUB_REPOSITORY
+    gabime/spdlog
+    OPTIONS
+    "SPDLOG_BUILD_EXAMPLE OFF"
+    "SPDLOG_BUILD_TESTS OFF"
+    "SPDLOG_BUILD_BENCH OFF"
+    "SPDLOG_FUZZ OFF"
+    "SPDLOG_USE_STD_FORMAT ON"
+    "SPDLOG_SYSTEM_INCLUDES ON")
+

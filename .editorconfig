@@ -1,0 +1,45 @@
+; EditorConfig: see https://spec.editorconfig.org/
+
+root = true
+
+# unix standard formatting baseline
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+max_line_length = 80
+
+# c/c++ (formatting delegated to .clang-format)
+[*.{c,cpp,h,hpp,cxx,hxx,cc,hh,m,mm,ino}]
+indent_style = space
+indent_size = 4
+
+# python
+[*.py]
+indent_style = space
+indent_size = 4
+
+# bash / shell
+[*.{sh,bash,zsh}]
+indent_style = space
+indent_size = 2
+
+# cmake (formatting delegated to .cmake-format.yaml)
+[*.cmake]
+indent_style = space
+indent_size = 4
+
+[CMakeLists.txt]
+indent_style = space
+indent_size = 4
+
+# configs / open formats
+[*.{json,yml,yaml,xml,toml,ini}]
+indent_style = space
+indent_size = 4
+
+# markdown - allow trailing whitespace for hard line breaks
+[*.{md,markdown}]
+trim_trailing_whitespace = false
+max_line_length = off

@@ -1,0 +1,63 @@
+# Build artifacts
+build/
+dist/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.exe
+*.out
+
+# CMake / CPM
+CMakeUserPresets.json
+cmake-build-*/
+_deps/
+CPM_*
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# Package manager caches
+vendor/
+node_modules/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# OS-specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Documentation artifacts
+docs/doxygen/
+*.log
+
+# CI / GitHub
+.github/
+
+# Large media / assets
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.mov

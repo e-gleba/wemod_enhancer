@@ -1,0 +1,8 @@
+# cursor ignore file, same syntax as .gitignore
+external/
+build/
+llvm-mingw/
+llvm_mingw/
+compile_commands.json
+license
+.clang-format
