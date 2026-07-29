@@ -4,19 +4,12 @@ file(
     CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_LIST_DIR}/*.cpp")
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    add_library(tests SHARED ${src})
-else()
-    add_executable(tests ${src})
-    set_source_files_properties(doctest_android_jni.cpp
-                                PROPERTIES HEADER_FILE_ONLY TRUE)
-endif()
+add_executable(tests ${src})
 
 target_include_directories(tests PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_features(tests PRIVATE cxx_std_23)
 
-target_link_libraries(tests PRIVATE doctest::doctest
-                                    $<$<PLATFORM_ID:Android>:log>)
+target_link_libraries(tests PRIVATE doctest::doctest)
 
 target_compile_definitions(
     tests

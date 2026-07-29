@@ -22,69 +22,11 @@
             }
         },
         {
-            "name": "android-base",
-            "displayName": "Android Base",
-            "description": "Base for Android NDK cross-compilation. Each ABI requires its own configure preset.",
-            "hidden": true,
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_NAME": "Android",
-                "CMAKE_ANDROID_NDK": "$env{ANDROID_NDK_HOME}",
-                "CMAKE_ANDROID_STL_TYPE": "c++_shared",
-                "CMAKE_ANDROID_API": "24"
-            },
-            "condition": {
-                "type": "inList",
-                "string": "${hostSystemName}",
-                "list": [
-                    "Linux",
-                    "Darwin",
-                    "Windows"
-                ]
-            }
-        },
-        {
-            "name": "android-arm64",
-            "displayName": "Android (arm64-v8a)",
-            "description": "64-bit ARM Android build",
-            "inherits": "android-base",
-            "cacheVariables": {
-                "CMAKE_ANDROID_ARCH_ABI": "arm64-v8a"
-            }
-        },
-        {
-            "name": "android-arm32",
-            "displayName": "Android (armeabi-v7a)",
-            "description": "32-bit ARM Android build",
-            "inherits": "android-base",
-            "cacheVariables": {
-                "CMAKE_ANDROID_ARCH_ABI": "armeabi-v7a"
-            }
-        },
-        {
-            "name": "android-x64",
-            "displayName": "Android (x86_64)",
-            "description": "64-bit x86 Android build (emulator)",
-            "inherits": "android-base",
-            "cacheVariables": {
-                "CMAKE_ANDROID_ARCH_ABI": "x86_64"
-            }
-        },
-        {
-            "name": "android-x86",
-            "displayName": "Android (x86)",
-            "description": "32-bit x86 Android build (emulator)",
-            "inherits": "android-base",
-            "cacheVariables": {
-                "CMAKE_ANDROID_ARCH_ABI": "x86"
-            }
-        },
-        {
             "name": "msvc",
             "displayName": "Microsoft Visual C++",
-            "description": "MSVC with VS 2022. CMAKE_EXPORT_COMPILE_COMMANDS is inherited but ignored by the VS generator.",
+            "description": "MSVC with VS 2026. CMAKE_EXPORT_COMPILE_COMMANDS is inherited but ignored by the VS generator.",
             "inherits": "base",
-            "generator": "Visual Studio 17 2022",
+            "generator": "Visual Studio 18 2026",
             "architecture": {
                 "value": "x64",
                 "strategy": "set"
@@ -173,30 +115,6 @@
             "name": "build-debug",
             "hidden": true,
             "configuration": "Debug"
-        },
-        {
-            "name": "android-arm64",
-            "displayName": "Android arm64 (Release)",
-            "configurePreset": "android-arm64",
-            "inherits": "build-release"
-        },
-        {
-            "name": "android-arm32",
-            "displayName": "Android arm32 (Release)",
-            "configurePreset": "android-arm32",
-            "inherits": "build-release"
-        },
-        {
-            "name": "android-x64",
-            "displayName": "Android x64 (Release)",
-            "configurePreset": "android-x64",
-            "inherits": "build-release"
-        },
-        {
-            "name": "android-x86",
-            "displayName": "Android x86 (Release)",
-            "configurePreset": "android-x86",
-            "inherits": "build-release"
         },
         {
             "name": "msvc-release",
@@ -388,51 +306,6 @@
         }
     ],
     "workflowPresets": [
-        {
-            "name": "android-arm64-full",
-            "displayName": "Android arm64 Pipeline",
-            "description": "Configure + build for Android arm64-v8a",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "android-arm64"
-                },
-                {
-                    "type": "build",
-                    "name": "android-arm64"
-                }
-            ]
-        },
-        {
-            "name": "android-arm32-full",
-            "displayName": "Android arm32 Pipeline",
-            "description": "Configure + build for Android armeabi-v7a",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "android-arm32"
-                },
-                {
-                    "type": "build",
-                    "name": "android-arm32"
-                }
-            ]
-        },
-        {
-            "name": "android-x64-full",
-            "displayName": "Android x64 Pipeline",
-            "description": "Configure + build for Android x86_64 (emulator)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "android-x64"
-                },
-                {
-                    "type": "build",
-                    "name": "android-x64"
-                }
-            ]
-        },
         {
             "name": "msvc-full",
             "displayName": "MSVC Complete Pipeline",
