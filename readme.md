@@ -1,46 +1,78 @@
 # WeMod Enhancer
 
-Cross-platform build and patch tooling for Wand/WeMod's Windows Electron client.
-The patcher runs on Windows, Linux, or macOS; generated `version.dll` is Windows x86-64 and can be used under Wine/Proton.
+Build and patch tooling for Wand/WeMod's Windows x86-64 Electron client. The Python patcher runs on Windows or Linux; Linux cross-compiles `version.dll` with LLVM-MinGW and launches WeMod through Wine/Proton.
 
 ## Requirements
 
 - Python 3.11+
 - CMake 3.31+
 - Ninja
-- Windows: LLVM-MinGW compiler on `PATH`
-- Linux: existing toolchain file downloads LLVM-MinGW automatically
+- Windows: MSVC or LLVM-MinGW
+- Linux: LLVM-MinGW is downloaded by the included CMake toolchain
 
-## Build DLL
+## Patch
+
+Stop WeMod, then pass the directory containing `WeMod.exe` and `resources/app.asar`:
+
+```sh
+python3 tools/wemod_enhancer.py patch --install-dir "/path/to/wemod_bin"
+```
+
+Restore original files:
+
+```sh
+python3 tools/wemod_enhancer.py restore --install-dir "/path/to/wemod_bin"
+```
+
+Build only the proxy DLL:
 
 ```sh
 python3 tools/wemod_enhancer.py build-dll
 ```
 
-## Patch
+Backups are created before modification. Client updates can change minified JavaScript; unsupported patch targets fail closed.
 
-Stop Wand/WeMod first, then pass its directory—the directory containing `resources/app.asar`:
+## Linux and Steam
 
-```sh
-python3 tools/wemod_enhancer.py patch --install-dir "/path/to/Wand"
-```
-
-Use a prebuilt DLL:
+Install the maintained Linux launcher:
 
 ```sh
-python3 tools/wemod_enhancer.py patch --install-dir "/path/to/Wand" --version-dll ./version.dll
+git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
+chmod +x "$HOME/wemod-launcher/wemod"
 ```
 
-For Wine/Proton, pass the Windows application directory inside the prefix, for example:
+Follow its setup, run the target game once, and select a compatible Proton or GE-Proton version. WeMod is normally stored at:
+
+```text
+$HOME/wemod-launcher/wemod_data/wemod_bin
+```
+
+Patch it:
 
 ```sh
-python3 tools/wemod_enhancer.py patch --install-dir "$STEAMLIBRARY/steamapps/compatdata/ID/pfx/drive_c/users/steamuser/AppData/Local/Wand"
+python3 tools/wemod_enhancer.py patch \
+  --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
-Restore:
+Set the Steam game's launch options to:
 
 ```sh
-python3 tools/wemod_enhancer.py restore --install-dir "/path/to/Wand"
+WINEDLLOVERRIDES="version=n,b" "$HOME/wemod-launcher/wemod" %command%
 ```
 
-Backups are created before modification. Client updates may change minified JavaScript; the patcher fails closed when exact targets cannot be found.
+The override is required under Wine/Proton: `n,b` loads the native proxy beside `WeMod.exe` first and falls back to Wine's builtin `version.dll`. Without it, Wine can load only its builtin DLL and Electron will reject the modified ASAR.
+
+Detailed diagnostics, log locations, cleanup, and implementation history: [Linux launch and debugging](docs/linux.md)
+
+## Development
+
+The project originated as a focused port of the native ASAR-fuse proxy and applicable JavaScript patches from Wand-Enhancer. Development proceeded by:
+
+1. replacing the generic C++ template application with a Windows x86-64 proxy DLL;
+2. adding Linux-to-Windows LLVM-MinGW and native Windows MSVC builds;
+3. porting backup, patch, restore, and ASAR handling to one standard-library Python CLI;
+4. validating behavior against the original AsarSharp pickle and SHA-256 integrity implementation;
+5. diagnosing Proton startup with `PROTON_LOG`, `WINEDEBUG`, and DLL-load traces;
+6. documenting Wine's required native-first `version.dll` override.
+
+The CMake and CI scope is intentionally limited to Windows x86-64. Linux is a host and runtime environment, not a native DLL target.
