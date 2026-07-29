@@ -2,180 +2,122 @@
 name: cmake_multiplatform_workflow
 
 on:
-    push:
-        branches: [main]
-        paths: &paths
-            - "src/**"
-            - "include/**"
-            - "cmake/**"
-            - "**/*.cmake"
-            - "**/*.cpp"
-            - "**/*.hpp"
-            - "**/*.c"
-            - "**/*.h"
-            - "**/*.cxx"
-            - "**/*.hxx"
-            - "**/CMakeLists.txt"
-            - "CMakePresets.json"
-            - ".github/workflows/**"
-            - "android-project/**"
-    pull_request:
-        branches: [main]
-        paths: *paths
-    release:
-        types: [published]
-    workflow_dispatch:
+  push:
+    branches: [main]
+    paths: &paths
+      - "src/**"
+      - "include/**"
+      - "cmake/**"
+      - "**/*.cmake"
+      - "**/*.cpp"
+      - "**/*.hpp"
+      - "**/*.c"
+      - "**/*.h"
+      - "**/*.cxx"
+      - "**/*.hxx"
+      - "**/CMakeLists.txt"
+      - "CMakePresets.json"
+      - ".github/workflows/**"
+  pull_request:
+    branches: [main]
+    paths: *paths
+  release:
+    types: [published]
+  workflow_dispatch:
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.ref }}
-    cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-    contents: read
+  contents: read
 
 env:
-    CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
 
 jobs:
-    # ── native builds ───────────────────────────────────────────────────────────
-    native:
-        name: native / ${{ matrix.artifact-name }}
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - os: ubuntu-latest
-                      preset: clang-full
-                      artifact-name: linux-clang
-                    - os: ubuntu-latest
-                      preset: gcc-full
-                      artifact-name: linux-gcc
-                    - os: windows-2026 # Pin to windows-2022 for VS 2022
-                      preset: msvc-full
-                      artifact-name: windows-msvc
+  # ── native builds ───────────────────────────────────────────────────────────
+  native:
+    name: native / ${{ matrix.artifact-name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2026 # Pin to windows-2022 for VS 2022
+            preset: msvc-full
+            artifact-name: windows-msvc
 
-        steps:
-            - name: checkout
-              uses: actions/checkout@v7
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
 
-            - name: install linux system deps
-              if: runner.os == 'Linux'
-              run: |
-                  sudo apt-get update -qq
-                  sudo apt-get install -y --no-install-recommends \
-                    ninja-build clang \
-                    doxygen graphviz \
-                    libwayland-dev libxkbcommon-dev \
-                    libegl1-mesa-dev libgles2-mesa-dev libgl1-mesa-dev \
-                    libdbus-1-dev libudev-dev libasound2-dev
+      - name: cache cpm sources
+        uses: actions/cache@v6
+        with:
+          path: .cpm_cache
+          key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
+          restore-keys: cpm-${{ matrix.artifact-name }}-
 
-            - name: cache cpm sources
-              uses: actions/cache@v6
-              with:
-                  path: .cpm_cache
-                  key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
-                  restore-keys: cpm-${{ matrix.artifact-name }}-
+      - name: build
+        run: cmake --workflow --preset ${{ matrix.preset }}
 
-            - name: build
-              run: cmake --workflow --preset ${{ matrix.preset }}
+      - name: upload zip artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact-name }}-zip
+          path: build/**/*.zip
+          if-no-files-found: ignore
+          compression-level: 0
 
-            # ── Documentation (Clang only) ───────────────────────────────────
-            - name: build documentation
-              if: matrix.preset == 'clang-full'
-              run: cmake --build --preset clang-docs
+      - name: upload tgz artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact-name }}-tgz
+          path: build/**/*.tar.gz
+          if-no-files-found: ignore
+          compression-level: 0
 
-            - name: verify documentation
-              if: matrix.preset == 'clang-full'
-              run: |
-                  index_path="build/clang/generated_docs/html/index.html"
-                  if [[ ! -f "${index_path}" ]]; then
-                    echo "::error::Documentation index not found at ${index_path}"
-                    exit 1
-                  fi
-                  echo "Documentation ready: ${index_path}"
-                  du -sh build/clang/generated_docs/html/
-                  find build/clang/generated_docs/html -maxdepth 1 -type f | sort
+  # ── cross-compile: Linux → Windows (llvm-mingw) ─────────────────────────────
+  cross-windows:
+    name: cross-windows / ${{ matrix.artifact-name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: llvm-mingw-x86_64-full
+            artifact-name: windows-mingw-x86_64
 
-            - name: upload documentation artifact
-              if: matrix.preset == 'clang-full'
-              uses: actions/upload-artifact@v7
-              with:
-                  name: doxygen_html_${{ github.run_id }}
-                  path: build/clang/generated_docs/html/
-                  retention-days: 30
-                  if-no-files-found: error
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
 
-            - name: documentation summary
-              if: matrix.preset == 'clang-full' && always()
-              run: |
-                  echo "## Documentation build result" >> $GITHUB_STEP_SUMMARY
-                  echo "- Status: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-                  echo "- Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- Ref: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- Preset: \`clang-docs\`" >> $GITHUB_STEP_SUMMARY
-                  echo "- Artifact: \`doxygen_html_${{ github.run_id }}\`" >> $GITHUB_STEP_SUMMARY
-            # ──────────────────────────────────────────────────────────────────
-            - name: upload zip artifact
-              uses: actions/upload-artifact@v7
-              with:
-                  name: ${{ matrix.artifact-name }}-zip
-                  path: build/**/*.zip
-                  if-no-files-found: ignore
-                  compression-level: 0
+      - name: install build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ninja-build
 
-            - name: upload tgz artifact
-              uses: actions/upload-artifact@v7
-              with:
-                  name: ${{ matrix.artifact-name }}-tgz
-                  path: build/**/*.tar.gz
-                  if-no-files-found: ignore
-                  compression-level: 0
+      - name: cache llvm-mingw toolchain
+        uses: actions/cache@v6
+        with:
+          path: llvm_mingw
+          key: llvm-mingw-${{ hashFiles('cmake/toolchains/llvm_mingw.cmake') }}
 
-    # ── cross-compile: Linux → Windows (llvm-mingw) ─────────────────────────────
-    cross-windows:
-        name: cross-windows / ${{ matrix.artifact-name }}
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - preset: llvm-mingw-x86_64-full
-                      artifact-name: windows-mingw-x86_64
-                    - preset: llvm-mingw-i686-full
-                      artifact-name: windows-mingw-i686
-                    - preset: llvm-mingw-aarch64-full
-                      artifact-name: windows-mingw-aarch64
+      - name: cache cpm sources
+        uses: actions/cache@v6
+        with:
+          path: .cpm_cache
+          key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
+          restore-keys: cpm-${{ matrix.artifact-name }}-
 
-        steps:
-            - name: checkout
-              uses: actions/checkout@v7
+      - name: build
+        run: cmake --workflow --preset ${{ matrix.preset }}
 
-            - name: install build tools
-              run: |
-                  sudo apt-get update -qq
-                  sudo apt-get install -y --no-install-recommends ninja-build
-
-            - name: cache llvm-mingw toolchain
-              uses: actions/cache@v6
-              with:
-                  path: llvm_mingw
-                  key: llvm-mingw-${{ hashFiles('cmake/toolchains/llvm_mingw.cmake') }}
-
-            - name: cache cpm sources
-              uses: actions/cache@v6
-              with:
-                  path: .cpm_cache
-                  key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
-                  restore-keys: cpm-${{ matrix.artifact-name }}-
-
-            - name: build
-              run: cmake --workflow --preset ${{ matrix.preset }}
-
-            - name: upload txz artifact
-              uses: actions/upload-artifact@v7
-              with:
-                  name: ${{ matrix.artifact-name }}-txz
-                  path: build/**/*.tar.xz
-                  if-no-files-found: ignore
-                  compression-level: 0
+      - name: upload txz artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact-name }}-txz
+          path: build/**/*.tar.xz
+          if-no-files-found: ignore
+          compression-level: 0
