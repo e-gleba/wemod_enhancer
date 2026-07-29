@@ -13,10 +13,10 @@ static HMODULE original_version;
  X(GetFileVersionInfoSizeExW,DWORD,0,(DWORD a,LPCWSTR b,LPDWORD c),(a,b,c)) \
  X(GetFileVersionInfoSizeW,DWORD,0,(LPCWSTR a,LPDWORD b),(a,b)) \
  X(GetFileVersionInfoW,BOOL,FALSE,(LPCWSTR a,DWORD b,DWORD c,LPVOID d),(a,b,c,d)) \
- X(VerFindFileA,DWORD,0,(DWORD a,LPCSTR b,LPCSTR c,LPCSTR d,LPSTR e,PUINT f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
- X(VerFindFileW,DWORD,0,(DWORD a,LPCWSTR b,LPCWSTR c,LPCWSTR d,LPWSTR e,PUINT f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
- X(VerInstallFileA,DWORD,0,(DWORD a,LPCSTR b,LPCSTR c,LPCSTR d,LPCSTR e,LPCSTR f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
- X(VerInstallFileW,DWORD,0,(DWORD a,LPCWSTR b,LPCWSTR c,LPCWSTR d,LPCWSTR e,LPCWSTR f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerFindFileA,DWORD,0,(DWORD a,LPSTR b,LPSTR c,LPSTR d,LPSTR e,PUINT f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerFindFileW,DWORD,0,(DWORD a,LPWSTR b,LPWSTR c,LPWSTR d,LPWSTR e,PUINT f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerInstallFileA,DWORD,0,(DWORD a,LPSTR b,LPSTR c,LPSTR d,LPSTR e,LPSTR f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerInstallFileW,DWORD,0,(DWORD a,LPWSTR b,LPWSTR c,LPWSTR d,LPWSTR e,LPWSTR f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
  X(VerLanguageNameA,DWORD,0,(DWORD a,LPSTR b,DWORD c),(a,b,c)) \
  X(VerLanguageNameW,DWORD,0,(DWORD a,LPWSTR b,DWORD c),(a,b,c)) \
  X(VerQueryValueA,BOOL,FALSE,(LPCVOID a,LPCSTR b,LPVOID *c,PUINT d),(a,b,c,d)) \
