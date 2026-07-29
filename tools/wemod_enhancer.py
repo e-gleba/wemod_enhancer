@@ -2,10 +2,11 @@
 """Build/install version.dll and patch Wand/WeMod Electron app.asar."""
 from __future__ import annotations
 
-import argparse, json, os, re, shutil, struct, subprocess, sys, tempfile
+import argparse, hashlib, json, os, re, shutil, struct, subprocess, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
+BLOCK_SIZE = 4 * 1024 * 1024
 PATCHES = {
  "activate-pro-account": (r'getUserAccount\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.fetch\(\{.*?\}\)\}', lambda m: f'getUserAccount(){{return this.#{m["s"]}.fetch({{endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}}).then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
  "activate-pro-language": (r'setAccountLanguage\((?P<p>[^)]*)\)\{\s*return\s+(?P<e>this\.#\w+\.post\("/v3/account/language",\{[^}]*\}\))\s*;?\s*\}', lambda m: f'setAccountLanguage({m["p"]}){{return ({m["e"]}).then(response=>{{response&&"object"==typeof response&&(response.subscription={{period:"yearly",state:"active"}});return response;}})}}'),
@@ -21,10 +22,14 @@ def u32(data: bytes, pos: int) -> int: return struct.unpack_from("<I", data, pos
 
 def read_asar(path: Path) -> tuple[dict, int]:
     with path.open("rb") as f:
-        head = f.read(16)
-        if len(head) < 16: raise ValueError("invalid ASAR header")
-        header_size, json_size = u32(head, 4), u32(head, 12)
-        f.seek(16); header = json.loads(f.read(json_size).decode("utf-8"))
+        size_pickle = f.read(8)
+        if len(size_pickle) != 8 or u32(size_pickle, 0) != 4: raise ValueError("invalid ASAR size pickle")
+        header_size = u32(size_pickle, 4)
+        header_pickle = f.read(header_size)
+        if len(header_pickle) != header_size or header_size < 8: raise ValueError("invalid ASAR header pickle")
+        payload_size, json_size = u32(header_pickle, 0), u32(header_pickle, 4)
+        if payload_size + 4 != header_size or json_size > payload_size - 4: raise ValueError("invalid ASAR header sizes")
+        header = json.loads(header_pickle[8:8 + json_size].decode("utf-8"))
     return header, 8 + header_size
 
 def entries(node: dict, prefix=""):
@@ -44,12 +49,13 @@ def extract_asar(asar: Path, out: Path):
     header, base = read_asar(asar); unpacked = Path(str(asar) + ".unpacked")
     with asar.open("rb") as f:
         for rel, meta in entries(header):
+            if "link" in meta: continue
             dst = safe(out, rel); dst.parent.mkdir(parents=True, exist_ok=True)
             if meta.get("unpacked"):
                 src = safe(unpacked, rel)
-                if src.exists(): shutil.copy2(src, dst)
-                continue
-            f.seek(base + int(meta.get("offset", 0))); dst.write_bytes(f.read(int(meta.get("size", 0))))
+                if not src.is_file(): raise FileNotFoundError(f"missing unpacked ASAR file: {rel}")
+                shutil.copy2(src, dst); continue
+            f.seek(base + int(meta["offset"])); dst.write_bytes(f.read(int(meta["size"])))
     return header
 
 def pickle(payload: bytes) -> bytes:
@@ -57,31 +63,35 @@ def pickle(payload: bytes) -> bytes:
     body += b"\0" * ((4 - len(body) % 4) % 4)
     return struct.pack("<I", len(body)) + body
 
+def integrity(path: Path) -> dict:
+    whole = hashlib.sha256(); blocks = []
+    with path.open("rb") as f:
+        while block := f.read(BLOCK_SIZE):
+            whole.update(block); blocks.append(hashlib.sha256(block).hexdigest())
+    return {"algorithm": "SHA256", "hash": whole.hexdigest(), "blockSize": BLOCK_SIZE, "blocks": blocks}
+
 def pack_asar(root: Path, out: Path, header: dict):
-    packed = []
-    offset = 0
+    packed = []; offset = 0
     for rel, meta in entries(header):
-        src = safe(root, rel)
-        if meta.get("unpacked"):
-            if not src.exists(): raise FileNotFoundError(f"missing unpacked ASAR file: {rel}")
-            meta["size"] = src.stat().st_size
-            meta.pop("offset", None)
-            continue
         if "link" in meta: continue
+        src = safe(root, rel)
         if not src.is_file(): raise FileNotFoundError(f"missing ASAR file: {rel}")
-        size = src.stat().st_size
-        meta["size"], meta["offset"] = size, str(offset)
-        meta.pop("integrity", None)
-        packed.append(src); offset += size
+        meta["size"] = src.stat().st_size
+        meta["integrity"] = integrity(src)
+        if meta.get("unpacked"):
+            meta.pop("offset", None); continue
+        meta["offset"] = str(offset); packed.append(src); offset += meta["size"]
     raw = json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode()
-    header_pickle = pickle(raw)
-    size_pickle = pickle(struct.pack("<I", len(header_pickle)))
+    header_pickle = pickle(raw); size_pickle = pickle(struct.pack("<I", len(header_pickle)))
     tmp = out.with_suffix(out.suffix + ".tmp")
     with tmp.open("wb") as f:
         f.write(size_pickle); f.write(header_pickle)
         for src in packed:
             with src.open("rb") as item: shutil.copyfileobj(item, f, 1024 * 1024)
     tmp.replace(out)
+    check, data_offset = read_asar(out)
+    expected = data_offset + sum(int(meta["size"]) for _, meta in entries(check) if "link" not in meta and not meta.get("unpacked"))
+    if out.stat().st_size != expected: raise RuntimeError("ASAR verification failed: archive size mismatch")
 
 def patch_bundles(root: Path):
     candidates = [p for p in root.iterdir() if p.is_file() and (p.name == "index.js" or (p.name.startswith("app-") and p.name.endswith(".bundle.js")))]
