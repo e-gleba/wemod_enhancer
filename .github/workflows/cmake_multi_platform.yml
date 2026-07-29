@@ -1,15 +1,18 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: build-version-dll
+name: cmake_multi_platform_workflow
 
 on:
     push:
         branches: [main]
         paths: &paths
             - "src/**"
-            - "cmake/toolchains/llvm_mingw.cmake"
-            - "CMakeLists.txt"
+            - "cmake/**"
+            - "**/*.cmake"
+            - "**/*.c"
+            - "**/*.h"
+            - "**/CMakeLists.txt"
             - "CMakePresets.json"
-            - ".github/workflows/cmake_multi_platform.yml"
+            - ".github/workflows/**"
     pull_request:
         branches: [main]
         paths: *paths
@@ -25,49 +28,47 @@ permissions:
     contents: read
 
 jobs:
-    llvm-mingw-x86_64:
-        name: Windows x86-64 DLL / LLVM-MinGW
-        runs-on: ubuntu-latest
+    build:
+        name: ${{ matrix.name }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - name: win-msvc-x64
+                      os: windows-2026
+                      preset: msvc-full
+                      artifact: win-msvc-x64
+                      package: build/msvc/*.zip
+                    - name: win-llvm-mingw-x64
+                      os: ubuntu-latest
+                      preset: llvm-mingw-x86_64-full
+                      artifact: win-llvm-mingw-x64
+                      package: build/llvm-mingw-x86_64/*.tar.xz
+        runs-on: ${{ matrix.os }}
         steps:
             - name: checkout
               uses: actions/checkout@v7
 
-            - name: install build tools
+            - name: install Ninja
+              if: runner.os == 'Linux'
               run: |
                   sudo apt-get update -qq
                   sudo apt-get install -y --no-install-recommends ninja-build
 
             - name: cache LLVM-MinGW
+              if: runner.os == 'Linux'
               uses: actions/cache@v6
               with:
                   path: llvm_mingw
                   key: llvm-mingw-${{ hashFiles('cmake/toolchains/llvm_mingw.cmake') }}
 
-            - name: build and package
-              run: cmake --workflow --preset llvm-mingw-x86_64-full
+            - name: build
+              run: cmake --workflow --preset ${{ matrix.preset }}
 
-            - name: upload package
+            - name: upload
               uses: actions/upload-artifact@v7
               with:
-                  name: version-dll-llvm-mingw-x86_64
-                  path: build/llvm-mingw-x86_64/*.tar.xz
-                  if-no-files-found: error
-                  compression-level: 0
-
-    msvc-x86_64:
-        name: Windows x86-64 DLL / MSVC
-        runs-on: windows-2026
-        steps:
-            - name: checkout
-              uses: actions/checkout@v7
-
-            - name: build and package
-              run: cmake --workflow --preset msvc-full
-
-            - name: upload package
-              uses: actions/upload-artifact@v7
-              with:
-                  name: version-dll-msvc-x86_64
-                  path: build/msvc/*.zip
+                  name: ${{ matrix.artifact }}
+                  path: ${{ matrix.package }}
                   if-no-files-found: error
                   compression-level: 0
