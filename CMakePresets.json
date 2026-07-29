@@ -8,25 +8,27 @@
     },
     "configurePresets": [
         {
-            "name": "base",
-            "displayName": "Base Configuration",
-            "description": "Ninja Multi-Config, compile_commands.json, color diagnostics, C++20 module scanning disabled",
-            "hidden": true,
+            "name": "llvm-mingw-x86_64",
+            "displayName": "LLVM-MinGW Windows x86-64",
+            "description": "Cross-compile version.dll for Windows x86-64 from Linux",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
+            "toolchainFile": "${sourceDir}/cmake/toolchains/llvm_mingw.cmake",
             "cacheVariables": {
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-                "CMAKE_COLOR_DIAGNOSTICS": "ON",
-                "CMAKE_CXX_SCAN_FOR_MODULES": "OFF",
-                "FETCHCONTENT_QUIET": "OFF"
+                "CMAKE_SYSTEM_PROCESSOR": "x86_64"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
             }
         },
         {
             "name": "msvc",
-            "displayName": "Microsoft Visual C++",
-            "description": "MSVC with VS 2026. CMAKE_EXPORT_COMPILE_COMMANDS is inherited but ignored by the VS generator.",
-            "inherits": "base",
+            "displayName": "Microsoft Visual C++ x86-64",
+            "description": "Build version.dll natively on Windows with MSVC",
             "generator": "Visual Studio 18 2026",
+            "binaryDir": "${sourceDir}/build/${presetName}",
             "architecture": {
                 "value": "x64",
                 "strategy": "set"
@@ -40,396 +42,57 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
-        },
-        {
-            "name": "llvm-mingw-base",
-            "displayName": "LLVM-MinGW Base",
-            "description": "Cross-compilation from Linux to Windows via llvm-mingw toolchain",
-            "hidden": true,
-            "inherits": "base",
-            "toolchainFile": "${sourceDir}/cmake/toolchains/llvm_mingw.cmake",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_NAME": "Windows"
-            },
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
-        },
-        {
-            "name": "llvm-mingw-i686",
-            "displayName": "LLVM-MinGW Win32 (i686)",
-            "description": "Cross-compile for Windows 32-bit x86",
-            "inherits": "llvm-mingw-base",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_PROCESSOR": "i686"
-            }
-        },
-        {
-            "name": "llvm-mingw-x86_64",
-            "displayName": "LLVM-MinGW Win64 (x86_64)",
-            "description": "Cross-compile for Windows 64-bit x86",
-            "inherits": "llvm-mingw-base",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_PROCESSOR": "x86_64"
-            }
-        },
-        {
-            "name": "llvm-mingw-aarch64",
-            "displayName": "LLVM-MinGW WinARM64 (aarch64)",
-            "description": "Cross-compile for Windows on ARM64",
-            "inherits": "llvm-mingw-base",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_PROCESSOR": "aarch64"
-            }
-        },
-        {
-            "name": "clang",
-            "displayName": "LLVM Clang (native)",
-            "description": "Native build with system Clang/Clang++",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
-            }
-        },
-        {
-            "name": "gcc",
-            "displayName": "GNU Compiler Collection (native)",
-            "description": "Native build with system GCC/G++",
-            "inherits": "base",
-            "cacheVariables": {
-                "CMAKE_C_COMPILER": "gcc",
-                "CMAKE_CXX_COMPILER": "g++"
-            }
         }
     ],
     "buildPresets": [
         {
-            "name": "build-release",
-            "hidden": true,
-            "configuration": "Release"
-        },
-        {
-            "name": "build-debug",
-            "hidden": true,
-            "configuration": "Debug"
-        },
-        {
-            "name": "msvc-release",
-            "displayName": "MSVC (Release)",
-            "configurePreset": "msvc",
-            "inherits": "build-release"
-        },
-        {
-            "name": "msvc-debug",
-            "displayName": "MSVC (Debug)",
-            "configurePreset": "msvc",
-            "inherits": "build-debug"
-        },
-        {
-            "name": "llvm-mingw-i686",
-            "displayName": "LLVM-MinGW Win32 (Release)",
-            "configurePreset": "llvm-mingw-i686",
-            "inherits": "build-release"
-        },
-        {
             "name": "llvm-mingw-x86_64",
-            "displayName": "LLVM-MinGW Win64 (Release)",
+            "displayName": "LLVM-MinGW Windows x86-64 Release",
             "configurePreset": "llvm-mingw-x86_64",
-            "inherits": "build-release"
-        },
-        {
-            "name": "llvm-mingw-aarch64",
-            "displayName": "LLVM-MinGW WinARM64 (Release)",
-            "configurePreset": "llvm-mingw-aarch64",
-            "inherits": "build-release"
-        },
-        {
-            "name": "clang-release",
-            "displayName": "Clang (Release)",
-            "configurePreset": "clang",
-            "inherits": "build-release"
-        },
-        {
-            "name": "clang-debug",
-            "displayName": "Clang (Debug)",
-            "configurePreset": "clang",
-            "inherits": "build-debug"
-        },
-        {
-            "name": "clang-docs",
-            "displayName": "Clang (Documentation)",
-            "description": "Generate Doxygen documentation only",
-            "configurePreset": "clang",
-            "inherits": "build-release",
-            "targets": [
-                "docs"
-            ]
-        },
-        {
-            "name": "gcc-release",
-            "displayName": "GCC (Release)",
-            "configurePreset": "gcc",
-            "inherits": "build-release"
-        },
-        {
-            "name": "gcc-debug",
-            "displayName": "GCC (Debug)",
-            "configurePreset": "gcc",
-            "inherits": "build-debug"
-        }
-    ],
-    "testPresets": [
-        {
-            "name": "test-base",
-            "hidden": true,
-            "output": {
-                "outputOnFailure": true,
-                "verbosity": "default"
-            },
-            "execution": {
-                "noTestsAction": "error",
-                "stopOnFailure": false
-            }
+            "configuration": "Release"
         },
         {
             "name": "msvc-release",
-            "displayName": "MSVC Tests (Release)",
+            "displayName": "MSVC x86-64 Release",
             "configurePreset": "msvc",
-            "inherits": "test-base",
             "configuration": "Release"
-        },
-        {
-            "name": "msvc-debug",
-            "displayName": "MSVC Tests (Debug)",
-            "configurePreset": "msvc",
-            "inherits": "test-base",
-            "configuration": "Debug"
-        },
-        {
-            "name": "clang-release",
-            "displayName": "Clang Tests (Release)",
-            "configurePreset": "clang",
-            "inherits": "test-base",
-            "configuration": "Release"
-        },
-        {
-            "name": "clang-debug",
-            "displayName": "Clang Tests (Debug)",
-            "configurePreset": "clang",
-            "inherits": "test-base",
-            "configuration": "Debug"
-        },
-        {
-            "name": "gcc-release",
-            "displayName": "GCC Tests (Release)",
-            "configurePreset": "gcc",
-            "inherits": "test-base",
-            "configuration": "Release"
-        },
-        {
-            "name": "gcc-debug",
-            "displayName": "GCC Tests (Debug)",
-            "configurePreset": "gcc",
-            "inherits": "test-base",
-            "configuration": "Debug"
         }
     ],
     "packagePresets": [
         {
-            "name": "msvc-package",
-            "displayName": "MSVC Package",
-            "configurePreset": "msvc",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "ZIP"
-            ]
-        },
-        {
-            "name": "llvm-mingw-i686-package",
-            "displayName": "LLVM-MinGW Win32 Package",
-            "configurePreset": "llvm-mingw-i686",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "TXZ"
-            ]
-        },
-        {
             "name": "llvm-mingw-x86_64-package",
-            "displayName": "LLVM-MinGW Win64 Package",
+            "displayName": "LLVM-MinGW Windows x86-64 Package",
             "configurePreset": "llvm-mingw-x86_64",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "TXZ"
-            ]
+            "configurations": ["Release"],
+            "generators": ["TXZ"]
         },
         {
-            "name": "llvm-mingw-aarch64-package",
-            "displayName": "LLVM-MinGW WinARM64 Package",
-            "configurePreset": "llvm-mingw-aarch64",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "TXZ"
-            ]
-        },
-        {
-            "name": "clang-package",
-            "displayName": "Clang Package",
-            "configurePreset": "clang",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "TGZ"
-            ]
-        },
-        {
-            "name": "gcc-package",
-            "displayName": "GCC Package",
-            "configurePreset": "gcc",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "TGZ"
-            ]
+            "name": "msvc-package",
+            "displayName": "MSVC Windows x86-64 Package",
+            "configurePreset": "msvc",
+            "configurations": ["Release"],
+            "generators": ["ZIP"]
         }
     ],
     "workflowPresets": [
         {
-            "name": "msvc-full",
-            "displayName": "MSVC Complete Pipeline",
-            "description": "Configure, build, test, and package with MSVC",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "msvc"
-                },
-                {
-                    "type": "build",
-                    "name": "msvc-release"
-                },
-                {
-                    "type": "test",
-                    "name": "msvc-release"
-                },
-                {
-                    "type": "package",
-                    "name": "msvc-package"
-                }
-            ]
-        },
-        {
-            "name": "llvm-mingw-i686-full",
-            "displayName": "LLVM-MinGW Win32 Pipeline",
-            "description": "Configure, build, and package for Windows 32-bit (no test — cross-compiled binaries cannot run on the Linux host)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "llvm-mingw-i686"
-                },
-                {
-                    "type": "build",
-                    "name": "llvm-mingw-i686"
-                },
-                {
-                    "type": "package",
-                    "name": "llvm-mingw-i686-package"
-                }
-            ]
-        },
-        {
             "name": "llvm-mingw-x86_64-full",
-            "displayName": "LLVM-MinGW Win64 Pipeline",
-            "description": "Configure, build, and package for Windows 64-bit (no test — cross-compiled)",
+            "displayName": "LLVM-MinGW Windows x86-64 Pipeline",
+            "description": "Configure, build, and package Windows x86-64 version.dll on Linux",
             "steps": [
-                {
-                    "type": "configure",
-                    "name": "llvm-mingw-x86_64"
-                },
-                {
-                    "type": "build",
-                    "name": "llvm-mingw-x86_64"
-                },
-                {
-                    "type": "package",
-                    "name": "llvm-mingw-x86_64-package"
-                }
+                {"type": "configure", "name": "llvm-mingw-x86_64"},
+                {"type": "build", "name": "llvm-mingw-x86_64"},
+                {"type": "package", "name": "llvm-mingw-x86_64-package"}
             ]
         },
         {
-            "name": "llvm-mingw-aarch64-full",
-            "displayName": "LLVM-MinGW WinARM64 Pipeline",
-            "description": "Configure, build, and package for Windows ARM64 (no test — cross-compiled)",
+            "name": "msvc-full",
+            "displayName": "MSVC Windows x86-64 Pipeline",
+            "description": "Configure, build, and package Windows x86-64 version.dll on Windows",
             "steps": [
-                {
-                    "type": "configure",
-                    "name": "llvm-mingw-aarch64"
-                },
-                {
-                    "type": "build",
-                    "name": "llvm-mingw-aarch64"
-                },
-                {
-                    "type": "package",
-                    "name": "llvm-mingw-aarch64-package"
-                }
-            ]
-        },
-        {
-            "name": "clang-full",
-            "displayName": "Clang Complete Pipeline",
-            "description": "Configure, build, test, and package with Clang",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "clang"
-                },
-                {
-                    "type": "build",
-                    "name": "clang-release"
-                },
-                {
-                    "type": "test",
-                    "name": "clang-release"
-                },
-                {
-                    "type": "package",
-                    "name": "clang-package"
-                }
-            ]
-        },
-        {
-            "name": "gcc-full",
-            "displayName": "GCC Complete Pipeline",
-            "description": "Configure, build, test, and package with GCC",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "gcc"
-                },
-                {
-                    "type": "build",
-                    "name": "gcc-release"
-                },
-                {
-                    "type": "test",
-                    "name": "gcc-release"
-                },
-                {
-                    "type": "package",
-                    "name": "gcc-package"
-                }
+                {"type": "configure", "name": "msvc"},
+                {"type": "build", "name": "msvc-release"},
+                {"type": "package", "name": "msvc-package"}
             ]
         }
     ]
