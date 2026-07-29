@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
-"""Build/install version.dll and patch Wand/WeMod Electron app.asar.
-
-Python 3.11+; standard library only. Works on Windows and Linux/macOS hosts.
-ASAR implementation supports regular files and existing app.asar.unpacked files.
-"""
+"""Build/install version.dll and patch Wand/WeMod Electron app.asar."""
 from __future__ import annotations
 
 import argparse, json, os, re, shutil, struct, subprocess, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPORTS = {"GetFileVersionInfoA", "GetFileVersionInfoByHandle", "GetFileVersionInfoExA", "GetFileVersionInfoExW", "GetFileVersionInfoSizeA", "GetFileVersionInfoSizeExA", "GetFileVersionInfoSizeExW", "GetFileVersionInfoSizeW", "GetFileVersionInfoW", "VerFindFileA", "VerFindFileW", "VerInstallFileA", "VerInstallFileW", "VerLanguageNameA", "VerLanguageNameW", "VerQueryValueA", "VerQueryValueW"}
-
 PATCHES = {
  "activate-pro-account": (r'getUserAccount\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.fetch\(\{.*?\}\)\}', lambda m: f'getUserAccount(){{return this.#{m["s"]}.fetch({{endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}}).then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
  "activate-pro-language": (r'setAccountLanguage\((?P<p>[^)]*)\)\{\s*return\s+(?P<e>this\.#\w+\.post\("/v3/account/language",\{[^}]*\}\))\s*;?\s*\}', lambda m: f'setAccountLanguage({m["p"]}){{return ({m["e"]}).then(response=>{{response&&"object"==typeof response&&(response.subscription={{period:"yearly",state:"active"}});return response;}})}}'),
@@ -19,7 +13,6 @@ PATCHES = {
  "disable-updates": (r'registerHandler\("ACTION_CHECK_FOR_UPDATE".*?\)\)\)\)', 'registerHandler("ACTION_CHECK_FOR_UPDATE",(e=>expectUpdateFeedUrl(e,(e=>null)))'),
  "devtools-f12": (r'(?P<a>\w+)\.whenReady\(\)\.then\(', lambda m: f'{m["a"]}.on("browser-window-created",((_,w)=>{{try{{w.webContents.on("before-input-event",((_,i)=>{{if("F12"===i.key&&"keyDown"===i.type){{w.webContents.isDevToolsOpened()?w.webContents.closeDevTools():w.webContents.openDevTools({{mode:"detach"}})}}}}))}}catch(e){{}}}})),{m["a"]}.whenReady().then('),
 }
-
 OPTIONAL_PATCHES = {
  "activate-pro-brand": (r'setAccountWandBrandExperience\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.post\("/v3/account/brand_experience_wand"\)\}', lambda m: f'setAccountWandBrandExperience(){{return this.#{m["s"]}.post("/v3/account/brand_experience_wand").then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
 }
@@ -30,10 +23,8 @@ def read_asar(path: Path) -> tuple[dict, int]:
     with path.open("rb") as f:
         head = f.read(16)
         if len(head) < 16: raise ValueError("invalid ASAR header")
-        header_size = u32(head, 4)
-        json_size = u32(head, 12)
-        f.seek(16)
-        header = json.loads(f.read(json_size).decode("utf-8"))
+        header_size, json_size = u32(head, 4), u32(head, 12)
+        f.seek(16); header = json.loads(f.read(json_size).decode("utf-8"))
     return header, 8 + header_size
 
 def entries(node: dict, prefix=""):
@@ -59,31 +50,42 @@ def extract_asar(asar: Path, out: Path):
                 if src.exists(): shutil.copy2(src, dst)
                 continue
             f.seek(base + int(meta.get("offset", 0))); dst.write_bytes(f.read(int(meta.get("size", 0))))
+    return header
 
 def pickle(payload: bytes) -> bytes:
     body = struct.pack("<I", len(payload)) + payload
     body += b"\0" * ((4 - len(body) % 4) % 4)
     return struct.pack("<I", len(body)) + body
 
-def pack_asar(root: Path, out: Path):
-    files = sorted(p for p in root.rglob("*") if p.is_file())
-    tree = {"files": {}}; offset = 0
-    for p in files:
-        rel = p.relative_to(root).as_posix(); node = tree
-        for part in PurePosixPath(rel).parts[:-1]: node = node["files"].setdefault(part, {"files": {}})
-        size = p.stat().st_size; node["files"][p.name] = {"size": size, "offset": str(offset)}; offset += size
-    raw = json.dumps(tree, separators=(",", ":"), ensure_ascii=False).encode()
-    header = pickle(raw); size = pickle(struct.pack("<I", len(header)))
+def pack_asar(root: Path, out: Path, header: dict):
+    packed = []
+    offset = 0
+    for rel, meta in entries(header):
+        src = safe(root, rel)
+        if meta.get("unpacked"):
+            if not src.exists(): raise FileNotFoundError(f"missing unpacked ASAR file: {rel}")
+            meta["size"] = src.stat().st_size
+            meta.pop("offset", None)
+            continue
+        if "link" in meta: continue
+        if not src.is_file(): raise FileNotFoundError(f"missing ASAR file: {rel}")
+        size = src.stat().st_size
+        meta["size"], meta["offset"] = size, str(offset)
+        meta.pop("integrity", None)
+        packed.append(src); offset += size
+    raw = json.dumps(header, separators=(",", ":"), ensure_ascii=False).encode()
+    header_pickle = pickle(raw)
+    size_pickle = pickle(struct.pack("<I", len(header_pickle)))
     tmp = out.with_suffix(out.suffix + ".tmp")
     with tmp.open("wb") as f:
-        f.write(size); f.write(header)
-        for p in files: f.write(p.read_bytes())
+        f.write(size_pickle); f.write(header_pickle)
+        for src in packed:
+            with src.open("rb") as item: shutil.copyfileobj(item, f, 1024 * 1024)
     tmp.replace(out)
 
 def patch_bundles(root: Path):
     candidates = [p for p in root.iterdir() if p.is_file() and (p.name == "index.js" or (p.name.startswith("app-") and p.name.endswith(".bundle.js")))]
-    pending = dict(PATCHES)
-    optional = dict(OPTIONAL_PATCHES)
+    pending, optional = dict(PATCHES), dict(OPTIONAL_PATCHES)
     for path in candidates:
         text = path.read_text("utf-8"); changed = False
         for patches in (pending, optional):
@@ -94,13 +96,14 @@ def patch_bundles(root: Path):
                 text = re.sub(pattern, replacement, text, count=1, flags=re.S); changed = True; del patches[name]
                 print(f"patched {name}: {path.name}")
         if changed: path.write_text(text, "utf-8")
-    for name in optional:
-        print(f"skipped optional patch {name}: endpoint not present in this client")
+    for name in optional: print(f"skipped optional patch {name}: endpoint not present in this client")
     if pending: raise RuntimeError("unsupported client; missing patches: " + ", ".join(pending))
 
 def pe_x64(path: Path):
-    data = path.read_bytes(); off = u32(data, 0x3c)
-    if data[:2] != b"MZ" or data[off:off+4] != b"PE\0\0" or struct.unpack_from("<H", data, off+4)[0] != 0x8664: raise RuntimeError("version.dll is not PE x86-64")
+    data = path.read_bytes()
+    if len(data) < 0x40: raise RuntimeError("version.dll is truncated")
+    off = u32(data, 0x3c)
+    if off + 6 > len(data) or data[:2] != b"MZ" or data[off:off+4] != b"PE\0\0" or struct.unpack_from("<H", data, off+4)[0] != 0x8664: raise RuntimeError("version.dll is not PE x86-64")
 
 def find_dll(build: Path) -> Path:
     found = list(build.rglob("version.dll"))
@@ -109,7 +112,7 @@ def find_dll(build: Path) -> Path:
 
 def build_dll() -> Path:
     build = ROOT / "build" / "proxy"
-    args = ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_TESTING=OFF"]
+    args = ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
     if os.name != "nt": args += ["-DCMAKE_TOOLCHAIN_FILE=" + str(ROOT / "cmake/toolchains/llvm_mingw.cmake"), "-DCMAKE_SYSTEM_PROCESSOR=x86_64"]
     subprocess.run(args, check=True); subprocess.run(["cmake", "--build", str(build), "--config", "Release"], check=True)
     dll = find_dll(build); pe_x64(dll); return dll
@@ -125,9 +128,15 @@ def patch(install: Path, dll: Path | None):
     else: shutil.copy2(backup, asar)
     if target_dll.exists() and not dll_backup.exists(): shutil.copy2(target_dll, dll_backup)
     dll = dll or build_dll(); pe_x64(dll)
-    with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
-        work = Path(tmp); extract_asar(asar, work); patch_bundles(work); pack_asar(work, asar)
-    shutil.copy2(dll, target_dll); print(f"patched {install}")
+    try:
+        with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
+            work = Path(tmp); header = extract_asar(asar, work); patch_bundles(work); pack_asar(work, asar, header)
+        shutil.copy2(dll, target_dll); print(f"patched {install}")
+    except Exception:
+        shutil.copy2(backup, asar)
+        if dll_backup.exists(): shutil.copy2(dll_backup, target_dll)
+        elif target_dll.exists(): target_dll.unlink()
+        raise
 
 def restore(install: Path):
     asar, backup, dll, dll_backup = paths(install)
@@ -142,8 +151,7 @@ def main():
     for name in ("patch", "restore"):
         q = sub.add_parser(name); q.add_argument("--install-dir", type=Path, required=True)
         if name == "patch": q.add_argument("--version-dll", type=Path)
-    sub.add_parser("build-dll")
-    a = p.parse_args()
+    sub.add_parser("build-dll"); a = p.parse_args()
     if a.cmd == "build-dll": print(build_dll())
     elif a.cmd == "patch": patch(a.install_dir.resolve(), a.version_dll.resolve() if a.version_dll else None)
     else: restore(a.install_dir.resolve())
