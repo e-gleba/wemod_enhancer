@@ -14,11 +14,14 @@ EXPORTS = {"GetFileVersionInfoA", "GetFileVersionInfoByHandle", "GetFileVersionI
 
 PATCHES = {
  "activate-pro-account": (r'getUserAccount\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.fetch\(\{.*?\}\)\}', lambda m: f'getUserAccount(){{return this.#{m["s"]}.fetch({{endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}}).then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
- "activate-pro-brand": (r'setAccountWandBrandExperience\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.post\("/v3/account/brand_experience_wand"\)\}', lambda m: f'setAccountWandBrandExperience(){{return this.#{m["s"]}.post("/v3/account/brand_experience_wand").then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
  "activate-pro-language": (r'setAccountLanguage\((?P<p>[^)]*)\)\{\s*return\s+(?P<e>this\.#\w+\.post\("/v3/account/language",\{[^}]*\}\))\s*;?\s*\}', lambda m: f'setAccountLanguage({m["p"]}){{return ({m["e"]}).then(response=>{{response&&"object"==typeof response&&(response.subscription={{period:"yearly",state:"active"}});return response;}})}}'),
  "disable-native-pairing": (r'requestRemoteAuthCode\(\)\{return this\.#[\w$]+\.post\("/v3/auth/remote_code"\)\}', 'requestRemoteAuthCode(){return Promise.reject(new Error("wemod-enhancer: native mobile pairing disabled"))}'),
  "disable-updates": (r'registerHandler\("ACTION_CHECK_FOR_UPDATE".*?\)\)\)\)', 'registerHandler("ACTION_CHECK_FOR_UPDATE",(e=>expectUpdateFeedUrl(e,(e=>null)))'),
  "devtools-f12": (r'(?P<a>\w+)\.whenReady\(\)\.then\(', lambda m: f'{m["a"]}.on("browser-window-created",((_,w)=>{{try{{w.webContents.on("before-input-event",((_,i)=>{{if("F12"===i.key&&"keyDown"===i.type){{w.webContents.isDevToolsOpened()?w.webContents.closeDevTools():w.webContents.openDevTools({{mode:"detach"}})}}}}))}}catch(e){{}}}})),{m["a"]}.whenReady().then('),
+}
+
+OPTIONAL_PATCHES = {
+ "activate-pro-brand": (r'setAccountWandBrandExperience\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.post\("/v3/account/brand_experience_wand"\)\}', lambda m: f'setAccountWandBrandExperience(){{return this.#{m["s"]}.post("/v3/account/brand_experience_wand").then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
 }
 
 def u32(data: bytes, pos: int) -> int: return struct.unpack_from("<I", data, pos)[0]
@@ -80,15 +83,19 @@ def pack_asar(root: Path, out: Path):
 def patch_bundles(root: Path):
     candidates = [p for p in root.iterdir() if p.is_file() and (p.name == "index.js" or (p.name.startswith("app-") and p.name.endswith(".bundle.js")))]
     pending = dict(PATCHES)
+    optional = dict(OPTIONAL_PATCHES)
     for path in candidates:
         text = path.read_text("utf-8"); changed = False
-        for name, (pattern, replacement) in list(pending.items()):
-            matches = list(re.finditer(pattern, text, re.S))
-            if not matches: continue
-            if len(matches) != 1: raise RuntimeError(f"{name}: expected one match, got {len(matches)}")
-            text = re.sub(pattern, replacement, text, count=1, flags=re.S); changed = True; del pending[name]
-            print(f"patched {name}: {path.name}")
+        for patches in (pending, optional):
+            for name, (pattern, replacement) in list(patches.items()):
+                matches = list(re.finditer(pattern, text, re.S))
+                if not matches: continue
+                if len(matches) != 1: raise RuntimeError(f"{name}: expected one match, got {len(matches)}")
+                text = re.sub(pattern, replacement, text, count=1, flags=re.S); changed = True; del patches[name]
+                print(f"patched {name}: {path.name}")
         if changed: path.write_text(text, "utf-8")
+    for name in optional:
+        print(f"skipped optional patch {name}: endpoint not present in this client")
     if pending: raise RuntimeError("unsupported client; missing patches: " + ", ".join(pending))
 
 def pe_x64(path: Path):
