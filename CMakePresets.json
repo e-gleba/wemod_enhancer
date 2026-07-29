@@ -27,7 +27,7 @@
             "name": "msvc",
             "displayName": "Microsoft Visual C++ x86-64",
             "description": "Build version.dll natively on Windows with MSVC",
-            "generator": "Visual Studio 18 2026",
+            "generator": "Visual Studio 17 2022",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "architecture": {
                 "value": "x64",
@@ -63,15 +63,23 @@
             "name": "llvm-mingw-x86_64-package",
             "displayName": "LLVM-MinGW Windows x86-64 Package",
             "configurePreset": "llvm-mingw-x86_64",
-            "configurations": ["Release"],
-            "generators": ["TXZ"]
+            "configurations": [
+                "Release"
+            ],
+            "generators": [
+                "TXZ"
+            ]
         },
         {
             "name": "msvc-package",
             "displayName": "MSVC Windows x86-64 Package",
             "configurePreset": "msvc",
-            "configurations": ["Release"],
-            "generators": ["ZIP"]
+            "configurations": [
+                "Release"
+            ],
+            "generators": [
+                "ZIP"
+            ]
         }
     ],
     "workflowPresets": [
@@ -80,9 +88,18 @@
             "displayName": "LLVM-MinGW Windows x86-64 Pipeline",
             "description": "Configure, build, and package Windows x86-64 version.dll on Linux",
             "steps": [
-                {"type": "configure", "name": "llvm-mingw-x86_64"},
-                {"type": "build", "name": "llvm-mingw-x86_64"},
-                {"type": "package", "name": "llvm-mingw-x86_64-package"}
+                {
+                    "type": "configure",
+                    "name": "llvm-mingw-x86_64"
+                },
+                {
+                    "type": "build",
+                    "name": "llvm-mingw-x86_64"
+                },
+                {
+                    "type": "package",
+                    "name": "llvm-mingw-x86_64-package"
+                }
             ]
         },
         {
@@ -90,9 +107,18 @@
             "displayName": "MSVC Windows x86-64 Pipeline",
             "description": "Configure, build, and package Windows x86-64 version.dll on Windows",
             "steps": [
-                {"type": "configure", "name": "msvc"},
-                {"type": "build", "name": "msvc-release"},
-                {"type": "package", "name": "msvc-package"}
+                {
+                    "type": "configure",
+                    "name": "msvc"
+                },
+                {
+                    "type": "build",
+                    "name": "msvc-release"
+                },
+                {
+                    "type": "package",
+                    "name": "msvc-package"
+                }
             ]
         }
     ]
