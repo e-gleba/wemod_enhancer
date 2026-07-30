@@ -1,9 +1,11 @@
+/* NOVERSION tells both the MSVC SDK and MinGW-w64 headers to skip all
+   version function declarations.  We provide our own forwarders via
+   the VERSION_EXPORTS macro below, so the SDK prototypes are not needed.
+   Without this, MinGW-w64 declares Ver* with non-const params (LPSTR)
+   while the MSVC SDK uses const-correct params (LPCSTR) — our signatures
+   can only match one, causing "conflicting types" on the other. */
+#define NOVERSION
 #include <windows.h>
-
-/* Do not include <winver.h> here: on MSVC-ABI toolchains <windows.h> already
-   pulls in the SDK winver.h, whose const-correct Ver* prototypes the
-   signatures below must match exactly. MinGW-w64's winver.h declares them
-   non-const, so including it would reintroduce the conflict there. */
 
 extern BOOL disable_asar_integrity(void);
 static HMODULE original_version;
