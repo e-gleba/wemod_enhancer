@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-#include "proxy.hpp"
+#include <windows.h>
+
+[[nodiscard]] auto disable_asar_integrity() noexcept -> bool;
+[[nodiscard]] auto load_version_proxy() noexcept -> bool;
 
 BOOL WINAPI DllMain(HMODULE module, DWORD reason, LPVOID) noexcept {
     if (reason != DLL_PROCESS_ATTACH) {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-#include "proxy.hpp"
+#include <windows.h>
 
 #include <algorithm>
 #include <array>

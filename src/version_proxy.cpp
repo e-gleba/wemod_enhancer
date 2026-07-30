@@ -7,7 +7,7 @@
   #define _WINVER_H 1
 #endif
 
-#include "proxy.hpp"
+#include <windows.h>
 
 #include <gsl/gsl>
 

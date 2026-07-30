@@ -5,7 +5,6 @@ add_library(
     dll_main.cpp
     fuses.cpp
     version_proxy.cpp
-    proxy.hpp
     library.def)
 
 set_target_properties(
