@@ -60,23 +60,27 @@ else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-# Determine toolchain at configure time. MSVC and clang-cl use lib.exe
-# (produces .lib); llvm-mingw uses llvm-dlltool (produces .a). Only one
-# path is active per build.
+# Generate import library at configure time. This avoids custom
+# command/target complexity and ensures the library exists before
+# the build starts.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
    OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
 
     # MSVC / clang-cl: CMAKE_AR is lib.exe
-    # Note: VERBATIM quotes /MACHINE:X64 making lib.exe treat it as a
-    # filename. Build paths don't have spaces, so omit VERBATIM here.
-    add_custom_command(
-        OUTPUT "${_import_lib}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}"
+    execute_process(
         COMMAND "${CMAKE_AR}" /DEF:${_import_def} /MACHINE:${_lib_machine}
                 /OUT:${_import_lib}
-        DEPENDS "${_import_def}"
-        COMMENT "generating version_orig import library (lib.exe)")
+        RESULT_VARIABLE _lib_result
+        OUTPUT_QUIET
+        ERROR_QUIET)
+
+    if(NOT _lib_result EQUAL 0)
+        message(
+            WARNING
+                "Failed to generate version_orig.lib (exit code ${_lib_result}). "
+                "MSVC link.exe may fail to resolve forwarder symbols.")
+    endif()
 else()
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
 
@@ -88,16 +92,20 @@ else()
         PATH_SUFFIXES ../bin bin
         REQUIRED)
 
-    add_custom_command(
-        OUTPUT "${_import_lib}"
+    execute_process(
         COMMAND "${_dlltool_executable}" -d "${_import_def}"
                 -m "${_dlltool_machine}" -l "${_import_lib}"
-        DEPENDS "${_import_def}"
-        COMMENT "generating version_orig import library (dlltool)"
-        VERBATIM)
-endif()
+        RESULT_VARIABLE _dlltool_result
+        OUTPUT_QUIET
+        ERROR_QUIET)
 
-add_custom_target(version_orig_import_lib DEPENDS "${_import_lib}")
+    if(NOT _dlltool_result EQUAL 0)
+        message(
+            WARNING
+                "Failed to generate libversion_orig.a (exit code ${_dlltool_result}). "
+                "Linker may fail to resolve forwarder symbols.")
+    endif()
+endif()
 
 # ── Proxy target ────────────────────────────────────────────────────────────
 
@@ -107,8 +115,6 @@ add_library(
     fuses.cpp
     fuses.hpp
     library.def)
-
-add_dependencies(version version_orig_import_lib)
 
 target_compile_features(version PRIVATE cxx_std_23)
 target_compile_definitions(version PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
