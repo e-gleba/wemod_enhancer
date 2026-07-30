@@ -47,6 +47,11 @@ jobs:
                     - os: windows-2022 # Pin to windows-2022 for VS 2022
                       preset: msvc-full
                       artifact-name: windows-msvc
+                      install-deps: ''
+                    - os: windows-2022 # Pin to windows-2022 (windows-latest has queue issues)
+                      preset: clang-windows-amd64-full
+                      artifact-name: windows-clang-amd64
+                      install-deps: choco install ninja --yes
 
         steps:
             - name: checkout
@@ -58,6 +63,10 @@ jobs:
                   path: .cpm_cache
                   key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
                   restore-keys: cpm-${{ matrix.artifact-name }}-
+
+            - name: install build tools
+              if: matrix.install-deps != ''
+              run: ${{ matrix.install-deps }}
 
             - name: build
               run: cmake --workflow --preset ${{ matrix.preset }}
