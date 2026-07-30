@@ -10,10 +10,6 @@ BOOL WINAPI DllMain(HMODULE module, DWORD reason, LPVOID) noexcept {
     }
 
     DisableThreadLibraryCalls(module);
-    if (!load_version_proxy()) {
-        return FALSE;
-    }
-
     (void)disable_asar_integrity();
     return TRUE;
 }

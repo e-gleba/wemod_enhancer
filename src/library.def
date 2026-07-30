@@ -1,19 +1,19 @@
 LIBRARY "VERSION"
 EXPORTS
-GetFileVersionInfoA
-GetFileVersionInfoByHandle
-GetFileVersionInfoExA
-GetFileVersionInfoExW
-GetFileVersionInfoSizeA
-GetFileVersionInfoSizeExA
-GetFileVersionInfoSizeExW
-GetFileVersionInfoSizeW
-GetFileVersionInfoW
-VerFindFileA
-VerFindFileW
-VerInstallFileA
-VerInstallFileW
-VerLanguageNameA
-VerLanguageNameW
-VerQueryValueA
-VerQueryValueW
+    GetFileVersionInfoA=VERSION.GetFileVersionInfoA
+    GetFileVersionInfoByHandle=VERSION.GetFileVersionInfoByHandle
+    GetFileVersionInfoExA=VERSION.GetFileVersionInfoExA
+    GetFileVersionInfoExW=VERSION.GetFileVersionInfoExW
+    GetFileVersionInfoSizeA=VERSION.GetFileVersionInfoSizeA
+    GetFileVersionInfoSizeExA=VERSION.GetFileVersionInfoSizeExA
+    GetFileVersionInfoSizeExW=VERSION.GetFileVersionInfoSizeExW
+    GetFileVersionInfoSizeW=VERSION.GetFileVersionInfoSizeW
+    GetFileVersionInfoW=VERSION.GetFileVersionInfoW
+    VerFindFileA=VERSION.VerFindFileA
+    VerFindFileW=VERSION.VerFindFileW
+    VerInstallFileA=VERSION.VerInstallFileA
+    VerInstallFileW=VERSION.VerInstallFileW
+    VerLanguageNameA=VERSION.VerLanguageNameA
+    VerLanguageNameW=VERSION.VerLanguageNameW
+    VerQueryValueA=VERSION.VerQueryValueA
+    VerQueryValueW=VERSION.VerQueryValueW
