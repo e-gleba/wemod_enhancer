@@ -1,3 +1,4 @@
+#define NOVERSION
 #include <windows.h>
 #include <winver.h>
 
