@@ -6,9 +6,9 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ranges>
 #include <span>
 
@@ -39,10 +39,10 @@ static_assert(sizeof(fuse_wire_header) == sentinel_size + 2);
 
 class [[nodiscard]] page_guard final {
   public:
-    explicit page_guard(std::span<std::byte> bytes) noexcept : bytes{bytes} {
-        writable = VirtualProtect(bytes.data(), bytes.size(), PAGE_READWRITE,
-                                  &old_protection) != FALSE;
-    }
+    explicit page_guard(std::span<std::byte> bytes) noexcept
+        : bytes{bytes},
+          writable{VirtualProtect(bytes.data(), bytes.size(), PAGE_READWRITE,
+                                  &old_protection) != FALSE} {}
 
     ~page_guard() noexcept {
         if (writable) {
@@ -61,7 +61,7 @@ class [[nodiscard]] page_guard final {
   private:
     std::span<std::byte> bytes;
     DWORD old_protection{};
-    bool writable{};
+    bool writable;
 };
 
 [[nodiscard]] auto process_image() noexcept -> std::span<std::byte> {
@@ -92,13 +92,12 @@ class [[nodiscard]] page_guard final {
         return nullptr;
     }
 
-    auto searchable = image.subspan(offset);
-    auto match = std::ranges::search(searchable, sentinel);
+    auto match = std::ranges::search(image.subspan(offset), sentinel);
     if (match.empty()) {
         return nullptr;
     }
 
-    return std::bit_cast<fuse_wire_header *>(match.begin());
+    return reinterpret_cast<fuse_wire_header *>(std::to_address(match.begin()));
 }
 
 [[nodiscard]] auto fuse_at(fuse_wire_header &wire, std::size_t index) noexcept
