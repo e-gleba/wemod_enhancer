@@ -15,9 +15,7 @@ set_target_properties(
                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 target_compile_features(version PRIVATE cxx_std_23)
-
-CPMAddPackage("gh:gsl-lite/gsl-lite#0.42.0")
-target_link_libraries(version PRIVATE gsl::gsl-lite)
+target_link_libraries(version PRIVATE GSL)
 
 # MinGW-Clang needs static libgcc/libstdc++; MSVC-ABI Clang uses the
 # MSVC_RUNTIME_LIBRARY property above instead.

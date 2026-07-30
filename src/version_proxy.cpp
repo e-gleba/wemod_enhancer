@@ -9,7 +9,7 @@
 
 #include "proxy.hpp"
 
-#include <gsl/gsl-lite.hpp>
+#include <gsl/gsl>
 
 #include <array>
 #include <cstring>
