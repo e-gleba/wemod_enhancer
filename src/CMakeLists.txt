@@ -15,9 +15,9 @@ string(REGEX REPLACE "LIBRARY[ \t]+\"?version\"?" "LIBRARY version_orig"
 file(CONFIGURE OUTPUT "${forwarder_import_definition}"
      CONTENT "${forwarder_import_content}" @ONLY)
 
-set(forwarder_import_library
-    "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
 if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set(forwarder_import_library
+        "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
     add_custom_command(
         OUTPUT "${forwarder_import_library}"
         COMMAND
@@ -26,12 +26,25 @@ if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
         DEPENDS "${forwarder_definition}"
         COMMENT "Generating version_orig import library"
         VERBATIM)
-else()
+elseif(WIN32)
+    set(forwarder_import_library
+        "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
     add_custom_command(
         OUTPUT "${forwarder_import_library}"
         COMMAND
-            "${CMAKE_LINKER}" /lib /def:"${forwarder_import_definition}"
-            /machine:x64 /out:"${forwarder_import_library}"
+            "${CMAKE_LINKER}" /lib /def:${forwarder_import_definition}
+            /machine:x64 /out:${forwarder_import_library}
+        DEPENDS "${forwarder_definition}"
+        COMMENT "Generating version_orig import library"
+        VERBATIM)
+else()
+    set(forwarder_import_library
+        "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
+    add_custom_command(
+        OUTPUT "${forwarder_import_library}"
+        COMMAND
+            "${CMAKE_DLLTOOL}" -d "${forwarder_import_definition}"
+            -m i386:x86-64 -l "${forwarder_import_library}"
         DEPENDS "${forwarder_definition}"
         COMMENT "Generating version_orig import library"
         VERBATIM)
