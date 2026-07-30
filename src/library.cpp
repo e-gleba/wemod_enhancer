@@ -17,6 +17,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string_view>
 #include <utility>
 
 extern "C" BOOL disable_asar_integrity() noexcept;
@@ -106,7 +107,7 @@ auto load_original() noexcept -> bool {
     constexpr std::wstring_view suffix = L"\\version.dll";
 
     if (n == 0 || n >= path.size() ||
-        static_cast<size_t>(n) + suffix.size() >= path.size())
+        static_cast<std::size_t>(n) + suffix.size() >= path.size())
         return false;
 
     std::memcpy(path.data() + n, suffix.data(), suffix.size() * sizeof(WCHAR));
