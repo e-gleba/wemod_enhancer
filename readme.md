@@ -83,27 +83,35 @@ For detailed diagnostics, log locations, and cleanup, see [Linux launch and debu
 
 ## How it works
 
-```
-                    ┌──────────────────────────────────────────┐
-                    │           tools/wemod_enhancer.py          │
-                    │                                          │
-                    │  1. Backup app.asar → app.asar.backup     │
-                    │  2. Extract ASAR (pickle + SHA-256)       │
-                    │  3. Apply JavaScript patches (regex)      │
-                    │  4. Rebuild ASAR with fresh integrity      │
-                    │  5. Install version.dll proxy             │
-                    │  6. Verify PE x86-64 header               │
-                    └──────────────┬───────────────────────────┘
-                                   │
-                                   ▼
-                    ┌──────────────────────────────────────────┐
-                    │              src/version.dll              │
-                    │                                          │
-                    │  • Proxy forwards all version.dll exports │
-                    │  • Scans process memory for fuse sentinel│
-                    │  • Flips ASAR-integrity fuse to 'removed' │
-                    │  • Runs inside WeMod.exe (Win x86-64)     │
-                    └──────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph CLI["tools/wemod_enhancer.py"]
+        A["Backup app.asar → app.asar.backup"] --> B["Extract ASAR<br/>(pickle + SHA-256)"]
+        B --> C["Apply JavaScript patches<br/>(regex on minified bundles)"]
+        C --> D["Rebuild ASAR<br/>with fresh integrity hashes"]
+        D --> E["Install version.dll proxy"]
+        E --> F["Verify PE x86-64 header"]
+    end
+
+    subgraph DLL["src/version.dll — loaded in-process"]
+        G["Forward all version.dll exports"]
+        G --> H["Scan process memory<br/>for 32-byte fuse sentinel"]
+        H --> I["Flip ASAR-integrity fuse<br/>to 'removed' via VirtualProtect"]
+    end
+
+    F --> G
+
+    style CLI fill:#0d1117,stroke:#30363d,color:#e6edf3
+    style DLL fill:#0d1117,stroke:#f78166,color:#e6edf3
+    style A fill:#161b22,stroke:#30363d,color:#e6edf3
+    style B fill:#161b22,stroke:#30363d,color:#e6edf3
+    style C fill:#161b22,stroke:#30363d,color:#e6edf3
+    style D fill:#161b22,stroke:#30363d,color:#e6edf3
+    style E fill:#161b22,stroke:#f78166,color:#e6edf3
+    style F fill:#161b22,stroke:#30363d,color:#e6edf3
+    style G fill:#161b22,stroke:#f78166,color:#e6edf3
+    style H fill:#161b22,stroke:#30363d,color:#e6edf3
+    style I fill:#161b22,stroke:#f78166,color:#e6edf3
 ```
 
 The proxy DLL (`src/fuses.c`) walks the loaded module's memory for a 32-byte sentinel sequence, locates Electron's fuse wire structure, and flips the `RunAsNode`/integrity fuse from `enabled` to `removed` using `VirtualProtect` — all in-process, no external debugger required.
