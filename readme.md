@@ -1,82 +1,136 @@
+<div align="center">
+
+<img src="docs/logo.svg" alt="WeMod Enhancer" width="180">
+
 # WeMod Enhancer
 
-<p align="center">
-  <img src="docs/logo.svg" alt="WeMod Enhancer Logo" width="256">
-</p>
+**Cross-platform patcher and ASAR-fuse proxy for Wand/WeMod's Electron client**
 
-Build and patch tooling for Wand/WeMod's Windows x86-64 Electron client. The Python patcher runs on Windows or Linux; Linux cross-compiles `version.dll` with LLVM-MinGW and launches WeMod through Wine/Proton.
+A Python CLI that patches WeMod's Windows x86-64 Electron app in-place — disabling ASAR integrity, activating Pro features, killing auto-updates, blocking native mobile pairing, and enabling F12 DevTools. On Linux it cross-compiles the `version.dll` proxy with LLVM-MinGW and launches through Wine/Proton.
 
-## Requirements
+[![CI](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml/badge.svg)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](license.md)
+[![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake&logoColor=white)](https://cmake.org/)
+[![C++](https://img.shields.io/badge/C-23-00599C?logo=c&logoColor=white)](https://en.cppreference.com/)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20Steam%20Deck-121212?logo=steam&logoColor=white)](#linux-and-steam)
 
-- Python 3.11+
-- CMake 3.31+
-- Ninja
-- Windows: MSVC or LLVM-MinGW
-- Linux: LLVM-MinGW is downloaded by the included CMake toolchain
+</div>
 
-## Patch
+---
 
-Stop WeMod, then pass the directory containing `WeMod.exe` and `resources/app.asar`:
+## What it does
+
+| Patch | Effect |
+|:------|:-------|
+| **ASAR Integrity Bypass** | Flips Electron's `RunAsNode` / integrity fuse to `removed` via an in-process `version.dll` proxy — no more modified-ASAR rejection |
+| **Pro Account Activation** | Intercepts `/v3/account` responses and injects `subscription: { period: "yearly", state: "active" }` |
+| **Pro Language Activation** | Same Pro injection on the language endpoint |
+| **Disable Updates** | Replaces `ACTION_CHECK_FOR_UPDATE` handler with a no-op — WeMod stops checking for client updates |
+| **Disable Native Pairing** | `requestRemoteAuthCode()` returns `Promise.reject` — blocks mobile app pairing requests |
+| **DevTools F12** | Hooks `browser-window-created` to toggle DevTools on F12 keydown in any WeMod window |
+
+> **Note** — Pro brand experience (`setAccountWandBrandExperience`) is an optional patch applied only when the endpoint exists in the current client build.
+
+## Quick Start
 
 ```sh
+# 1. Stop WeMod, then patch the install directory
 python3 tools/wemod_enhancer.py patch --install-dir "/path/to/wemod_bin"
-```
 
-Restore original files:
-
-```sh
+# 2. Restore originals at any time
 python3 tools/wemod_enhancer.py restore --install-dir "/path/to/wemod_bin"
-```
 
-Build only the proxy DLL:
-
-```sh
+# 3. Build only the proxy DLL (no patching)
 python3 tools/wemod_enhancer.py build-dll
 ```
 
-Backups are created before modification. Client updates can change minified JavaScript; unsupported patch targets fail closed.
+Backups are created automatically before modification. If a client update changes minified JavaScript and a required patch no longer matches, the tool **fails closed** — no partial patches are applied.
+
+## Requirements
+
+| Tool | Version | Notes |
+|:-----|:--------|:------|
+| **Python** | 3.11+ | Runs the patcher CLI |
+| **CMake** | 3.31+ | Builds the proxy DLL |
+| **Ninja** | any | Build system generator |
+| **Windows** | — | MSVC or LLVM-MinGW |
+| **Linux** | — | LLVM-MinGW is auto-downloaded by the CMake toolchain |
 
 ## Linux and Steam
 
-Install the maintained Linux launcher:
+For Steam Deck / Linux gaming, use the maintained [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher):
 
 ```sh
+# Install the launcher
 git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
 chmod +x "$HOME/wemod-launcher/wemod"
-```
 
-Follow its setup, run the target game once, and select a compatible Proton or GE-Proton version. WeMod is normally stored at:
-
-```text
-$HOME/wemod-launcher/wemod_data/wemod_bin
-```
-
-Patch it:
-
-```sh
+# Patch WeMod
 python3 tools/wemod_enhancer.py patch \
   --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
-Set the Steam game's launch options to:
+Set your Steam game launch options to:
 
 ```sh
 WINEDLLOVERRIDES="version=n,b" "$HOME/wemod-launcher/wemod" %command%
 ```
 
-The override is required under Wine/Proton: `n,b` loads the native proxy beside `WeMod.exe` first and falls back to Wine's builtin `version.dll`. Without it, Wine can load only its builtin DLL and Electron will reject the modified ASAR.
+> **Why `version=n,b`?** Wine can satisfy `version.dll` with its builtin implementation even when the proxy exists beside `WeMod.exe`. The `n,b` override forces native-first loading with builtin fallback — without it, Wine loads only its builtin DLL and Electron rejects the modified ASAR.
 
-Detailed diagnostics, log locations, cleanup, and implementation history: [Linux launch and debugging](docs/linux.md)
+For detailed diagnostics, log locations, and cleanup, see [Linux launch and debugging](docs/linux.md).
+
+## How it works
+
+```
+                    ┌──────────────────────────────────────────┐
+                    │           tools/wemod_enhancer.py          │
+                    │                                          │
+                    │  1. Backup app.asar → app.asar.backup     │
+                    │  2. Extract ASAR (pickle + SHA-256)       │
+                    │  3. Apply JavaScript patches (regex)      │
+                    │  4. Rebuild ASAR with fresh integrity      │
+                    │  5. Install version.dll proxy             │
+                    │  6. Verify PE x86-64 header               │
+                    └──────────────┬───────────────────────────┘
+                                   │
+                                   ▼
+                    ┌──────────────────────────────────────────┐
+                    │              src/version.dll              │
+                    │                                          │
+                    │  • Proxy forwards all version.dll exports │
+                    │  • Scans process memory for fuse sentinel│
+                    │  • Flips ASAR-integrity fuse to 'removed' │
+                    │  • Runs inside WeMod.exe (Win x86-64)     │
+                    └──────────────────────────────────────────┘
+```
+
+The proxy DLL (`src/fuses.c`) walks the loaded module's memory for a 32-byte sentinel sequence, locates Electron's fuse wire structure, and flips the `RunAsNode`/integrity fuse from `enabled` to `removed` using `VirtualProtect` — all in-process, no external debugger required.
 
 ## Development
 
-The project originated as a focused port of the native ASAR-fuse proxy and applicable JavaScript patches from Wand-Enhancer. Development proceeded by:
+The project originated as a focused port of the native ASAR-fuse proxy and JavaScript patches from [Wand-Enhancer](https://github.com/e-gleba/wemod_enhancer). Development proceeded by:
 
-1. replacing the generic C++ template application with a Windows x86-64 proxy DLL;
-2. adding Linux-to-Windows LLVM-MinGW and native Windows MSVC builds;
-3. porting backup, patch, restore, and ASAR handling to one standard-library Python CLI;
-4. validating behavior against the original AsarSharp pickle and SHA-256 integrity implementation;
-5. diagnosing Proton startup with `PROTON_LOG`, `WINEDEBUG`, and DLL-load traces;
-6. documenting Wine's required native-first `version.dll` override.
+1. Replacing the generic C++ template with a Windows x86-64 proxy DLL
+2. Adding Linux-to-Windows LLVM-MinGW and native Windows MSVC builds
+3. Porting backup, patch, restore, and ASAR handling to one standard-library Python CLI
+4. Validating behavior against the original AsarSharp pickle and SHA-256 integrity implementation
+5. Diagnosing Proton startup with `PROTON_LOG`, `WINEDEBUG`, and DLL-load traces
+6. Documenting Wine's required native-first `version.dll` override
 
 The CMake and CI scope is intentionally limited to Windows x86-64. Linux is a host and runtime environment, not a native DLL target.
+
+### Code Quality
+
+```sh
+cmake --build build/gcc --target format   # clang-format + cmake-format
+cmake --build build/gcc --target tidy     # clang-tidy
+cmake --build build/gcc --target cpplint  # cppcheck/cpplint
+```
+
+Pre-commit hooks enforce formatting and linting. Run `pre-commit install` once after cloning.
+
+## License
+
+[MIT](license.md) — © 2026 Evgeniy Gleba
