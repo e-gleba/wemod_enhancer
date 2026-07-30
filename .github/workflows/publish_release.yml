@@ -25,7 +25,7 @@ env:
 
 jobs:
   # ── LLVM-MinGW cross-compile (Linux → Windows) ─────────────────────────────
-  llvm_mingw_x86_64:
+  windows_llvm_mingw_amd64:
     name: windows-llvm-mingw-amd64
     runs-on: ubuntu-latest
     permissions:
@@ -70,7 +70,7 @@ jobs:
           if-no-files-found: error
 
   # ── Clang Windows AMD64 (MSVC ABI) ─────────────────────────────────────────
-  clang_windows_amd64:
+  windows_clang_amd64:
     name: windows-clang-amd64
     runs-on: windows-2022
     permissions:
@@ -113,7 +113,7 @@ jobs:
           if-no-files-found: error
 
   # ── MSVC Windows AMD64 ─────────────────────────────────────────────────────
-  msvc_windows_amd64:
+  windows_msvc_amd64:
     name: windows-msvc-amd64
     runs-on: windows-2022
     permissions:
@@ -148,7 +148,7 @@ jobs:
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [llvm_mingw_x86_64, clang_windows_amd64, msvc_windows_amd64]
+    needs: [windows_llvm_mingw_amd64, windows_clang_amd64, windows_msvc_amd64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
