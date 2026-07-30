@@ -5,6 +5,7 @@ add_library(
     dll_main.cpp
     fuses.cpp
     version_proxy.cpp
+    proxy.hpp
     library.def)
 
 set_target_properties(
@@ -14,6 +15,9 @@ set_target_properties(
                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 target_compile_features(version PRIVATE cxx_std_23)
+target_include_directories(
+    version
+    PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 target_link_libraries(version PRIVATE GSL)
 
 # MinGW-Clang needs static libgcc/libstdc++; MSVC-ABI Clang uses the
