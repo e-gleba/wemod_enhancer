@@ -66,18 +66,20 @@ endif()
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
    OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
-    
+
     # MSVC / clang-cl: CMAKE_AR is lib.exe
+    # Note: VERBATIM quotes /MACHINE:X64 making lib.exe treat it as a
+    # filename. Build paths don't have spaces, so omit VERBATIM here.
     add_custom_command(
         OUTPUT "${_import_lib}"
-        COMMAND "${CMAKE_AR}" /DEF:"${_import_def}" /MACHINE:${_lib_machine}
-                /OUT:"${_import_lib}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND "${CMAKE_AR}" /DEF:${_import_def} /MACHINE:${_lib_machine}
+                /OUT:${_import_lib}
         DEPENDS "${_import_def}"
-        COMMENT "generating version_orig import library (lib.exe)"
-        VERBATIM)
+        COMMENT "generating version_orig import library (lib.exe)")
 else()
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
-    
+
     # llvm-mingw: find llvm-dlltool in the toolchain
     find_program(
         _dlltool_executable
