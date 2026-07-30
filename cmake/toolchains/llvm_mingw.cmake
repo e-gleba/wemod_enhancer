@@ -152,6 +152,9 @@ set(CMAKE_RANLIB
 set(CMAKE_LINKER
     "${llvm_mingw_install_dir}/bin/ld.lld"
     CACHE FILEPATH "" FORCE)
+set(CMAKE_DLLTOOL
+    "${llvm_mingw_install_dir}/bin/llvm-dlltool"
+    CACHE FILEPATH "" FORCE)
 
 # ── sysroot ───────────────────────────────────────────────────────────────────
 # CMAKE_SYSROOT must NOT go into the cache. If cached, it survives preset
