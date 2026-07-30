@@ -1,4 +1,4 @@
-LIBRARY "version"
+LIBRARY version
 EXPORTS
     GetFileVersionInfoA=version_orig.GetFileVersionInfoA
     GetFileVersionInfoByHandle=version_orig.GetFileVersionInfoByHandle
