@@ -58,7 +58,10 @@ class [[nodiscard]] page_guard final {
         ok_ = VirtualProtect(addr, size, PAGE_READWRITE, &old_);
     }
     ~page_guard() noexcept {
-        if (ok_) { DWORD tmp; VirtualProtect(addr_, size_, old_, &tmp); }
+        if (ok_) {
+            DWORD tmp{};
+            VirtualProtect(addr_, size_, old_, &tmp);
+        }
     }
     page_guard(const page_guard &) = delete;
     auto operator=(const page_guard &) -> page_guard & = delete;
@@ -76,26 +79,36 @@ class [[nodiscard]] page_guard final {
 // sentinel using std::ranges::search — one algorithm call.
 auto find_wire(int offset) noexcept -> fuse_wire * {
     auto *base = static_cast<char *>(GetModuleHandleA(nullptr));
-    if (!base) return nullptr;
+    if (!base) {
+        return nullptr;
+    }
 
     auto *dos = reinterpret_cast<IMAGE_DOS_HEADER *>(base);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return nullptr;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
+        return nullptr;
+    }
 
     auto *nt = reinterpret_cast<IMAGE_NT_HEADERS *>(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE) return nullptr;
+    if (nt->Signature != IMAGE_NT_SIGNATURE) {
+        return nullptr;
+    }
 
     auto start = align8(reinterpret_cast<std::uintptr_t>(base), 1) + offset;
     auto end = align8(reinterpret_cast<std::uintptr_t>(base) +
                           nt->OptionalHeader.SizeOfImage - sentinel_length,
                       -1) - offset;
-    if (start >= end) return nullptr;
+    if (start >= end) {
+        return nullptr;
+    }
 
     auto count = static_cast<std::size_t>(end - start) / sizeof(std::uint64_t);
     auto haystack = std::span{reinterpret_cast<const std::uint64_t *>(start),
                                count};
 
     auto it = std::ranges::search(haystack, sentinel);
-    if (it.begin() == haystack.end()) return nullptr;
+    if (it.begin() == haystack.end()) {
+        return nullptr;
+    }
     return reinterpret_cast<fuse_wire *>(
         const_cast<std::uint64_t *>(it.begin().operator->()));
 }
@@ -114,13 +127,19 @@ extern "C" BOOL disable_asar_integrity() noexcept {
 #else
     auto *wire = static_cast<fuse_wire *>(nullptr);
 #endif
-    if (!wire || wire->version != 1 || wire->wire_length < 5) return FALSE;
+    if (!wire || wire->version != 1 || wire->wire_length < 5) {
+        return FALSE;
+    }
 
     auto *fuse = &wire->fuses[fuse_integrity];
-    if (*fuse == fuse_removed) return TRUE;
+    if (*fuse == fuse_removed) {
+        return TRUE;
+    }
 
     page_guard guard{fuse, 1};
-    if (!guard) return FALSE;
+    if (!guard) {
+        return FALSE;
+    }
 
     *fuse = fuse_removed;
     return TRUE;
