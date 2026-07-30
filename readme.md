@@ -19,6 +19,34 @@ A Python CLI that patches WeMod's Windows x86-64 Electron app in-place — disab
 
 ---
 
+## Why not Wand-Enhancer?
+
+The original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) is a 13K-star C#/.NET WPF application. It works — but it's a Windows-only GUI that requires .NET Framework 4.8, NuGet packages, Node.js, pnpm, Visual Studio 2022, and a GitHub Actions fork just to build. No prebuilt binaries. No Linux. No Steam Deck.
+
+WeMod Enhancer is a ground-up rewrite that does the same core job with zero runtime dependencies and full cross-platform support:
+
+| | **WeMod Enhancer** | **Wand-Enhancer** |
+|:--|:-------------------|:-------------------|
+| **Language** | C + Python (stdlib only) | C# / .NET / WPF |
+| **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
+| **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
+| **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
+| **Platform** | Windows, Linux, Steam Deck | Windows only |
+| **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
+| **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
+| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
+| **Pro activation** | `/v3/account` response injection | Same |
+| **DevTools** | F12 hotkey hook | Not available |
+| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` no-op | Not available |
+| **Disable mobile pairing** | `requestRemoteAuthCode()` rejection | Not available |
+| **Remote web panel** | Not included | Built-in LAN HTTP/WebSocket server |
+| **Custom script injection** | Not included | Bundled `.js` injection at patch time |
+| **Fail-safe** | Fails closed on mismatched patches — no partial state | — |
+| **Backup & restore** | Automatic, one-command restore | — |
+| **License** | MIT | Apache-2.0 |
+
+> WeMod Enhancer focuses on the core patching pipeline and does it with the smallest possible footprint. If you need the Remote Web Panel or custom script injection, Wand-Enhancer remains a solid choice — both projects can coexist.
+
 ## What it does
 
 | Patch | Effect |
@@ -93,7 +121,7 @@ The Python CLI backs up `app.asar`, extracts it, applies JavaScript patches (Pro
 
 ## Development
 
-The project originated as a focused port of the native ASAR-fuse proxy and JavaScript patches from [Wand-Enhancer](https://github.com/e-gleba/wemod_enhancer). Development proceeded by:
+The project originated as a focused port of the native ASAR-fuse proxy and JavaScript patches from [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer). Development proceeded by:
 
 1. Replacing the generic C++ template with a Windows x86-64 proxy DLL
 2. Adding Linux-to-Windows LLVM-MinGW and native Windows MSVC builds
