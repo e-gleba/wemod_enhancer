@@ -1,14 +1,29 @@
-/* NOVERSION tells both the MSVC SDK and MinGW-w64 headers to skip all
-   version function declarations.  We provide our own forwarders via
-   the VERSION_EXPORTS macro below, so the SDK prototypes are not needed.
-   Without this, MinGW-w64 declares Ver* with non-const params (LPSTR)
-   while the MSVC SDK uses const-correct params (LPCSTR) — our signatures
-   can only match one, causing "conflicting types" on the other. */
+/* NOVERSION suppresses version function declarations in the MSVC SDK.
+   MinGW-w64's winver.h does NOT honour NOVERSION, so we must also
+   prevent winver.h from being included when building with MinGW.
+   We provide our own forwarders via VERSION_EXPORTS below. */
 #define NOVERSION
+#ifdef __MINGW32__
+  /* MinGW-w64's winver.h ignores NOVERSION and declares Ver* with
+     non-const params (LPSTR).  Guard it out so our prototypes win. */
+  #define VER_H 1
+  #define _WINVER_H 1
+#endif
 #include <windows.h>
 
 extern BOOL disable_asar_integrity(void);
 static HMODULE original_version;
+
+/* MinGW-w64 declares Ver* params as non-const (LPSTR/LPWSTR).
+   The MSVC SDK declares them const-correct (LPCSTR/LPCWSTR).
+   Use the matching type for each toolchain. */
+#ifdef __MINGW32__
+  #define V_STR_A  LPSTR
+  #define V_STR_W  LPWSTR
+#else
+  #define V_STR_A  LPCSTR
+  #define V_STR_W  LPCWSTR
+#endif
 
 #define VERSION_EXPORTS(X) \
  X(GetFileVersionInfoA,BOOL,FALSE,(LPCSTR a,DWORD b,DWORD c,LPVOID d),(a,b,c,d)) \
@@ -19,10 +34,10 @@ static HMODULE original_version;
  X(GetFileVersionInfoSizeExW,DWORD,0,(DWORD a,LPCWSTR b,LPDWORD c),(a,b,c)) \
  X(GetFileVersionInfoSizeW,DWORD,0,(LPCWSTR a,LPDWORD b),(a,b)) \
  X(GetFileVersionInfoW,BOOL,FALSE,(LPCWSTR a,DWORD b,DWORD c,LPVOID d),(a,b,c,d)) \
- X(VerFindFileA,DWORD,0,(DWORD a,LPCSTR b,LPCSTR c,LPCSTR d,LPSTR e,PUINT f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
- X(VerFindFileW,DWORD,0,(DWORD a,LPCWSTR b,LPCWSTR c,LPCWSTR d,LPWSTR e,PUINT f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
- X(VerInstallFileA,DWORD,0,(DWORD a,LPCSTR b,LPCSTR c,LPCSTR d,LPCSTR e,LPCSTR f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
- X(VerInstallFileW,DWORD,0,(DWORD a,LPCWSTR b,LPCWSTR c,LPCWSTR d,LPCWSTR e,LPCWSTR f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerFindFileA,DWORD,0,(DWORD a,V_STR_A b,V_STR_A c,V_STR_A d,LPSTR e,PUINT f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerFindFileW,DWORD,0,(DWORD a,V_STR_W b,V_STR_W c,V_STR_W d,LPWSTR e,PUINT f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerInstallFileA,DWORD,0,(DWORD a,V_STR_A b,V_STR_A c,V_STR_A d,V_STR_A e,V_STR_A f,LPSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
+ X(VerInstallFileW,DWORD,0,(DWORD a,V_STR_W b,V_STR_W c,V_STR_W d,V_STR_W e,V_STR_W f,LPWSTR g,PUINT h),(a,b,c,d,e,f,g,h)) \
  X(VerLanguageNameA,DWORD,0,(DWORD a,LPSTR b,DWORD c),(a,b,c)) \
  X(VerLanguageNameW,DWORD,0,(DWORD a,LPWSTR b,DWORD c),(a,b,c)) \
  X(VerQueryValueA,BOOL,FALSE,(LPCVOID a,LPCSTR b,LPVOID *c,PUINT d),(a,b,c,d)) \
