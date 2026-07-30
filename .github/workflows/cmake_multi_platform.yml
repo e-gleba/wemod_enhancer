@@ -51,11 +51,19 @@ jobs:
                     - os: windows-2022 # Pin to windows-2022 (windows-latest has queue issues)
                       preset: clang-windows-amd64-full
                       artifact-name: windows-clang-amd64
-                      install-deps: choco install ninja --yes
+                      install-deps: |-
+                          choco install ninja --yes
+                          pip install "cmake>=3.31"
 
         steps:
             - name: checkout
               uses: actions/checkout@v7
+
+            - name: setup python
+              if: matrix.install-deps != ''
+              uses: actions/setup-python@v7
+              with:
+                  python-version: "3.13"
 
             - name: cache cpm sources
               uses: actions/cache@v6
