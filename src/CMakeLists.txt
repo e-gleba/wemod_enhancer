@@ -8,8 +8,12 @@ set_target_properties(
 
 target_compile_features(version PRIVATE c_std_11)
 
-target_link_options(version PRIVATE
-                    "$<$<LINK_LANG_AND_ID:C,GNU,Clang>:-static>")
+# MinGW-Clang needs -static to link static libgcc; MSVC-ABI Clang uses
+# MSVC_RUNTIME_LIBRARY (above) for static CRT and does not understand -static
+# the same way through lld-link.
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_C_COMPILER_TARGET MATCHES "msvc")
+    target_link_options(version PRIVATE -static)
+endif()
 
 include(GNUInstallDirs)
 install(
