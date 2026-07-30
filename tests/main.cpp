@@ -8,10 +8,14 @@
 
 int main(int argc, char* argv[], [[maybe_unused]] char* envp[])
 {
-    doctest::Context ctx{ argc, argv };
-    ctx.setOption("duration", true);
+    try {
+        doctest::Context ctx{ argc, argv };
+        ctx.setOption("duration", true);
 
-    return ctx.run();
+        return ctx.run();
+    } catch (...) {
+        return 1;
+    }
 }
 
 namespace egleba::doctest {

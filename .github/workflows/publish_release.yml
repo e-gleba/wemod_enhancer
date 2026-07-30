@@ -1,0 +1,155 @@
+name: publish_release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: true
+        type: string
+      previous_tag:
+        description: 'Previous tag for release notes diff (leave empty for first release)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
+
+jobs:
+  llvm_mingw_x86_64:
+    name: LLVM-MinGW x86_64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup_python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: install_dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          pip install "cmake>=3.31"
+
+      - name: build_and_package
+        run: cmake --workflow --preset llvm-mingw-x86_64-full
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wemod_enhancer-llvm-mingw-x86_64
+          path: build/llvm-mingw-x86_64/*.tar.xz
+          if-no-files-found: error
+
+  clang_windows_amd64:
+    name: Clang Windows AMD64
+    runs-on: windows-2022
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup_python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: install_dependencies
+        run: |
+          choco install ninja --yes
+          pip install "cmake>=3.31"
+
+      - name: build_and_package
+        run: cmake --workflow --preset clang-windows-amd64-full
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wemod_enhancer-clang-windows-amd64
+          path: build/clang-windows-amd64/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: [llvm_mingw_x86_64, clang_windows_amd64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: configure_git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: create_and_push_tag
+        run: |
+          git tag -a ${{ inputs.version }} -m "release ${{ inputs.version }}"
+          git push origin ${{ inputs.version }}
+
+      - name: download_llvm_mingw_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: wemod_enhancer-llvm-mingw-x86_64
+          path: artifacts/
+
+      - name: download_clang_windows_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: wemod_enhancer-clang-windows-amd64
+          path: artifacts/
+
+      - name: generate_release_notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=(-f tag_name="${{ inputs.version }}" -f target_commitish="main")
+          if [ -n "${{ inputs.previous_tag }}" ]; then
+            args+=(-f previous_tag_name="${{ inputs.previous_tag }}")
+          fi
+          gh api repos/${{ github.repository }}/releases/generate-notes \
+            "${args[@]}" --jq '.body' > release_notes.md
+          echo "notes_file=release_notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: create_github_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create \
+            "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
+            --notes-file release_notes.md \
+            artifacts/*

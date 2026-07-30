@@ -19,6 +19,13 @@ target_compile_definitions(
             DOCTEST_CONFIG_ASSERTS_RETURN_VALUES
             DOCTEST_CONFIG_USE_STD_HEADERS)
 
+# The test sources do not use C++20 modules, but CMake 3.28+ still
+# generates .modmap response files when CXX_SCAN_FOR_MODULES is on.
+# With Ninja Multi-Config, clang-tidy co-compilation tries to read
+# .modmap files for all configurations — only the active one exists.
+# Disabling module scanning avoids the spurious .modmap errors.
+set_target_properties(tests PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+
 # doctest_discover_tests runs the built executable with --list-
 # test-cases to register each test case individually with CTest.
 # This only works on native builds where the host can execute the
