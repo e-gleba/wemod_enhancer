@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <cstring>
 #include <string_view>
-#include <utility>
 
 extern "C" BOOL disable_asar_integrity() noexcept;
 
@@ -39,7 +38,8 @@ gsl::owner<HMODULE> original_version = nullptr;
 // ── forwarded functions ──────────────────────────────────────────────
 // Each entry declares the function signature, the fallback return
 // value, and the parameter names. The forwarding stubs are generated
-// at the bottom via a macro expansion over this list.
+// via macro expansion over this list — one source of truth for
+// typedefs, stubs, and load calls.
 
 #define VERSION_EXPORTS(X)                                                       \
     X(GetFileVersionInfoA,        BOOL,  FALSE,                                  \
@@ -84,7 +84,7 @@ gsl::owner<HMODULE> original_version = nullptr;
 #define DECLARE(name, ret, fallback, params, args)                              \
     using name##_fn = ret(WINAPI *) params;                                     \
     static name##_fn p_##name = nullptr;                                        \
-    ret WINAPI name params noexcept {                                           \
+    extern "C" ret WINAPI name params noexcept {                               \
         if (!p_##name) {                                                        \
             SetLastError(ERROR_PROC_NOT_FOUND);                                  \
             return fallback;                                                    \
@@ -94,7 +94,7 @@ gsl::owner<HMODULE> original_version = nullptr;
 
 VERSION_EXPORTS(DECLARE)
 
-BOOL WINAPI GetFileVersionInfoByHandle() {
+extern "C" BOOL WINAPI GetFileVersionInfoByHandle() {
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     return FALSE;
 }
@@ -103,7 +103,8 @@ BOOL WINAPI GetFileVersionInfoByHandle() {
 
 auto load_original() noexcept -> bool {
     std::array<WCHAR, MAX_PATH> path{};
-    const UINT n = GetSystemDirectoryW(path.data(), static_cast<UINT>(path.size()));
+    const UINT n = GetSystemDirectoryW(path.data(),
+                                       static_cast<UINT>(path.size()));
     constexpr std::wstring_view suffix = L"\\version.dll";
 
     if (n == 0 || n >= path.size() ||

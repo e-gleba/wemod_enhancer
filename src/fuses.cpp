@@ -3,7 +3,6 @@
 // 32-byte sentinel, locates Electron's fuse wire, and flips the
 // integrity fuse to "removed" via VirtualProtect.
 
-#include <gsl/gsl>
 #include <windows.h>
 
 #include <algorithm>
@@ -49,32 +48,32 @@ constexpr auto align8(std::uintptr_t p, int m) noexcept -> std::uintptr_t {
            static_cast<std::uintptr_t>(m) * 8u;
 }
 
-// RAII guard that makes a memory page writable, then restores the
-// original protection on destruction. Eliminates the manual
-// VirtualProtect / restore pair.
-class writable_guard {
+// RAII guard: makes a memory page writable on construction,
+// restores the original protection on destruction.
+class [[nodiscard]] page_guard final {
   public:
-    writable_guard(void *addr, std::size_t size) noexcept
+    page_guard() = default;
+    explicit page_guard(void *addr, std::size_t size) noexcept
         : addr_{addr}, size_{size} {
         ok_ = VirtualProtect(addr, size, PAGE_READWRITE, &old_);
     }
-    ~writable_guard() noexcept {
+    ~page_guard() noexcept {
         if (ok_) { DWORD tmp; VirtualProtect(addr_, size_, old_, &tmp); }
     }
-    writable_guard(const writable_guard &) = delete;
-    auto operator=(const writable_guard &) -> writable_guard & = delete;
+    page_guard(const page_guard &) = delete;
+    auto operator=(const page_guard &) -> page_guard & = delete;
     explicit operator bool() const noexcept { return ok_; }
 
   private:
-    void *addr_;
-    std::size_t size_;
+    void *addr_{};
+    std::size_t size_{};
     DWORD old_{};
     bool ok_{false};
 };
 
 #if defined(_WIN64)
-// Walk the module image as a span of uint64_t and find the sentinel
-// using std::views::slide + std::ranges::equal.
+// View the module image as a span of uint64_t and locate the
+// sentinel using std::ranges::search — one algorithm call.
 auto find_wire(int offset) noexcept -> fuse_wire * {
     auto *base = static_cast<char *>(GetModuleHandleA(nullptr));
     if (!base) return nullptr;
@@ -89,22 +88,16 @@ auto find_wire(int offset) noexcept -> fuse_wire * {
     auto end = align8(reinterpret_cast<std::uintptr_t>(base) +
                           nt->OptionalHeader.SizeOfImage - sentinel_length,
                       -1) - offset;
-
     if (start >= end) return nullptr;
 
     auto count = static_cast<std::size_t>(end - start) / sizeof(std::uint64_t);
     auto haystack = std::span{reinterpret_cast<const std::uint64_t *>(start),
                                count};
 
-    // Slide 4-element windows across the image, find the sentinel.
-    auto windows = haystack | std::views::slide(4);
-    auto it = std::ranges::find_if(windows, [](auto &&w) {
-        return std::ranges::equal(w, sentinel);
-    });
-
-    if (it == windows.end()) return nullptr;
+    auto it = std::ranges::search(haystack, sentinel);
+    if (it.begin() == haystack.end()) return nullptr;
     return reinterpret_cast<fuse_wire *>(
-        const_cast<std::uint64_t *>(&(*it)[0]));
+        const_cast<std::uint64_t *>(it.begin().operator->()));
 }
 #endif
 
@@ -112,8 +105,12 @@ auto find_wire(int offset) noexcept -> fuse_wire * {
 
 extern "C" BOOL disable_asar_integrity() noexcept {
 #if defined(_WIN64)
-    auto *wire = find_wire(0);
-    if (!wire) wire = find_wire(4);
+    // Try both alignment offsets; the first match wins.
+    constexpr std::array offsets{0, 4};
+    auto found = std::ranges::find_if(offsets, [&](int off) {
+        return find_wire(off) != nullptr;
+    });
+    auto *wire = found == offsets.end() ? nullptr : find_wire(*found);
 #else
     auto *wire = static_cast<fuse_wire *>(nullptr);
 #endif
@@ -122,7 +119,7 @@ extern "C" BOOL disable_asar_integrity() noexcept {
     auto *fuse = &wire->fuses[fuse_integrity];
     if (*fuse == fuse_removed) return TRUE;
 
-    writable_guard guard{fuse, 1};
+    page_guard guard{fuse, 1};
     if (!guard) return FALSE;
 
     *fuse = fuse_removed;
