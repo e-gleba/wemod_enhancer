@@ -49,6 +49,20 @@ WeMod Enhancer is a ground-up rewrite that does the same core job with zero runt
 
 ## Quick Start
 
+### From a release package (prebuilt DLL)
+
+Download a release archive, extract it, and run:
+
+```sh
+# version.dll is bundled alongside the script — no CMake needed
+python3 wemod_enhancer.py patch --install-dir "/path/to/wemod_bin"
+
+# Restore originals at any time
+python3 wemod_enhancer.py restore --install-dir "/path/to/wemod_bin"
+```
+
+### From source (build the DLL yourself)
+
 ```sh
 # 1. Stop WeMod, then patch the install directory
 python3 tools/wemod_enhancer.py patch --install-dir "/path/to/wemod_bin"
@@ -62,12 +76,20 @@ python3 tools/wemod_enhancer.py build-dll
 
 Backups are created automatically before modification. If a client update changes minified JavaScript and a required patch no longer matches, the tool **fails closed** — no partial patches are applied.
 
+### Install via CMake (build + install to a directory)
+
+```sh
+cmake --workflow --preset llvm-mingw-x86_64-full
+cmake --install build/llvm-mingw-x86_64 --prefix ./dist
+# dist/bin/ now contains both version.dll and wemod_enhancer.py
+```
+
 ## Requirements
 
 | Tool | Version | Notes |
 |:-----|:--------|:------|
 | **Python** | 3.11+ | Runs the patcher CLI |
-| **CMake** | 3.31+ | Builds the proxy DLL |
+| **CMake** | 3.31+ | Builds the proxy DLL (not needed with prebuilt releases) |
 | **Ninja** | any | Build system generator (required for Clang preset) |
 | **Windows** | — | MSVC (VS 2022) or Clang targeting MSVC ABI (`x86_64-pc-windows-msvc`) |
 | **Linux** | — | LLVM-MinGW toolchain, auto-downloaded by CMake |
