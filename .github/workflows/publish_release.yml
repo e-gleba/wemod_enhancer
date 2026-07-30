@@ -24,8 +24,9 @@ env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
 
 jobs:
+  # ── LLVM-MinGW cross-compile (Linux → Windows) ─────────────────────────────
   llvm_mingw_x86_64:
-    name: LLVM-MinGW x86_64
+    name: windows-llvm-mingw-amd64
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,15 +55,23 @@ jobs:
       - name: build_and_package
         run: cmake --workflow --preset llvm-mingw-x86_64-full
 
+      - name: rename_artifact
+        run: |
+          cd build/llvm-mingw-x86_64
+          for f in *.tar.xz; do
+            mv "$f" "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz"
+          done
+
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
-          name: wemod_enhancer-llvm-mingw-x86_64
+          name: windows-llvm-mingw-amd64
           path: build/llvm-mingw-x86_64/*.tar.xz
           if-no-files-found: error
 
+  # ── Clang Windows AMD64 (MSVC ABI) ─────────────────────────────────────────
   clang_windows_amd64:
-    name: Clang Windows AMD64
+    name: windows-clang-amd64
     runs-on: windows-2022
     permissions:
       contents: read
@@ -90,16 +99,56 @@ jobs:
       - name: build_and_package
         run: cmake --workflow --preset clang-windows-amd64-full
 
+      - name: rename_artifact
+        shell: pwsh
+        run: |
+          cd build/clang-windows-amd64
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-clang-amd64.zip"
+
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
-          name: wemod_enhancer-clang-windows-amd64
+          name: windows-clang-amd64
           path: build/clang-windows-amd64/*.zip
           if-no-files-found: error
 
+  # ── MSVC Windows AMD64 ─────────────────────────────────────────────────────
+  msvc_windows_amd64:
+    name: windows-msvc-amd64
+    runs-on: windows-2022
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: build_and_package
+        run: cmake --workflow --preset msvc-full
+
+      - name: rename_artifact
+        shell: pwsh
+        run: |
+          cd build/msvc
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-msvc-amd64.zip"
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-msvc-amd64
+          path: build/msvc/*.zip
+          if-no-files-found: error
+
+  # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [llvm_mingw_x86_64, clang_windows_amd64]
+    needs: [llvm_mingw_x86_64, clang_windows_amd64, msvc_windows_amd64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,13 +171,19 @@ jobs:
       - name: download_llvm_mingw_artifact
         uses: actions/download-artifact@v8
         with:
-          name: wemod_enhancer-llvm-mingw-x86_64
+          name: windows-llvm-mingw-amd64
           path: artifacts/
 
       - name: download_clang_windows_artifact
         uses: actions/download-artifact@v8
         with:
-          name: wemod_enhancer-clang-windows-amd64
+          name: windows-clang-amd64
+          path: artifacts/
+
+      - name: download_msvc_windows_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-msvc-amd64
           path: artifacts/
 
       - name: generate_release_notes
