@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-#include "proxy.hpp"
+#include "fuses.hpp"
 
 #include <windows.h>
 
@@ -24,7 +24,7 @@ constexpr std::array<std::uint64_t, 4> sentinel{
 };
 constexpr std::array<std::ptrdiff_t, 2> scan_offsets{0, 4};
 
-struct fuse_wire_header {
+struct fuse_wire_header final {
     std::array<std::byte, sizeof(sentinel)> marker;
     std::uint8_t version;
     std::uint8_t length;
