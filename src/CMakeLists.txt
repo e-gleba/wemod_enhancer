@@ -60,25 +60,21 @@ else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-# Generate import library at configure time. This avoids custom
-# command/target complexity and ensures the library exists before
-# the build starts.
+# Generate import library. Using add_custom_command with OUTPUT tells CMake
+# this file is generated and creates proper build dependencies. The file
+# will be built before the version target links.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
    OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
 
     # MSVC / clang-cl: CMAKE_AR is lib.exe
-    execute_process(
+    add_custom_command(
+        OUTPUT "${_import_lib}"
         COMMAND "${CMAKE_AR}" /DEF:${_import_def} /MACHINE:${_lib_machine}
                 /OUT:${_import_lib}
-        RESULT_VARIABLE _lib_result)
-
-    if(NOT EXISTS "${_import_lib}")
-        message(
-            FATAL_ERROR
-                "Failed to generate version_orig.lib. "
-                "lib.exe exit code: ${_lib_result}")
-    endif()
+        DEPENDS "${_import_def}"
+        COMMENT "Generating version_orig import library (lib.exe)"
+        VERBATIM)
 else()
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
 
@@ -90,22 +86,14 @@ else()
         PATH_SUFFIXES ../bin bin
         REQUIRED)
 
-    execute_process(
+    add_custom_command(
+        OUTPUT "${_import_lib}"
         COMMAND "${_dlltool_executable}" -d "${_import_def}"
                 -m "${_dlltool_machine}" -l "${_import_lib}"
-        RESULT_VARIABLE _dlltool_result)
-
-    if(NOT EXISTS "${_import_lib}")
-        message(
-            FATAL_ERROR
-                "Failed to generate libversion_orig.a. "
-                "dlltool exit code: ${_dlltool_result}")
-    endif()
+        DEPENDS "${_import_def}"
+        COMMENT "Generating version_orig import library (dlltool)"
+        VERBATIM)
 endif()
-
-# Mark the import library as GENERATED so CMake doesn't auto-generate
-# build rules when it's referenced in target_link_libraries.
-set_source_files_properties("${_import_lib}" PROPERTIES GENERATED TRUE)
 
 # ── Proxy target ────────────────────────────────────────────────────────────
 
@@ -125,6 +113,8 @@ target_include_directories(
 
 # Link against the generated import library so MSVC link.exe can resolve
 # forwarder symbols. For lld-link/lld this is redundant but harmless.
+# CMake will automatically add a dependency on the custom command that
+# generates the import library.
 target_link_libraries(version PRIVATE GSL "${_import_lib}")
 
 target_link_options(
