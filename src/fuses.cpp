@@ -22,15 +22,13 @@ constexpr std::array<std::uint64_t, 4> sentinel{
 };
 constexpr std::array<std::ptrdiff_t, 2> scan_offsets{0, 4};
 
-struct fuse_wire {
+struct fuse_wire_header {
     std::array<std::byte, sizeof(sentinel)> marker;
     std::uint8_t version;
     std::uint8_t length;
-    std::byte fuses[1];
 };
 
-static_assert(offsetof(fuse_wire, version) == sizeof(sentinel));
-static_assert(offsetof(fuse_wire, fuses) == sizeof(sentinel) + 2);
+static_assert(sizeof(fuse_wire_header) == sizeof(sentinel) + 2);
 
 class [[nodiscard]] page_guard final {
   public:
@@ -92,7 +90,8 @@ class [[nodiscard]] page_guard final {
 }
 
 [[nodiscard]] auto find_wire(std::span<std::byte> image,
-                             std::ptrdiff_t offset) noexcept -> fuse_wire * {
+                             std::ptrdiff_t offset) noexcept
+    -> fuse_wire_header * {
     if (image.size() < sizeof(sentinel)) {
         return nullptr;
     }
@@ -113,8 +112,15 @@ class [[nodiscard]] page_guard final {
         return nullptr;
     }
 
-    return reinterpret_cast<fuse_wire *>(
+    return reinterpret_cast<fuse_wire_header *>(
         const_cast<std::uint64_t *>(std::to_address(match.begin())));
+}
+
+[[nodiscard]] auto fuse_at(fuse_wire_header &wire, std::size_t index) noexcept
+    -> std::span<std::byte, 1> {
+    auto *fuses = reinterpret_cast<std::byte *>(std::addressof(wire)) +
+                  sizeof(fuse_wire_header);
+    return {fuses + index, 1};
 }
 
 } // namespace
@@ -131,12 +137,12 @@ class [[nodiscard]] page_guard final {
         return false;
     }
 
-    auto *wire = *match;
-    if (wire->version != 1 || wire->length <= fuse_index) {
+    auto &wire = **match;
+    if (wire.version != 1 || wire.length <= fuse_index) {
         return false;
     }
 
-    auto fuse = std::span<std::byte, 1>{wire->fuses + fuse_index, 1};
+    auto fuse = fuse_at(wire, fuse_index);
     if (fuse.front() == removed) {
         return true;
     }
