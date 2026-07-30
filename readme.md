@@ -1,5 +1,9 @@
 # WeMod Enhancer
 
+<p align="center">
+  <img src="docs/logo.svg" alt="WeMod Enhancer Logo" width="256">
+</p>
+
 Build and patch tooling for Wand/WeMod's Windows x86-64 Electron client. The Python patcher runs on Windows or Linux; Linux cross-compiles `version.dll` with LLVM-MinGW and launches WeMod through Wine/Proton.
 
 ## Requirements
