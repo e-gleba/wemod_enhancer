@@ -1,6 +1,5 @@
 #define NOVERSION
 #include <windows.h>
-#include <winver.h>
 
 extern BOOL disable_asar_integrity(void);
 static HMODULE original_version;
