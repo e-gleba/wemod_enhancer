@@ -60,17 +60,13 @@ else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-# MSVC and clang-cl (MSVC ABI frontend) use lib.exe to generate import
-# libraries from .def files. llvm-mingw uses llvm-dlltool.
-set(_is_msvc_abi "$<OR:$<CXX_COMPILER_ID:MSVC>,$<CXX_COMPILER_FRONTEND_VARIANT:MSVC>>")
+# Determine toolchain at configure time. MSVC and clang-cl use lib.exe;
+# llvm-mingw uses llvm-dlltool. Only one path is active per build.
+set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
 
-if(_proc_upper MATCHES "AMD64|X86_64|X86|I686|ARM64|AARCH64")
-    # Generate import library. lib.exe and llvm-dlltool both accept .def
-    # files and produce import libraries without requiring the actual DLL.
-    set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
-    set(_import_lib_mingw "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
-
-    # MSVC/clang-cl path: use lib.exe (CMAKE_AR is lib.exe for MSVC)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
+   OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # MSVC / clang-cl: CMAKE_AR is lib.exe
     add_custom_command(
         OUTPUT "${_import_lib}"
         COMMAND "${CMAKE_AR}" /DEF:"${_import_def}" /MACHINE:${_lib_machine}
@@ -78,20 +74,25 @@ if(_proc_upper MATCHES "AMD64|X86_64|X86|I686|ARM64|AARCH64")
         DEPENDS "${_import_def}"
         COMMENT "generating version_orig import library (lib.exe)"
         VERBATIM)
+else()
+    # llvm-mingw: find llvm-dlltool in the toolchain
+    find_program(
+        _dlltool_executable
+        NAMES llvm-dlltool dlltool
+        HINTS "${CMAKE_CXX_COMPILER}"
+        PATH_SUFFIXES ../bin bin
+        REQUIRED)
 
-    # MinGW path: use dlltool
     add_custom_command(
-        OUTPUT "${_import_lib_mingw}"
-        COMMAND "${CMAKE_DLLTOOL}" -d "${_import_def}" -m ${_dlltool_machine}
-                -l "${_import_lib_mingw}"
+        OUTPUT "${_import_lib}"
+        COMMAND "${_dlltool_executable}" -d "${_import_def}"
+                -m "${_dlltool_machine}" -l "${_import_lib}"
         DEPENDS "${_import_def}"
         COMMENT "generating version_orig import library (dlltool)"
         VERBATIM)
-
-    add_custom_target(
-        version_orig_import_lib ALL
-        DEPENDS "${_import_lib}" "${_import_lib_mingw}")
 endif()
+
+add_custom_target(version_orig_import_lib DEPENDS "${_import_lib}")
 
 # ── Proxy target ────────────────────────────────────────────────────────────
 
@@ -113,10 +114,7 @@ target_include_directories(
 
 # Link against the generated import library so MSVC link.exe can resolve
 # forwarder symbols. For lld-link/lld this is redundant but harmless.
-target_link_libraries(
-    version
-    PRIVATE GSL
-            $<IF:${_is_msvc_abi},${_import_lib},${_import_lib_mingw}>)
+target_link_libraries(version PRIVATE GSL "${_import_lib}")
 
 target_link_options(
     version
