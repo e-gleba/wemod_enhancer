@@ -123,12 +123,29 @@ def find_dll(build: Path) -> Path:
     if not found: raise RuntimeError("build completed without version.dll")
     return found[0]
 
+def find_bundled_dll() -> Path | None:
+    """Find version.dll next to this script (CMake install layout).
+
+    After `cmake --install` both wemod_enhancer.py and version.dll
+    land in the same directory.  This lets end users run the patcher
+    with just Python — no CMake or compiler needed.
+    """
+    dll = Path(__file__).resolve().parent / "version.dll"
+    return dll if dll.is_file() else None
+
 def build_dll() -> Path:
     build = ROOT / "build" / "proxy"
     args = ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
     if os.name != "nt": args += ["-DCMAKE_TOOLCHAIN_FILE=" + str(ROOT / "cmake/toolchains/llvm_mingw.cmake"), "-DCMAKE_SYSTEM_PROCESSOR=x86_64"]
     subprocess.run(args, check=True); subprocess.run(["cmake", "--build", str(build), "--config", "Release"], check=True)
     dll = find_dll(build); pe_x64(dll); return dll
+
+def resolve_dll(explicit: Path | None) -> Path:
+    """Pick version.dll: explicit flag > bundled > build from source."""
+    if explicit: return explicit
+    bundled = find_bundled_dll()
+    if bundled: return bundled
+    return build_dll()
 
 def paths(install: Path):
     resources = install / "resources"
@@ -140,7 +157,7 @@ def patch(install: Path, dll: Path | None):
     if not backup.exists(): shutil.copy2(asar, backup)
     else: shutil.copy2(backup, asar)
     if target_dll.exists() and not dll_backup.exists(): shutil.copy2(target_dll, dll_backup)
-    dll = dll or build_dll(); pe_x64(dll)
+    dll = resolve_dll(dll); pe_x64(dll)
     try:
         with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
             work = Path(tmp); header = extract_asar(asar, work); patch_bundles(work); pack_asar(work, asar, header)
