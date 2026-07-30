@@ -6,7 +6,7 @@
 
 **Cross-platform patcher and ASAR-fuse proxy for Wand/WeMod's Electron client**
 
-A Python CLI that patches WeMod's Windows x86-64 Electron app in-place — disabling ASAR integrity, activating Pro features, killing auto-updates, blocking native mobile pairing, and enabling F12 DevTools. On Linux it cross-compiles the `version.dll` proxy with LLVM-MinGW and launches through Wine/Proton.
+A dependency-free Python CLI that patches WeMod's Windows x86-64 Electron app in-place. It disables ASAR integrity, activates Pro features, kills auto-updates, blocks native mobile pairing, and enables F12 DevTools — all through a 4 KB C proxy DLL and standard-library Python. On Linux it cross-compiles with LLVM-MinGW and launches through Wine/Proton, with full Steam Deck support.
 
 [![CI](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml/badge.svg)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](license.md)
@@ -34,11 +34,11 @@ WeMod Enhancer is a ground-up rewrite that does the same core job with zero runt
 | **Platform** | Windows, Linux, Steam Deck | Windows only |
 | **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
-| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
-| **Pro activation** | `/v3/account` response injection | Same |
-| **DevTools** | F12 hotkey hook | Not available |
-| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` no-op | Not available |
-| **Disable mobile pairing** | `requestRemoteAuthCode()` rejection | Not available |
+| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` — walks memory for a 32-byte sentinel, flips Electron's fuse wire to `removed` | Same approach (shared heritage) |
+| **Pro activation** | Intercepts `/v3/account` responses, injects `subscription: { period: "yearly", state: "active" }` | Same |
+| **DevTools** | F12 hotkey hook on `browser-window-created` | Not available |
+| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` handler → no-op | Not available |
+| **Disable mobile pairing** | `requestRemoteAuthCode()` → `Promise.reject` | Not available |
 | **Remote web panel** | Not included | Built-in LAN HTTP/WebSocket server |
 | **Custom script injection** | Not included | Bundled `.js` injection at patch time |
 | **Fail-safe** | Fails closed on mismatched patches — no partial state | — |
@@ -46,19 +46,6 @@ WeMod Enhancer is a ground-up rewrite that does the same core job with zero runt
 | **License** | MIT | Apache-2.0 |
 
 > WeMod Enhancer focuses on the core patching pipeline and does it with the smallest possible footprint. If you need the Remote Web Panel or custom script injection, Wand-Enhancer remains a solid choice — both projects can coexist.
-
-## What it does
-
-| Patch | Effect |
-|:------|:-------|
-| **ASAR Integrity Bypass** | Flips Electron's `RunAsNode` / integrity fuse to `removed` via an in-process `version.dll` proxy — no more modified-ASAR rejection |
-| **Pro Account Activation** | Intercepts `/v3/account` responses and injects `subscription: { period: "yearly", state: "active" }` |
-| **Pro Language Activation** | Same Pro injection on the language endpoint |
-| **Disable Updates** | Replaces `ACTION_CHECK_FOR_UPDATE` handler with a no-op — WeMod stops checking for client updates |
-| **Disable Native Pairing** | `requestRemoteAuthCode()` returns `Promise.reject` — blocks mobile app pairing requests |
-| **DevTools F12** | Hooks `browser-window-created` to toggle DevTools on F12 keydown in any WeMod window |
-
-> **Note** — Pro brand experience (`setAccountWandBrandExperience`) is an optional patch applied only when the endpoint exists in the current client build.
 
 ## Quick Start
 
