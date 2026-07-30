@@ -35,10 +35,9 @@ static_assert(sizeof(fuse_wire_header) == sizeof(sentinel) + 2);
 class [[nodiscard]] page_guard final {
   public:
     explicit page_guard(std::span<std::byte> bytes) noexcept
-        : bytes_{bytes} {
-        writable_ = VirtualProtect(bytes_.data(), bytes_.size(), PAGE_READWRITE,
-                                   &old_protection_) != FALSE;
-    }
+        : bytes_{bytes},
+          writable_{VirtualProtect(bytes_.data(), bytes_.size(), PAGE_READWRITE,
+                                   &old_protection_) != FALSE} {}
 
     ~page_guard() noexcept {
         if (writable_) {
@@ -50,6 +49,9 @@ class [[nodiscard]] page_guard final {
 
     page_guard(const page_guard &) = delete;
     auto operator=(const page_guard &) -> page_guard & = delete;
+
+    page_guard(page_guard &&) = delete;
+    auto operator=(page_guard &&) -> page_guard & = delete;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return writable_;
@@ -106,9 +108,10 @@ class [[nodiscard]] page_guard final {
         return nullptr;
     }
 
-    auto words = std::span{
-        reinterpret_cast<const std::uint64_t *>(start),
-        static_cast<std::size_t>(end - start) / sizeof(std::uint64_t)};
+    auto *first = reinterpret_cast<const std::uint64_t *>(start);
+    auto const count = static_cast<std::size_t>(end - start) /
+                       sizeof(std::uint64_t);
+    auto words = std::span{first, count};
     auto match = std::ranges::search(words, sentinel);
     if (match.empty()) {
         return nullptr;
@@ -122,7 +125,7 @@ class [[nodiscard]] page_guard final {
     -> std::span<std::byte, 1> {
     auto *fuses = reinterpret_cast<std::byte *>(std::addressof(wire)) +
                   sizeof(fuse_wire_header);
-    return {fuses + index, 1};
+    return std::span<std::byte, 1>{fuses + index, 1};
 }
 
 } // namespace

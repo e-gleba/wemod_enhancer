@@ -27,6 +27,7 @@ set_target_properties(
     PROPERTIES PREFIX ""
                OUTPUT_NAME "version"
                CXX_EXTENSIONS OFF
+               CXX_SCAN_FOR_MODULES OFF
                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 include(GNUInstallDirs)
