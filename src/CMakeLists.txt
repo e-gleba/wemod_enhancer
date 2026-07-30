@@ -1,6 +1,13 @@
 # Windows version.dll proxy. Export forwarding is declared entirely by
 # library.def; C++ only contains the proxy's process-attach behavior.
 
+# CMake 3.31+ defaults CMAKE_CXX_SCAN_FOR_MODULES to ON when a target
+# requires cxx_std_20 or higher. This generates per-config .modmap
+# response files and pollutes compile_commands.json with cross-config
+# references that break clang-tidy in multi-config generators. No C++20
+# modules are used here.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 add_library(
     version SHARED
     dll_main.cpp

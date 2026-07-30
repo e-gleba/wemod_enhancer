@@ -117,6 +117,7 @@ class [[nodiscard]] page_guard final {
         return nullptr;
     }
 
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     return reinterpret_cast<fuse_wire_header *>(
         const_cast<std::uint64_t *>(std::to_address(match.begin())));
 }
@@ -125,7 +126,8 @@ class [[nodiscard]] page_guard final {
     -> std::span<std::byte, 1> {
     auto *fuses = reinterpret_cast<std::byte *>(std::addressof(wire)) +
                   sizeof(fuse_wire_header);
-    return std::span<std::byte, 1>{fuses + index, 1};
+    // MSVC STL: fixed-extent span(It, size_type) is explicit.
+    return std::span<std::byte, 1>(fuses + index, 1);
 }
 
 } // namespace
