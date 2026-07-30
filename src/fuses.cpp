@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <ranges>
 #include <span>
 
@@ -22,13 +23,14 @@ constexpr std::array<std::uint64_t, 4> sentinel{
 constexpr std::array<std::ptrdiff_t, 2> scan_offsets{0, 4};
 
 struct fuse_wire {
-    std::array<std::byte, sizeof(sentinel)> sentinel;
+    std::array<std::byte, sizeof(sentinel)> marker;
     std::uint8_t version;
     std::uint8_t length;
-    std::byte fuses[];
+    std::byte fuses[1];
 };
 
-static_assert(sizeof(fuse_wire::sentinel) == sizeof(sentinel));
+static_assert(offsetof(fuse_wire, version) == sizeof(sentinel));
+static_assert(offsetof(fuse_wire, fuses) == sizeof(sentinel) + 2);
 
 class [[nodiscard]] page_guard final {
   public:
