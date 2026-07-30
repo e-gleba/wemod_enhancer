@@ -71,9 +71,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
     execute_process(
         COMMAND "${CMAKE_AR}" /DEF:${_import_def} /MACHINE:${_lib_machine}
                 /OUT:${_import_lib}
-        RESULT_VARIABLE _lib_result
-        OUTPUT_QUIET
-        ERROR_QUIET)
+        RESULT_VARIABLE _lib_result)
 
     if(NOT EXISTS "${_import_lib}")
         message(
@@ -95,9 +93,7 @@ else()
     execute_process(
         COMMAND "${_dlltool_executable}" -d "${_import_def}"
                 -m "${_dlltool_machine}" -l "${_import_lib}"
-        RESULT_VARIABLE _dlltool_result
-        OUTPUT_QUIET
-        ERROR_QUIET)
+        RESULT_VARIABLE _dlltool_result)
 
     if(NOT EXISTS "${_import_lib}")
         message(
@@ -107,13 +103,9 @@ else()
     endif()
 endif()
 
-# Create imported target to tell CMake the import library is external
-# and doesn't need to be built. This prevents CMake from auto-generating
-# build rules when the library is referenced in target_link_libraries.
-add_library(version_orig_import STATIC IMPORTED)
-set_target_properties(
-    version_orig_import
-    PROPERTIES IMPORTED_LOCATION "${_import_lib}")
+# Mark the import library as GENERATED so CMake doesn't auto-generate
+# build rules when it's referenced in target_link_libraries.
+set_source_files_properties("${_import_lib}" PROPERTIES GENERATED TRUE)
 
 # ── Proxy target ────────────────────────────────────────────────────────────
 
@@ -131,9 +123,9 @@ target_include_directories(
     version
     PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 
-# Link against the imported target so MSVC link.exe can resolve
+# Link against the generated import library so MSVC link.exe can resolve
 # forwarder symbols. For lld-link/lld this is redundant but harmless.
-target_link_libraries(version PRIVATE GSL version_orig_import)
+target_link_libraries(version PRIVATE GSL "${_import_lib}")
 
 target_link_options(
     version
