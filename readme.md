@@ -53,9 +53,9 @@ Backups are created automatically before modification. If a client update change
 |:-----|:--------|:------|
 | **Python** | 3.11+ | Runs the patcher CLI |
 | **CMake** | 3.31+ | Builds the proxy DLL |
-| **Ninja** | any | Build system generator |
-| **Windows** | — | MSVC or LLVM-MinGW |
-| **Linux** | — | LLVM-MinGW is auto-downloaded by the CMake toolchain |
+| **Ninja** | any | Build system generator (required for Clang preset) |
+| **Windows** | — | MSVC (VS 2022) or Clang targeting MSVC ABI (`x86_64-pc-windows-msvc`) |
+| **Linux** | — | LLVM-MinGW toolchain, auto-downloaded by CMake |
 
 ## Linux and Steam
 
