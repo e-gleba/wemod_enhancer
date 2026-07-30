@@ -5,6 +5,8 @@
 // NOVERSION suppresses version function declarations in the MSVC SDK.
 // MinGW-w64's winver.h does NOT honour NOVERSION, so we must also
 // prevent winver.h from being included when building with MinGW.
+// These are pre-include header guards — no C++ feature can replace
+// suppressing a system header before #include <windows.h>.
 #define NOVERSION
 #ifdef __MINGW32__
   #define VER_H 1
@@ -19,6 +21,7 @@
 #include <cstring>
 #include <ranges>
 #include <string_view>
+#include <type_traits>
 
 extern "C" BOOL disable_asar_integrity() noexcept;
 
@@ -26,15 +29,21 @@ namespace {
 
 gsl::owner<HMODULE> original_version = nullptr;
 
+// ── platform-adaptive type aliases ───────────────────────────────────
 // MinGW-w64 declares Ver* params as non-const (LPSTR/LPWSTR).
 // MSVC SDK declares them const-correct (LPCSTR/LPCWSTR).
-#ifdef __MINGW32__
-  #define V_STR_A LPSTR
-  #define V_STR_W LPWSTR
+// SDL3-style: detect at compile time, select type via std::conditional_t
+// — no macros, pure C++ type traits.
+
+constexpr bool is_mingw =
+#if defined(__MINGW32__)
+    true;
 #else
-  #define V_STR_A LPCSTR
-  #define V_STR_W LPCWSTR
+    false;
 #endif
+
+using v_str_a = std::conditional_t<is_mingw, LPSTR, LPCSTR>;
+using v_str_w = std::conditional_t<is_mingw, LPWSTR, LPCWSTR>;
 
 // ── function pointer types ───────────────────────────────────────────
 // Exported function signatures must use Win32 types (BOOL, DWORD, etc.)
@@ -49,10 +58,10 @@ using GetFileVersionInfoSizeA_fn = DWORD(WINAPI *)(LPCSTR, LPDWORD);
 using GetFileVersionInfoSizeW_fn = DWORD(WINAPI *)(LPCWSTR, LPDWORD);
 using GetFileVersionInfoSizeExA_fn = DWORD(WINAPI *)(DWORD, LPCSTR, LPDWORD);
 using GetFileVersionInfoSizeExW_fn = DWORD(WINAPI *)(DWORD, LPCWSTR, LPDWORD);
-using VerFindFileA_fn = DWORD(WINAPI *)(DWORD, V_STR_A, V_STR_A, V_STR_A, LPSTR, PUINT, LPSTR, PUINT);
-using VerFindFileW_fn = DWORD(WINAPI *)(DWORD, V_STR_W, V_STR_W, V_STR_W, LPWSTR, PUINT, LPWSTR, PUINT);
-using VerInstallFileA_fn = DWORD(WINAPI *)(DWORD, V_STR_A, V_STR_A, V_STR_A, V_STR_A, V_STR_A, LPSTR, PUINT);
-using VerInstallFileW_fn = DWORD(WINAPI *)(DWORD, V_STR_W, V_STR_W, V_STR_W, V_STR_W, V_STR_W, LPWSTR, PUINT);
+using VerFindFileA_fn = DWORD(WINAPI *)(DWORD, v_str_a, v_str_a, v_str_a, LPSTR, PUINT, LPSTR, PUINT);
+using VerFindFileW_fn = DWORD(WINAPI *)(DWORD, v_str_w, v_str_w, v_str_w, LPWSTR, PUINT, LPWSTR, PUINT);
+using VerInstallFileA_fn = DWORD(WINAPI *)(DWORD, v_str_a, v_str_a, v_str_a, v_str_a, v_str_a, LPSTR, PUINT);
+using VerInstallFileW_fn = DWORD(WINAPI *)(DWORD, v_str_w, v_str_w, v_str_w, v_str_w, v_str_w, LPWSTR, PUINT);
 using VerLanguageNameA_fn = DWORD(WINAPI *)(DWORD, LPSTR, DWORD);
 using VerLanguageNameW_fn = DWORD(WINAPI *)(DWORD, LPWSTR, DWORD);
 using VerQueryValueA_fn = BOOL(WINAPI *)(LPCVOID, LPCSTR, LPVOID *, PUINT);
@@ -146,7 +155,7 @@ extern "C" DWORD WINAPI GetFileVersionInfoSizeExW(DWORD a, LPCWSTR b, LPDWORD c)
     return p_GetFileVersionInfoSizeExW(a, b, c);
 }
 
-extern "C" DWORD WINAPI VerFindFileA(DWORD a, V_STR_A b, V_STR_A c, V_STR_A d, LPSTR e, PUINT f, LPSTR g, PUINT h) noexcept {
+extern "C" DWORD WINAPI VerFindFileA(DWORD a, v_str_a b, v_str_a c, v_str_a d, LPSTR e, PUINT f, LPSTR g, PUINT h) noexcept {
     if (!p_VerFindFileA) {
         SetLastError(ERROR_PROC_NOT_FOUND);
         return 0;
@@ -154,7 +163,7 @@ extern "C" DWORD WINAPI VerFindFileA(DWORD a, V_STR_A b, V_STR_A c, V_STR_A d, L
     return p_VerFindFileA(a, b, c, d, e, f, g, h);
 }
 
-extern "C" DWORD WINAPI VerFindFileW(DWORD a, V_STR_W b, V_STR_W c, V_STR_W d, LPWSTR e, PUINT f, LPWSTR g, PUINT h) noexcept {
+extern "C" DWORD WINAPI VerFindFileW(DWORD a, v_str_w b, v_str_w c, v_str_w d, LPWSTR e, PUINT f, LPWSTR g, PUINT h) noexcept {
     if (!p_VerFindFileW) {
         SetLastError(ERROR_PROC_NOT_FOUND);
         return 0;
@@ -162,7 +171,7 @@ extern "C" DWORD WINAPI VerFindFileW(DWORD a, V_STR_W b, V_STR_W c, V_STR_W d, L
     return p_VerFindFileW(a, b, c, d, e, f, g, h);
 }
 
-extern "C" DWORD WINAPI VerInstallFileA(DWORD a, V_STR_A b, V_STR_A c, V_STR_A d, V_STR_A e, V_STR_A f, LPSTR g, PUINT h) noexcept {
+extern "C" DWORD WINAPI VerInstallFileA(DWORD a, v_str_a b, v_str_a c, v_str_a d, v_str_a e, v_str_a f, LPSTR g, PUINT h) noexcept {
     if (!p_VerInstallFileA) {
         SetLastError(ERROR_PROC_NOT_FOUND);
         return 0;
@@ -170,7 +179,7 @@ extern "C" DWORD WINAPI VerInstallFileA(DWORD a, V_STR_A b, V_STR_A c, V_STR_A d
     return p_VerInstallFileA(a, b, c, d, e, f, g, h);
 }
 
-extern "C" DWORD WINAPI VerInstallFileW(DWORD a, V_STR_W b, V_STR_W c, V_STR_W d, V_STR_W e, V_STR_W f, LPWSTR g, PUINT h) noexcept {
+extern "C" DWORD WINAPI VerInstallFileW(DWORD a, v_str_w b, v_str_w c, v_str_w d, v_str_w e, v_str_w f, LPWSTR g, PUINT h) noexcept {
     if (!p_VerInstallFileW) {
         SetLastError(ERROR_PROC_NOT_FOUND);
         return 0;
