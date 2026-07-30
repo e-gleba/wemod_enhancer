@@ -69,6 +69,11 @@ if(PROJECT_IS_TOP_LEVEL)
     include(GNUInstallDirs)
     find_package(package_description CONFIG REQUIRED)
 
+    # Install the Python patcher CLI next to version.dll so the
+    # install tree is self-contained: users need only Python (no CMake)
+    # to run `python wemod_enhancer.py patch --install-dir ...`.
+    add_subdirectory(tools)
+
     # Append processor to system name so packages for
     # different architectures don't collide (e.g.
     # "Windows-x86_64" vs "Windows-aarch64").
