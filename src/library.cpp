@@ -37,6 +37,9 @@ gsl::owner<HMODULE> original_version = nullptr;
 #endif
 
 // ── function pointer types ───────────────────────────────────────────
+// Exported function signatures must use Win32 types (BOOL, DWORD, etc.)
+// for ABI compatibility with the Windows loader. Internal types use
+// std::-prefixed fixed-width types.
 
 using GetFileVersionInfoA_fn = BOOL(WINAPI *)(LPCSTR, DWORD, DWORD, LPVOID);
 using GetFileVersionInfoW_fn = BOOL(WINAPI *)(LPCWSTR, DWORD, DWORD, LPVOID);
@@ -77,6 +80,7 @@ static VerQueryValueW_fn p_VerQueryValueW = nullptr;
 // ── forwarding stubs ─────────────────────────────────────────────────
 // Each stub checks its function pointer, returns a fallback if the
 // real function was not found, otherwise forwards the call.
+// Signatures use Win32 types for ABI; return values use FALSE/0.
 
 extern "C" BOOL WINAPI GetFileVersionInfoA(LPCSTR a, DWORD b, DWORD c, LPVOID d) noexcept {
     if (!p_GetFileVersionInfoA) {
@@ -221,7 +225,7 @@ struct export_entry {
     FARPROC *target;
 };
 
-const std::array exports = {
+const std::array<export_entry, 16> exports = {
     export_entry{"GetFileVersionInfoA", reinterpret_cast<FARPROC *>(&p_GetFileVersionInfoA)},
     export_entry{"GetFileVersionInfoW", reinterpret_cast<FARPROC *>(&p_GetFileVersionInfoW)},
     export_entry{"GetFileVersionInfoExA", reinterpret_cast<FARPROC *>(&p_GetFileVersionInfoExA)},
@@ -244,8 +248,8 @@ const std::array exports = {
 
 auto load_original() noexcept -> bool {
     std::array<WCHAR, MAX_PATH> path{};
-    const UINT n = GetSystemDirectoryW(path.data(),
-                                       static_cast<UINT>(path.size()));
+    const std::uint32_t n = GetSystemDirectoryW(path.data(),
+                                                 static_cast<UINT>(path.size()));
     constexpr std::wstring_view suffix = L"\\version.dll";
 
     if (n == 0 || n >= path.size() ||
