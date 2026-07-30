@@ -75,11 +75,11 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
         OUTPUT_QUIET
         ERROR_QUIET)
 
-    if(NOT _lib_result EQUAL 0)
+    if(NOT EXISTS "${_import_lib}")
         message(
-            WARNING
-                "Failed to generate version_orig.lib (exit code ${_lib_result}). "
-                "MSVC link.exe may fail to resolve forwarder symbols.")
+            FATAL_ERROR
+                "Failed to generate version_orig.lib. "
+                "lib.exe exit code: ${_lib_result}")
     endif()
 else()
     set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
@@ -99,13 +99,21 @@ else()
         OUTPUT_QUIET
         ERROR_QUIET)
 
-    if(NOT _dlltool_result EQUAL 0)
+    if(NOT EXISTS "${_import_lib}")
         message(
-            WARNING
-                "Failed to generate libversion_orig.a (exit code ${_dlltool_result}). "
-                "Linker may fail to resolve forwarder symbols.")
+            FATAL_ERROR
+                "Failed to generate libversion_orig.a. "
+                "dlltool exit code: ${_dlltool_result}")
     endif()
 endif()
+
+# Create imported target to tell CMake the import library is external
+# and doesn't need to be built. This prevents CMake from auto-generating
+# build rules when the library is referenced in target_link_libraries.
+add_library(version_orig_import STATIC IMPORTED)
+set_target_properties(
+    version_orig_import
+    PROPERTIES IMPORTED_LOCATION "${_import_lib}")
 
 # ── Proxy target ────────────────────────────────────────────────────────────
 
@@ -123,9 +131,9 @@ target_include_directories(
     version
     PRIVATE "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 
-# Link against the generated import library so MSVC link.exe can resolve
+# Link against the imported target so MSVC link.exe can resolve
 # forwarder symbols. For lld-link/lld this is redundant but harmless.
-target_link_libraries(version PRIVATE GSL "${_import_lib}")
+target_link_libraries(version PRIVATE GSL version_orig_import)
 
 target_link_options(
     version
