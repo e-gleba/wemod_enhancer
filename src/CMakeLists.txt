@@ -60,12 +60,13 @@ else()
     message(FATAL_ERROR "Unsupported architecture: ${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
-# Determine toolchain at configure time. MSVC and clang-cl use lib.exe;
-# llvm-mingw uses llvm-dlltool. Only one path is active per build.
-set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
-
+# Determine toolchain at configure time. MSVC and clang-cl use lib.exe
+# (produces .lib); llvm-mingw uses llvm-dlltool (produces .a). Only one
+# path is active per build.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
    OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/version_orig.lib")
+    
     # MSVC / clang-cl: CMAKE_AR is lib.exe
     add_custom_command(
         OUTPUT "${_import_lib}"
@@ -75,6 +76,8 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC"
         COMMENT "generating version_orig import library (lib.exe)"
         VERBATIM)
 else()
+    set(_import_lib "${CMAKE_CURRENT_BINARY_DIR}/libversion_orig.a")
+    
     # llvm-mingw: find llvm-dlltool in the toolchain
     find_program(
         _dlltool_executable
