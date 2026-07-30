@@ -15,13 +15,13 @@ namespace {
 
 // ── compile-time constants ──────────────────────────────────────────
 
-constexpr auto sentinel_length = 32uz;
-constexpr auto fuse_integrity = 0uz;
-constexpr auto fuse_removed = std::byte{'r'};
+constexpr std::size_t sentinel_length = 32;
+constexpr std::size_t fuse_integrity = 0;
+constexpr std::byte fuse_removed{'r'};
 
 #if defined(_WIN64)
 // 32-byte sentinel split into four uint64_t for fast comparison.
-constexpr std::array sentinel{
+constexpr std::array<std::uint64_t, 4> sentinel{
     0x6E64474B70374C64ULL,
     0x6262503639377A4EULL,
     0x58486D4B4E57516AULL,
@@ -32,9 +32,9 @@ constexpr std::array sentinel{
 // ── fuse wire layout ────────────────────────────────────────────────
 
 struct fuse_wire {
-    char sentinel[sentinel_length];
-    unsigned char version;
-    unsigned char wire_length;
+    std::int8_t sentinel[sentinel_length];
+    std::uint8_t version;
+    std::uint8_t wire_length;
     std::byte fuses[];
 };
 
@@ -43,7 +43,7 @@ static_assert(sizeof(sentinel) == sentinel_length);
 // ── memory helpers ──────────────────────────────────────────────────
 
 // Align a pointer up/down to the next/prev 8-byte boundary.
-constexpr auto align8(std::uintptr_t p, int m) noexcept -> std::uintptr_t {
+constexpr auto align8(std::uintptr_t p, std::int32_t m) noexcept -> std::uintptr_t {
     return ((p + 7u) & ~std::uintptr_t{7u}) +
            static_cast<std::uintptr_t>(m) * 8u;
 }
@@ -70,14 +70,14 @@ class [[nodiscard]] page_guard final {
   private:
     void *addr_{};
     std::size_t size_{};
-    DWORD old_{};
+    std::uint32_t old_{};
     bool ok_{false};
 };
 
 #if defined(_WIN64)
 // View the module image as a span of uint64_t and locate the
 // sentinel using std::ranges::search — one algorithm call.
-auto find_wire(int offset) noexcept -> fuse_wire * {
+auto find_wire(std::int32_t offset) noexcept -> fuse_wire * {
     auto *base = static_cast<char *>(GetModuleHandleA(nullptr));
     if (!base) {
         return nullptr;
@@ -119,8 +119,8 @@ auto find_wire(int offset) noexcept -> fuse_wire * {
 extern "C" BOOL disable_asar_integrity() noexcept {
 #if defined(_WIN64)
     // Try both alignment offsets; the first match wins.
-    constexpr std::array offsets{0, 4};
-    auto found = std::ranges::find_if(offsets, [&](int off) {
+    constexpr std::array<std::int32_t, 2> offsets{0, 4};
+    auto found = std::ranges::find_if(offsets, [&](std::int32_t off) {
         return find_wire(off) != nullptr;
     });
     auto *wire = found == offsets.end() ? nullptr : find_wire(*found);
