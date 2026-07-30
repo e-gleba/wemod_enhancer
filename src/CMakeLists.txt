@@ -1,7 +1,12 @@
-# Build the version.dll proxy as a C++23 shared library with GSL
-# statically linked and the C runtime statically linked.
+# Build the Windows version.dll proxy with a static C runtime.
 
-add_library(version SHARED fuses.cpp library.cpp library.def)
+add_library(
+    version SHARED
+    dll_main.cpp
+    fuses.cpp
+    version_proxy.cpp
+    proxy.hpp
+    library.def)
 
 set_target_properties(
     version
@@ -11,13 +16,11 @@ set_target_properties(
 
 target_compile_features(version PRIVATE cxx_std_23)
 
-# Fetch GSL (Guidelines Support Library) via CPM and link it statically.
 CPMAddPackage("gh:gsl-lite/gsl-lite#0.42.0")
-target_link_libraries(version PRIVATE GSL::gsl)
+target_link_libraries(version PRIVATE gsl::gsl-lite)
 
-# MinGW-Clang needs -static to link static libgcc/libstdc++; MSVC-ABI
-# Clang uses MSVC_RUNTIME_LIBRARY (above) for static CRT and does not
-# understand -static the same way through lld-link.
+# MinGW-Clang needs static libgcc/libstdc++; MSVC-ABI Clang uses the
+# MSVC_RUNTIME_LIBRARY property above instead.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_CXX_COMPILER_TARGET MATCHES "msvc")
     target_link_options(version PRIVATE -static)
 endif()

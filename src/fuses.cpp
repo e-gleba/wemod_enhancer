@@ -1,156 +1,149 @@
 // SPDX-License-Identifier: MIT
-// ASAR integrity-fuse bypass: walks the host process memory for a
-// 32-byte sentinel, locates Electron's fuse wire, and flips the
-// integrity fuse to "removed" via VirtualProtect.
 
-#include <windows.h>
+#include "proxy.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <ranges>
 #include <span>
-#include <type_traits>
 
 namespace {
 
-// ── compile-time constants ──────────────────────────────────────────
-
-constexpr std::size_t sentinel_length = 32;
-constexpr std::size_t fuse_integrity = 0;
-constexpr std::byte fuse_removed{'r'};
-
-// Platform detection — no macros, pure C++ compile-time constant.
-constexpr bool is_win64 =
-#if defined(_WIN64)
-    true;
-#else
-    false;
-#endif
-
-// 32-byte sentinel split into four uint64_t for fast comparison.
-// Only meaningful on 64-bit (the search is 64-bit-only).
+constexpr std::size_t fuse_index = 4;
+constexpr std::byte removed{'r'};
 constexpr std::array<std::uint64_t, 4> sentinel{
     0x6E64474B70374C64ULL,
     0x6262503639377A4EULL,
     0x58486D4B4E57516AULL,
     0x5873743942615A42ULL,
 };
-
-// ── fuse wire layout ────────────────────────────────────────────────
+constexpr std::array<std::ptrdiff_t, 2> scan_offsets{0, 4};
 
 struct fuse_wire {
-    std::int8_t sentinel[sentinel_length];
+    std::array<std::byte, sizeof(sentinel)> sentinel;
     std::uint8_t version;
-    std::uint8_t wire_length;
+    std::uint8_t length;
     std::byte fuses[];
 };
 
-static_assert(sizeof(::sentinel) == sentinel_length);
+static_assert(sizeof(fuse_wire::sentinel) == sizeof(sentinel));
 
-// ── memory helpers ──────────────────────────────────────────────────
-
-// Align a pointer up/down to the next/prev 8-byte boundary.
-constexpr auto align8(std::uintptr_t p, std::int32_t m) noexcept -> std::uintptr_t {
-    return ((p + 7u) & ~std::uintptr_t{7u}) +
-           static_cast<std::uintptr_t>(m) * 8u;
-}
-
-// RAII guard: makes a memory page writable on construction,
-// restores the original protection on destruction.
 class [[nodiscard]] page_guard final {
   public:
-    page_guard() = default;
-    explicit page_guard(void *addr, std::size_t size) noexcept
-        : addr_{addr}, size_{size} {
-        ok_ = VirtualProtect(addr, size, PAGE_READWRITE, &old_);
+    explicit page_guard(std::span<std::byte> bytes) noexcept
+        : bytes_{bytes} {
+        writable_ = VirtualProtect(bytes_.data(), bytes_.size(), PAGE_READWRITE,
+                                   &old_protection_) != FALSE;
     }
+
     ~page_guard() noexcept {
-        if (ok_) {
-            DWORD tmp{};
-            VirtualProtect(addr_, size_, old_, &tmp);
+        if (writable_) {
+            DWORD ignored{};
+            VirtualProtect(bytes_.data(), bytes_.size(), old_protection_,
+                           &ignored);
         }
     }
+
     page_guard(const page_guard &) = delete;
     auto operator=(const page_guard &) -> page_guard & = delete;
-    explicit operator bool() const noexcept { return ok_; }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return writable_;
+    }
 
   private:
-    void *addr_{};
-    std::size_t size_{};
-    std::uint32_t old_{};
-    bool ok_{false};
+    std::span<std::byte> bytes_;
+    DWORD old_protection_{};
+    bool writable_{};
 };
 
-// View the module image as a span of uint64_t and locate the
-// sentinel using std::ranges::search — one algorithm call.
-auto find_wire(std::int32_t offset) noexcept -> fuse_wire * {
-    if constexpr (!is_win64) {
-        (void)offset;
-        return nullptr;
-    } else {
-        auto *base = static_cast<char *>(GetModuleHandleA(nullptr));
-        if (!base) {
-            return nullptr;
-        }
+[[nodiscard]] constexpr auto align_down(std::uintptr_t value) noexcept
+    -> std::uintptr_t {
+    return value & ~std::uintptr_t{7};
+}
 
-        auto *dos = reinterpret_cast<IMAGE_DOS_HEADER *>(base);
-        if (dos->e_magic != IMAGE_DOS_SIGNATURE) {
-            return nullptr;
-        }
+[[nodiscard]] constexpr auto align_up(std::uintptr_t value) noexcept
+    -> std::uintptr_t {
+    return align_down(value + 7);
+}
 
-        auto *nt = reinterpret_cast<IMAGE_NT_HEADERS *>(base + dos->e_lfanew);
-        if (nt->Signature != IMAGE_NT_SIGNATURE) {
-            return nullptr;
-        }
-
-        auto start = align8(reinterpret_cast<std::uintptr_t>(base), 1) + offset;
-        auto end = align8(reinterpret_cast<std::uintptr_t>(base) +
-                              nt->OptionalHeader.SizeOfImage - sentinel_length,
-                          -1) - offset;
-        if (start >= end) {
-            return nullptr;
-        }
-
-        auto count = static_cast<std::size_t>(end - start) / sizeof(std::uint64_t);
-        auto haystack = std::span{reinterpret_cast<const std::uint64_t *>(start),
-                                   count};
-
-        auto it = std::ranges::search(haystack, sentinel);
-        if (it.begin() == haystack.end()) {
-            return nullptr;
-        }
-        return reinterpret_cast<fuse_wire *>(
-            const_cast<std::uint64_t *>(it.begin().operator->()));
+[[nodiscard]] auto module_image() noexcept -> std::span<std::byte> {
+    auto *base = reinterpret_cast<std::byte *>(GetModuleHandleW(nullptr));
+    if (base == nullptr) {
+        return {};
     }
+
+    auto const *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew < 0) {
+        return {};
+    }
+
+    auto const *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(
+        base + static_cast<std::size_t>(dos->e_lfanew));
+    if (nt->Signature != IMAGE_NT_SIGNATURE) {
+        return {};
+    }
+
+    return {base, nt->OptionalHeader.SizeOfImage};
+}
+
+[[nodiscard]] auto find_wire(std::span<std::byte> image,
+                             std::ptrdiff_t offset) noexcept -> fuse_wire * {
+    if (image.size() < sizeof(sentinel)) {
+        return nullptr;
+    }
+
+    auto const base = reinterpret_cast<std::uintptr_t>(image.data());
+    auto const start = align_up(base) + sizeof(std::uint64_t) + offset;
+    auto const end = align_down(base + image.size() - sizeof(sentinel)) -
+                     sizeof(std::uint64_t) - offset;
+    if (start >= end) {
+        return nullptr;
+    }
+
+    auto words = std::span{
+        reinterpret_cast<const std::uint64_t *>(start),
+        static_cast<std::size_t>(end - start) / sizeof(std::uint64_t)};
+    auto match = std::ranges::search(words, sentinel);
+    if (match.empty()) {
+        return nullptr;
+    }
+
+    return reinterpret_cast<fuse_wire *>(
+        const_cast<std::uint64_t *>(std::to_address(match.begin())));
 }
 
 } // namespace
 
-extern "C" BOOL disable_asar_integrity() noexcept {
-    if constexpr (is_win64) {
-        constexpr std::array<std::int32_t, 2> offsets{0, 4};
-        auto found = std::ranges::find_if(offsets, [&](std::int32_t off) {
-            return find_wire(off) != nullptr;
-        });
-        auto *wire = found == offsets.end() ? nullptr : find_wire(*found);
-        if (!wire || wire->version != 1 || wire->wire_length < 5) {
-            return FALSE;
-        }
-
-        auto *fuse = &wire->fuses[fuse_integrity];
-        if (*fuse == fuse_removed) {
-            return TRUE;
-        }
-
-        page_guard guard{fuse, 1};
-        if (!guard) {
-            return FALSE;
-        }
-
-        *fuse = fuse_removed;
-        return TRUE;
-    } else {
-        return FALSE;
+[[nodiscard]] auto disable_asar_integrity() noexcept -> bool {
+    auto image = module_image();
+    auto wires = scan_offsets | std::views::transform([image](auto offset) {
+                     return find_wire(image, offset);
+                 });
+    auto match = std::ranges::find_if(wires, [](auto *wire) {
+        return wire != nullptr;
+    });
+    if (match == wires.end()) {
+        return false;
     }
+
+    auto *wire = *match;
+    if (wire->version != 1 || wire->length <= fuse_index) {
+        return false;
+    }
+
+    auto fuse = std::span<std::byte, 1>{wire->fuses + fuse_index, 1};
+    if (fuse.front() == removed) {
+        return true;
+    }
+
+    page_guard writable{fuse};
+    if (!writable) {
+        return false;
+    }
+
+    fuse.front() = removed;
+    return true;
 }
