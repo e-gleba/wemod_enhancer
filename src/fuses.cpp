@@ -6,74 +6,65 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <ranges>
 #include <span>
 
 namespace {
 
+constexpr std::size_t sentinel_size = 32;
 constexpr std::size_t fuse_index = 4;
 constexpr std::byte removed{'r'};
-constexpr std::array<std::uint64_t, 4> sentinel{
-    0x6E64474B70374C64ULL,
-    0x6262503639377A4EULL,
-    0x58486D4B4E57516AULL,
-    0x5873743942615A42ULL,
+constexpr std::array<std::byte, sentinel_size> sentinel{
+    std::byte{'d'}, std::byte{'L'}, std::byte{'7'}, std::byte{'p'},
+    std::byte{'K'}, std::byte{'G'}, std::byte{'d'}, std::byte{'n'},
+    std::byte{'N'}, std::byte{'z'}, std::byte{'7'}, std::byte{'9'},
+    std::byte{'6'}, std::byte{'P'}, std::byte{'b'}, std::byte{'b'},
+    std::byte{'j'}, std::byte{'Q'}, std::byte{'W'}, std::byte{'N'},
+    std::byte{'K'}, std::byte{'m'}, std::byte{'H'}, std::byte{'X'},
+    std::byte{'B'}, std::byte{'Z'}, std::byte{'a'}, std::byte{'B'},
+    std::byte{'9'}, std::byte{'t'}, std::byte{'s'}, std::byte{'X'},
 };
-constexpr std::array<std::ptrdiff_t, 2> scan_offsets{0, 4};
+constexpr std::array<std::size_t, 2> scan_offsets{0, 4};
 
 struct fuse_wire_header final {
-    std::array<std::byte, sizeof(sentinel)> marker;
+    std::array<std::byte, sentinel_size> marker;
     std::uint8_t version;
     std::uint8_t length;
 };
 
-static_assert(sizeof(fuse_wire_header) == sizeof(sentinel) + 2);
+static_assert(sizeof(fuse_wire_header) == sentinel_size + 2);
 
 class [[nodiscard]] page_guard final {
   public:
-    explicit page_guard(std::span<std::byte> bytes) noexcept
-        : bytes_{bytes},
-          writable_{VirtualProtect(bytes_.data(), bytes_.size(), PAGE_READWRITE,
-                                   &old_protection_) != FALSE} {}
+    explicit page_guard(std::span<std::byte> bytes) noexcept : bytes{bytes} {
+        writable = VirtualProtect(bytes.data(), bytes.size(), PAGE_READWRITE,
+                                  &old_protection) != FALSE;
+    }
 
     ~page_guard() noexcept {
-        if (writable_) {
+        if (writable) {
             DWORD ignored{};
-            VirtualProtect(bytes_.data(), bytes_.size(), old_protection_,
-                           &ignored);
+            VirtualProtect(bytes.data(), bytes.size(), old_protection, &ignored);
         }
     }
 
     page_guard(const page_guard &) = delete;
     auto operator=(const page_guard &) -> page_guard & = delete;
-
     page_guard(page_guard &&) = delete;
     auto operator=(page_guard &&) -> page_guard & = delete;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return writable_;
-    }
+    [[nodiscard]] explicit operator bool() const noexcept { return writable; }
 
   private:
-    std::span<std::byte> bytes_;
-    DWORD old_protection_{};
-    bool writable_{};
+    std::span<std::byte> bytes;
+    DWORD old_protection{};
+    bool writable{};
 };
 
-[[nodiscard]] constexpr auto align_down(std::uintptr_t value) noexcept
-    -> std::uintptr_t {
-    return value & ~std::uintptr_t{7};
-}
-
-[[nodiscard]] constexpr auto align_up(std::uintptr_t value) noexcept
-    -> std::uintptr_t {
-    return align_down(value + 7);
-}
-
-[[nodiscard]] auto module_image() noexcept -> std::span<std::byte> {
+[[nodiscard]] auto process_image() noexcept -> std::span<std::byte> {
     auto *base = reinterpret_cast<std::byte *>(GetModuleHandleW(nullptr));
     if (base == nullptr) {
         return {};
@@ -94,53 +85,41 @@ class [[nodiscard]] page_guard final {
 }
 
 [[nodiscard]] auto find_wire(std::span<std::byte> image,
-                             std::ptrdiff_t offset) noexcept
+                             std::size_t offset) noexcept
     -> fuse_wire_header * {
-    if (image.size() < sizeof(sentinel)) {
+    if (offset > image.size() ||
+        image.size() - offset < sentinel.size() + sizeof(fuse_wire_header)) {
         return nullptr;
     }
 
-    auto const base = reinterpret_cast<std::uintptr_t>(image.data());
-    auto const start = align_up(base) + sizeof(std::uint64_t) + offset;
-    auto const end = align_down(base + image.size() - sizeof(sentinel)) -
-                     sizeof(std::uint64_t) - offset;
-    if (start >= end) {
-        return nullptr;
-    }
-
-    auto *first = reinterpret_cast<const std::uint64_t *>(start);
-    auto const count = static_cast<std::size_t>(end - start) /
-                       sizeof(std::uint64_t);
-    auto words = std::span{first, count};
-    auto match = std::ranges::search(words, sentinel);
+    auto searchable = image.subspan(offset);
+    auto match = std::ranges::search(searchable, sentinel);
     if (match.empty()) {
         return nullptr;
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-    return reinterpret_cast<fuse_wire_header *>(
-        const_cast<std::uint64_t *>(std::to_address(match.begin())));
+    return std::bit_cast<fuse_wire_header *>(match.begin());
 }
 
 [[nodiscard]] auto fuse_at(fuse_wire_header &wire, std::size_t index) noexcept
     -> std::span<std::byte, 1> {
-    auto *fuses = reinterpret_cast<std::byte *>(std::addressof(wire)) +
-                  sizeof(fuse_wire_header);
-    // MSVC STL: fixed-extent span(It, size_type) is explicit.
-    return std::span<std::byte, 1>(fuses + index, 1);
+    auto bytes = std::span{reinterpret_cast<std::byte *>(&wire),
+                           sizeof(fuse_wire_header) + wire.length};
+    return std::span<std::byte, 1>{bytes.subspan(sizeof(fuse_wire_header) + index,
+                                                1)};
 }
 
 } // namespace
 
 [[nodiscard]] auto disable_asar_integrity() noexcept -> bool {
-    auto image = module_image();
-    auto wires = scan_offsets | std::views::transform([image](auto offset) {
-                     return find_wire(image, offset);
-                 });
-    auto match = std::ranges::find_if(wires, [](auto *wire) {
+    auto image = process_image();
+    auto candidates = scan_offsets | std::views::transform([image](auto offset) {
+                          return find_wire(image, offset);
+                      });
+    auto match = std::ranges::find_if(candidates, [](auto *wire) {
         return wire != nullptr;
     });
-    if (match == wires.end()) {
+    if (match == candidates.end()) {
         return false;
     }
 
