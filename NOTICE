@@ -1,0 +1,15 @@
+WeMod Enhancer
+Copyright 2026 Evgeniy Gleba
+
+This product is based on software developed by k1tbyte.
+Original project: Wand-Enhancer (https://github.com/k1tbyte/Wand-Enhancer)
+Original license: Apache License 2.0
+
+The core patching strategy — including ASAR integrity bypass via Electron
+fuse wire manipulation and WeMod API response interception — originates
+from Wand-Enhancer. The implementation in this repository is a complete
+rewrite in C and Python.
+
+Portions of src/ are derivative works of Wand-Enhancer concepts and are
+attributed accordingly. See THIRDPARTY-LICENSES.md for the full text of
+the Apache License 2.0.

@@ -1,3 +1,14 @@
+/*
+ * library.c — version.dll proxy DLL with ASAR integrity bypass on load.
+ *
+ * Based on concepts from Wand-Enhancer (https://github.com/k1tbyte/Wand-Enhancer)
+ * Copyright 2024 k1tbyte — Licensed under Apache License 2.0
+ *
+ * Modified: Rewritten in C by Evgeniy Gleba, 2026.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 /* NOVERSION suppresses version function declarations in the MSVC SDK.
    MinGW-w64's winver.h does NOT honour NOVERSION, so we must also
    prevent winver.h from being included when building with MinGW.

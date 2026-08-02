@@ -1,3 +1,14 @@
+/*
+ * fuses.c — ASAR integrity bypass via Electron fuse wire manipulation.
+ *
+ * Based on concepts from Wand-Enhancer (https://github.com/k1tbyte/Wand-Enhancer)
+ * Copyright 2024 k1tbyte — Licensed under Apache License 2.0
+ *
+ * Modified: Rewritten in C by Evgeniy Gleba, 2026.
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #include <windows.h>
 
 #define SENTINEL_LENGTH 32
