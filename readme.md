@@ -65,7 +65,7 @@ If a WeMod update changes the minified client code and a required patch no longe
 ## What you get
 
 | Feature | Details |
-|:--------|:--------|
+| :-------- | :-------- |
 | **Pro activation** | Intercepts `/v3/account` responses, injects `subscription: { period: "yearly", state: "active" }` |
 | **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` — walks memory for a 32-byte sentinel, flips Electron's fuse wire to `removed` |
 | **F12 DevTools** | Hotkey hook on `browser-window-created` |
@@ -74,20 +74,10 @@ If a WeMod update changes the minified client code and a required patch no longe
 | **Backup & restore** | Automatic, one command |
 | **Fail-safe** | All-or-nothing patching — never a half-patched client |
 
-## How it works
-
-```mermaid
-flowchart LR
-    A["Python CLI<br/>patch & rebuild ASAR"] --> B["version.dll proxy<br/>disable ASAR integrity fuse"]
-    B --> C["WeMod.exe<br/>Pro features unlocked"]
-```
-
-The Python CLI backs up `app.asar`, extracts it, applies the JavaScript patches, rebuilds the archive with fresh SHA-256 integrity, and installs the `version.dll` proxy. At runtime the proxy walks WeMod's process memory for a 32-byte sentinel, locates Electron's fuse wire, and flips the ASAR-integrity fuse to `removed` via `VirtualProtect` — all in-process, no external debugger required.
-
 ## Requirements
 
 | Tool | Version | Notes |
-|:-----|:--------|:------|
+| :----- | :-------- | :------ |
 | **Python** | 3.11+ | Runs the patcher CLI — standard library only |
 | **CMake** | 3.31+ | Builds the proxy DLL (not needed with prebuilt releases) |
 | **Ninja** | any | Build system generator |
@@ -125,7 +115,7 @@ The original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) is a 13K-
 WeMod Enhancer is a ground-up rewrite that does the same core job with zero runtime dependencies and full cross-platform support:
 
 | | **WeMod Enhancer** | **Wand-Enhancer** |
-|:--|:-------------------|:-------------------|
+| :-- | :------------------- | :------------------- |
 | **Language** | C + Python (stdlib only) | C# / .NET / WPF |
 | **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
@@ -144,7 +134,7 @@ WeMod Enhancer is a ground-up rewrite that does the same core job with zero runt
 | **Backup & restore** | Automatic, one-command restore | — |
 | **License** | MIT | Apache-2.0 |
 
-> WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice — both projects can coexist.
+> WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
 
 ## License
 
