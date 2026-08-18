@@ -43,11 +43,14 @@ chmod +x "$HOME/wemod-launcher/wemod"
 
 # 2. Get WeMod Enhancer (prebuilt version.dll included — Python is all you need)
 curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
-tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
+mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz -C wemod_enhancer
+cd wemod_enhancer
 
 # 3. Launch your game once through the launcher, then patch the WeMod install
 python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
+
+> No `python3`? It's preinstalled on SteamOS and most distros — otherwise install it with your package manager (3.11+).
 
 Steam launch options for the game:
 
@@ -78,18 +81,20 @@ $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
 python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 ```
 
-> No Python yet? `winget install Python.Python.3.13`, then reopen PowerShell.
+> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell.
 
-## Restore
+## Restore & clean up
 
-Originals are backed up automatically. One command reverts everything:
+Originals are backed up automatically — `restore` reverts WeMod to stock, then delete the patcher files to leave no trace:
 
 ```sh
 # Linux
-python3 bin/wemod_enhancer.py restore --install-dir "<same install dir>"
+python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+cd .. && rm -rf wemod_enhancer wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
 
 # Windows (PowerShell, same session as above)
 python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
+cd ..; Remove-Item -Recurse -Force wemod_enhancer, wemod_enhancer.zip
 ```
 
 ## Build from source
