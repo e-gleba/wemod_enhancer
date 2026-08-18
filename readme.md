@@ -81,20 +81,18 @@ $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
 python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 ```
 
-> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell.
+> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
 
-## Restore & clean up
+## Restore
 
-Originals are backed up automatically — `restore` reverts WeMod to stock, then delete the patcher files to leave no trace:
+Originals are backed up automatically. One command reverts everything:
 
 ```sh
 # Linux
 python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
-cd .. && rm -rf wemod_enhancer wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
 
 # Windows (PowerShell, same session as above)
 python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
-cd ..; Remove-Item -Recurse -Force wemod_enhancer, wemod_enhancer.zip
 ```
 
 ## Build from source
