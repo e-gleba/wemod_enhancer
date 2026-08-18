@@ -461,8 +461,8 @@ void SDLCALL on_folder_chosen(void* userdata,
 }
 
 // The patcher always comes from the GitHub releases: downloaded once
-// into the pref dir, then reused on every launch. Setup / diagnostics
-// has a button to re-download the newest release.
+// into the pref dir, then reused on every launch. Settings has a
+// button to re-download the newest release.
 [[nodiscard]] std::string cached_script()
 {
     return find_script_under(bootstrap_root() / "patcher").string();
@@ -541,7 +541,7 @@ void start_bootstrap(app_state& state)
 
 // One-shot interpreter check: prints the version (kept as the classic
 // `$ python --version` line in the log) and where the binary lives;
-// the diagnostics panel shows both.
+// the Settings section shows both.
 void start_probe(app_state& state)
 {
     const std::string command{
@@ -769,6 +769,17 @@ bool fit_button(const char* label)
     return ImGui::Button(label, ImVec2{width, 0.0F});
 }
 
+// Big action button: Patch / Restore get visual weight so the primary
+// action is obvious at a glance. Returns true when clicked.
+bool big_button(const char* label, const float width, const float height)
+{
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2{16.0F, 12.0F});
+    const bool clicked{ImGui::Button(label, ImVec2{width, height})};
+    ImGui::PopStyleVar();
+    return clicked;
+}
+
 // Why an action button is disabled, or what it does when it is not -
 // no nested conditional operators, just early returns.
 [[nodiscard]] const char* action_tooltip(const bool install_ok,
@@ -779,7 +790,7 @@ bool fit_button(const char* label)
         return "Pick a valid WeMod folder first";
     }
     if (!script_ok) {
-        return "Waiting for the patcher - see Setup / diagnostics";
+        return "Waiting for the patcher - see Settings";
     }
     return ready;
 }
@@ -816,9 +827,9 @@ void help_marker(const char* description, const char* url)
     }
 }
 
-// One labeled row of the Configuration section: label on the left,
+// One labeled row of the Settings section: label on the left,
 // status + controls to its right. Steam-settings style.
-void config_row(const char* label)
+void settings_row(const char* label)
 {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
@@ -835,27 +846,20 @@ void draw_ui(app_state& state)
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
-    // Steam-style layout: title bar, then a generous Configuration
-    // section (the only input the user must give), big actions, then
-    // the log filling the rest. Larger window + wider spacing keep
-    // everything readable at a glance.
+    // Steam-style layout: title, big actions in focus, then the log.
+    // Settings merged into one section - no separate Advanced tab.
 
     ImGui::TextUnformatted(window_title);
-    ImGui::SameLine();
-    text_disabled("| close WeMod, pick its install folder, press Patch");
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // --- Configuration: the only thing a user must provide ----------
+    // --- WeMod folder: the only thing a user must provide -----------
     const bool install_ok{looks_like_wemod_install(state.install_dir)};
     const bool script_ok{!state.script_path.empty() &&
                          fs::is_regular_file(state.script_path)};
 
-    ImGui::SeparatorText("Configuration");
-    ImGui::Spacing();
-
-    config_row("WeMod folder");
+    settings_row("WeMod folder");
     help_marker(
         "Folder where WeMod is installed - the app-x.y.z directory that "
         "contains resources\\app.asar. Auto-detected when possible.",
@@ -863,7 +867,11 @@ void draw_ui(app_state& state)
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (ImGui::GetStyle().FramePadding.x * 2.0F)};
     ImGui::SetNextItemWidth(-browse_w - ImGui::GetStyle().ItemSpacing.x);
-    if (!install_ok && !state.install_dir.empty()) {
+    // Green field = valid path. Red border = invalid. No text needed.
+    if (install_ok) {
+        ImGui::PushStyleColor(ImGuiCol_FrameBg,
+                              ImVec4{0.15F, 0.35F, 0.15F, 0.60F});
+    } else if (!state.install_dir.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Border, color_err);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
     }
@@ -871,7 +879,9 @@ void draw_ui(app_state& state)
         is_windows ? R"(C:\Users\<you>\AppData\Local\WeMod\app-10.x.x)"
                    : "~/wemod-launcher/wemod_data/wemod_bin"};
     ImGui::InputTextWithHint("##install_dir", install_hint, &state.install_dir);
-    if (!install_ok && !state.install_dir.empty()) {
+    if (install_ok) {
+        ImGui::PopStyleColor();
+    } else if (!state.install_dir.empty()) {
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
     }
@@ -892,20 +902,18 @@ void draw_ui(app_state& state)
                                                    : start_dir.c_str(),
                                  false);
     }
-    // The single folder indicator: the detected path plus validity.
-    if (install_ok) {
-        text_colored(color_ok, "Found resources/app.asar - looks good.");
-    } else {
-        text_disabled("The folder must contain resources\\app.asar");
-    }
 
     ImGui::Spacing();
     ImGui::Spacing();
 
-    // --- Actions ----------------------------------------------------
+    // --- Actions: big, in focus --------------------------------------
     const bool can_run{!state.running && install_ok && script_ok};
+    const float button_width{(ImGui::GetContentRegionAvail().x -
+                              ImGui::GetStyle().ItemSpacing.x) *
+                             0.5F};
+    const float button_height{ImGui::GetFrameHeight() * 2.0F};
     ImGui::BeginDisabled(!can_run);
-    if (fit_button("Patch")) {
+    if (big_button("Patch", button_width, button_height)) {
         start_run(state, "patch");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -913,7 +921,7 @@ void draw_ui(app_state& state)
             action_tooltip(install_ok, script_ok, "Unlock Pro features"));
     }
     ImGui::SameLine();
-    if (fit_button("Restore")) {
+    if (big_button("Restore", button_width, button_height)) {
         start_run(state, "restore");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -922,30 +930,26 @@ void draw_ui(app_state& state)
                                     "Undo every change (uses backups)"));
     }
     ImGui::EndDisabled();
-    help_marker(
-        "Patch unlocks Pro features; Restore puts the original files "
-        "back from the backups the patcher made.",
-        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
-    ImGui::SameLine();
     if (state.running) {
+        ImGui::SameLine();
         text_unformatted(running_status(state.kind));
     } else if (state.has_run && state.last_exit_code == 0) {
-        text_colored(color_ok, "Done - everything went fine.");
+        ImGui::SameLine();
+        text_colored(color_ok, "Done.");
     } else if (state.has_run) {
+        ImGui::SameLine();
         text_colored(color_err,
                      "Failed (exit code " +
-                         std::to_string(state.last_exit_code) +
-                         ") - press \"Report bug\" to open a pre-filled "
-                         "issue.");
+                         std::to_string(state.last_exit_code) + ")");
     }
 
     ImGui::Spacing();
 
-    // --- Setup / diagnostics: what is missing + one-click fixes ------
-    if (ImGui::CollapsingHeader("Setup / diagnostics")) {
+    // --- Settings: merged diagnostics + advanced, collapsed by default
+    if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent();
 
-        config_row("Python");
+        settings_row("Python");
         help_marker(
             "Python 3.11+ runs the patcher. Preinstalled on SteamOS and "
             "most distros.",
@@ -964,12 +968,12 @@ void draw_ui(app_state& state)
             text_colored(color_err,
                          "'" + state.python +
                              "' did not run - install Python 3.11+ or fix "
-                             "the command under Advanced");
+                             "the command below");
         } else {
             text_disabled("checking...");
         }
 
-        config_row("Patcher");
+        settings_row("Patcher");
         help_marker(
             "wemod_enhancer.py + version.dll, downloaded from the latest "
             "GitHub release into the app data dir. Download now fetches "
@@ -996,7 +1000,7 @@ void draw_ui(app_state& state)
         // the readme tutorial. Offer to fetch it the same way, or let
         // the user confirm it is already installed.
         if (const fs::path launcher{launcher_dir()}; !launcher.empty()) {
-            config_row("wemod-launcher");
+            settings_row("wemod-launcher");
             help_marker(
                 "Linux runs WeMod through wemod-launcher (Proton). The "
                 "readme tutorial clones it into the home directory.",
@@ -1032,13 +1036,11 @@ void draw_ui(app_state& state)
             }
         }
 
-        ImGui::Unindent();
-    }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
 
-    // --- Advanced: for power users / debugging ----------------------
-    if (ImGui::CollapsingHeader("Advanced")) {
-        ImGui::Indent();
-        config_row("Python command");
+        settings_row("Python command");
         help_marker(
             "How Python 3.11+ is started on your system. Usually "
             "'python' on Windows, 'python3' on Linux.",
@@ -1046,10 +1048,12 @@ void draw_ui(app_state& state)
         ImGui::SetNextItemWidth(200.0F);
         constexpr const char* python_hint{is_windows ? "python" : "python3"};
         ImGui::InputTextWithHint("##python", python_hint, &state.python);
-        config_row("Patcher script (wemod_enhancer.py)");
+
+        settings_row("Patcher script");
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##script", &state.script_path);
-        config_row("version.dll (empty = auto-detect)");
+
+        settings_row("version.dll");
         help_marker(
             "The proxy DLL the patcher drops next to WeMod. Leave empty "
             "to use the copy downloaded next to wemod_enhancer.py.",
@@ -1058,6 +1062,7 @@ void draw_ui(app_state& state)
         ImGui::InputTextWithHint("##version_dll",
                                  "auto: next to the script",
                                  &state.version_dll);
+
         ImGui::Unindent();
     }
 
