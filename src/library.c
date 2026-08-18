@@ -22,7 +22,18 @@
 #endif
 #include <windows.h>
 
-extern BOOL disable_asar_integrity(void);
+#include <wemod_enhancer/fuses.h>
+
+/* Custom patch hook — see patches/readme.md. When patch sources are
+   compiled in (WEMOD_ENHANCER_HAS_CUSTOM_PATCHES) exactly one patch
+   translation unit must define wemod_run_custom_patches(); otherwise
+   the hook below is an inline no-op. */
+#ifdef WEMOD_ENHANCER_HAS_CUSTOM_PATCHES
+extern void wemod_run_custom_patches(void);
+#else
+static void wemod_run_custom_patches(void) {}
+#endif
+
 static HMODULE original_version;
 
 /* MinGW-w64 declares Ver* params as non-const (LPSTR/LPWSTR).
@@ -80,6 +91,7 @@ BOOL WINAPI DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
         DisableThreadLibraryCalls(module);
         if (!load_original()) return FALSE;
         disable_asar_integrity();
+        wemod_run_custom_patches();
     }
     return TRUE;
 }

@@ -105,6 +105,10 @@ cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
 cmake --workflow --preset msvc-full                 # Windows (MSVC) package
 ```
 
+The install tree is a self-contained package: `bin/version.dll`, the import library in `lib/`, public headers in `include/`, and a CMake package config in `lib/cmake/wemod_enhancer/` — downstream projects can `find_package(wemod_enhancer CONFIG)` and link `wemod_enhancer::version`.
+
+Custom patches: drop any `*.c` files into [`patches/`](patches/readme.md) — they are compiled into `version.dll` automatically, no CMake edits needed.
+
 ## vs Wand-Enhancer
 
 Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) — same core job, zero runtime dependencies, fully cross-platform:
