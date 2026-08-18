@@ -13,21 +13,27 @@
 // The only thing the user provides is the WeMod folder (auto-detected
 // at startup, so usually that is just pressing Patch).
 //
-// Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS) instead of a
-// hand-written main loop - SDL_AppInit / SDL_AppIterate / SDL_AppEvent
-// / SDL_AppQuit. Modern C++23 notes:
+// Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS is set via
+// target_compile_definitions in gui/CMakeLists.txt, keeping this file
+// macro-free) - SDL_AppInit / SDL_AppIterate / SDL_AppEvent /
+// SDL_AppQuit. Modern C++23 notes:
 //   - `if constexpr` on the compile-time SDL platform tag replaces
 //     #ifdef wherever both branches compile; the preprocessor only
 //     remains where names do not exist cross-platform (popen/pclose).
 //   - SDL3 owns the platform glue: SDL_GetEnvironmentVariable instead
 //     of std::getenv, SDL_GetPrefPath instead of hand-rolled cache-dir
-//     logic, SDL_GetPlatform for diagnostics, SDL_Log for status,
-//     RAII for SDL_malloc'd strings.
+//     logic, SDL_GetPlatform for diagnostics, RAII for SDL_malloc'd
+//     strings.
 //   - gsl::not_null for pointers out of C callbacks, gsl::finally for
-//     SDL_Quit, Expects() for preconditions.
+//     SDL_Quit, Expects() for preconditions; app state ownership is a
+//     std::unique_ptr (make_unique in SDL_AppInit, re-acquired in
+//     SDL_AppQuit) - no raw new/delete anywhere.
 //   - std::async + std::future drives the worker thread: popen() has
 //     no cancellation point, so a std::jthread stop_token would be
 //     dead weight - SDL_AppIterate just polls wait_for(0) per frame.
+//   - ImGui's text API is printf-varargs only; the text_unformatted /
+//     text_colored / text_disabled / tooltip_text helpers below keep
+//     every call site vararg-free (cppcoreguidelines-pro-type-vararg).
 //   - "Report bug" opens a pre-filled GitHub issue (env info + log as
 //     markdown) via SDL_OpenURL - a one-click bug report.
 //
@@ -42,15 +48,18 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_dialog.h>
 
-#define SDL_MAIN_USE_CALLBACKS 1
+// SDL_MAIN_USE_CALLBACKS comes from the build system (see
+// gui/CMakeLists.txt) - no #define needed here.
 #include <SDL3/SDL_main.h>
 
 #include <gsl/gsl> // gsl::not_null, gsl::finally, Expects
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <future>
@@ -110,6 +119,11 @@ constexpr int window_width = 860;
 constexpr int window_height = 620;
 constexpr ImVec4 clear_color(0.10F, 0.10F, 0.12F, 1.00F);
 
+// Status colors (replacing the magic-number literals).
+constexpr ImVec4 color_ok(0.35F, 0.85F, 0.45F, 1.00F);
+constexpr ImVec4 color_err(0.90F, 0.30F, 0.30F, 1.00F);
+constexpr ImVec4 color_warn(0.90F, 0.60F, 0.20F, 1.00F);
+
 struct run_result
 {
     int exit_code;
@@ -119,7 +133,7 @@ struct run_result
 // What the current background command is, so poll_run() can react to
 // completion: refresh resolved paths after a download, record the
 // Python probe result, re-check the wemod-launcher clone...
-enum class run_kind { patcher, bootstrap, probe, launcher };
+enum class run_kind : std::uint8_t { patcher, bootstrap, probe, launcher };
 
 struct app_state
 {
@@ -151,6 +165,44 @@ struct sdl_free
     void operator()(void* ptr) const noexcept { SDL_free(ptr); }
 };
 using sdl_string = std::unique_ptr<char, sdl_free>;
+
+// --- Vararg-free ImGui helpers --------------------------------------
+// ImGui's formatted text API is printf-style varargs; these wrappers
+// keep every call site clean (cppcoreguidelines-pro-type-vararg).
+
+void text_unformatted(std::string_view text)
+{
+    ImGui::TextUnformatted(text.data(), text.data() + text.size());
+}
+
+void text_colored(const ImVec4& color, std::string_view text)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    text_unformatted(text);
+    ImGui::PopStyleColor();
+}
+
+void text_disabled(std::string_view text)
+{
+    text_colored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), text);
+}
+
+// Same wrapping width ImGui's SetTooltip uses, minus the varargs.
+void tooltip_text(std::string_view text)
+{
+    if (ImGui::BeginTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0F);
+        text_unformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+// SDL_Log is varargs-only; one suppression here beats one per call site.
+void sdl_log_error(const std::string& message)
+{
+    SDL_Log("%s", message.c_str()); // NOLINT(cppcoreguidelines-pro-type-vararg)
+}
 
 // Process environment via SDL3 (no std::getenv, no CRT quirks).
 [[nodiscard]] const char* env_var(const char* name) noexcept
@@ -210,9 +262,10 @@ run_result run_command(const std::string& command)
     }
 
     std::string pending_line;
-    char buffer[512];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        pending_line += buffer;
+    std::array<char, 512> buffer{};
+    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+           nullptr) {
+        pending_line += buffer.data();
         // Flush on newline so the log grows visibly while the patcher
         // runs instead of arriving as one blob at the end.
         if (pending_line.find('\n') != std::string::npos) {
@@ -322,7 +375,7 @@ run_result run_command(const std::string& command)
             if (fs::is_directory(launcher, ec)) {
                 return launcher.string();
             }
-            return std::string(home);
+            return {home};
         }
     }
     return {};
@@ -356,8 +409,8 @@ void SDLCALL on_folder_chosen(void* userdata,
 // XDG data home on Linux) and creates the directory for us.
 [[nodiscard]] fs::path bootstrap_root()
 {
-    if (const sdl_string pref(SDL_GetPrefPath("e-gleba", "wemod_enhancer"))) {
-        return fs::path(pref.get());
+    if (const sdl_string pref{SDL_GetPrefPath("e-gleba", "wemod_enhancer")}) {
+        return {pref.get()};
     }
     return fs::temp_directory_path() / "wemod_enhancer";
 }
@@ -665,9 +718,40 @@ void poll_run(app_state& state)
 bool fit_button(const char* label)
 {
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float width = ImGui::CalcTextSize(label).x +
-        style.FramePadding.x * 2.0F;
+    const float width =
+        ImGui::CalcTextSize(label).x + (style.FramePadding.x * 2.0F);
     return ImGui::Button(label, ImVec2(width, 0.0F));
+}
+
+// Why an action button is disabled, or what it does when it is not -
+// no nested conditional operators, just early returns.
+[[nodiscard]] const char* action_tooltip(const bool install_ok,
+                                         const bool script_ok,
+                                         const char* ready) noexcept
+{
+    if (!install_ok) {
+        return "Pick a valid WeMod folder first";
+    }
+    if (!script_ok) {
+        return "Waiting for the patcher - see Setup / diagnostics";
+    }
+    return ready;
+}
+
+// Status line shown while a background command runs.
+[[nodiscard]] std::string_view running_status(const run_kind kind) noexcept
+{
+    switch (kind) {
+    case run_kind::bootstrap:
+        return "Downloading the latest patcher release...";
+    case run_kind::probe:
+        return "Checking Python...";
+    case run_kind::launcher:
+        return "Downloading wemod-launcher...";
+    case run_kind::patcher:
+        break;
+    }
+    return "Running - keep WeMod closed...";
 }
 
 // Small "(?)" marker: hover shows a short description, click opens the
@@ -676,12 +760,13 @@ bool fit_button(const char* label)
 void help_marker(const char* description, const char* url)
 {
     ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    text_disabled("(?)");
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s\n\nClick to open: %s", description, url);
+        tooltip_text(std::string(description) + "\n\nClick to open: " + url);
     }
     if (ImGui::IsItemClicked() && !SDL_OpenURL(url)) {
-        SDL_Log("SDL_OpenURL(%s): %s", url, SDL_GetError());
+        sdl_log_error(std::string("SDL_OpenURL(") + url +
+                      "): " + SDL_GetError());
     }
 }
 
@@ -703,7 +788,7 @@ void draw_ui(app_state& state)
 
     ImGui::TextUnformatted("WeMod Enhancer");
     ImGui::SameLine();
-    ImGui::TextDisabled("| close WeMod, pick its install folder, press Patch");
+    text_disabled("| close WeMod, pick its install folder, press Patch");
     ImGui::Spacing();
 
     // --- The only thing a user must provide: the WeMod folder -------
@@ -719,15 +804,14 @@ void draw_ui(app_state& state)
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     ImGui::SameLine();
     const float browse_w = ImGui::CalcTextSize("Browse...").x +
-        ImGui::GetStyle().FramePadding.x * 2.0F;
+        (ImGui::GetStyle().FramePadding.x * 2.0F);
     ImGui::SetNextItemWidth(-browse_w - ImGui::GetStyle().ItemSpacing.x);
     if (!install_ok && !state.install_dir.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Border,
-                              ImVec4(0.90F, 0.30F, 0.30F, 1.00F));
+        ImGui::PushStyleColor(ImGuiCol_Border, color_err);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
     }
     constexpr const char* install_hint =
-        is_windows ? "C:\\Users\\<you>\\AppData\\Local\\WeMod\\app-10.x.x"
+        is_windows ? R"(C:\Users\<you>\AppData\Local\WeMod\app-10.x.x)"
                    : "~/wemod-launcher/wemod_data/wemod_bin";
     ImGui::InputTextWithHint("##install_dir", install_hint, &state.install_dir);
     if (!install_ok && !state.install_dir.empty()) {
@@ -753,10 +837,9 @@ void draw_ui(app_state& state)
     }
     // The single folder indicator: the detected path plus validity.
     if (install_ok) {
-        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
-                           "Found resources/app.asar - looks good.");
+        text_colored(color_ok, "Found resources/app.asar - looks good.");
     } else {
-        ImGui::TextDisabled("The folder must contain resources\\app.asar");
+        text_disabled("The folder must contain resources\\app.asar");
     }
 
     ImGui::Spacing();
@@ -768,24 +851,17 @@ void draw_ui(app_state& state)
         start_run(state, "patch");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s",
-                          !install_ok
-                              ? "Pick a valid WeMod folder first"
-                          : !script_ok
-                              ? "Waiting for the patcher - see Setup / diagnostics"
-                              : "Unlock Pro features");
+        tooltip_text(
+            action_tooltip(install_ok, script_ok, "Unlock Pro features"));
     }
     ImGui::SameLine();
     if (fit_button("Restore")) {
         start_run(state, "restore");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("%s",
-                          !install_ok
-                              ? "Pick a valid WeMod folder first"
-                          : !script_ok
-                              ? "Waiting for the patcher - see Setup / diagnostics"
-                              : "Undo every change (uses backups)");
+        tooltip_text(action_tooltip(install_ok,
+                                    script_ok,
+                                    "Undo every change (uses backups)"));
     }
     ImGui::EndDisabled();
     help_marker(
@@ -794,24 +870,15 @@ void draw_ui(app_state& state)
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     ImGui::SameLine();
     if (state.running) {
-        ImGui::TextUnformatted(
-            state.kind == run_kind::bootstrap
-                ? "Downloading the latest patcher release..."
-            : state.kind == run_kind::probe
-                ? "Checking Python..."
-            : state.kind == run_kind::launcher
-                ? "Downloading wemod-launcher..."
-                : "Running - keep WeMod closed...");
+        text_unformatted(running_status(state.kind));
     } else if (state.has_run && state.last_exit_code == 0) {
-        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
-                           "Done - everything went fine.");
+        text_colored(color_ok, "Done - everything went fine.");
     } else if (state.has_run) {
-        const std::string status = "Failed (exit code " +
-            std::to_string(state.last_exit_code) +
-            ") - press \"Report bug\" to open a pre-filled issue.";
-        ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
-                           "%s",
-                           status.c_str());
+        text_colored(color_err,
+                     "Failed (exit code " +
+                         std::to_string(state.last_exit_code) +
+                         ") - press \"Report bug\" to open a pre-filled "
+                         "issue.");
     }
 
     ImGui::Separator();
@@ -827,22 +894,21 @@ void draw_ui(app_state& state)
             "https://www.python.org/downloads/");
         ImGui::SameLine();
         if (state.python_ok == 1) {
-            ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
-                               "%s",
-                               state.python_version.empty()
-                                   ? "works"
-                                   : state.python_version.c_str());
+            text_colored(color_ok,
+                         state.python_version.empty()
+                             ? std::string_view("works")
+                             : std::string_view(state.python_version));
             if (!state.python_location.empty()) {
                 ImGui::SameLine();
-                ImGui::TextDisabled("%s", state.python_location.c_str());
+                text_disabled(state.python_location);
             }
         } else if (state.python_ok == 0) {
-            ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
-                               "'%s' did not run - install Python 3.11+ or "
-                               "fix the command under Advanced",
-                               state.python.c_str());
+            text_colored(color_err,
+                         "'" + state.python +
+                             "' did not run - install Python 3.11+ or fix "
+                             "the command under Advanced");
         } else {
-            ImGui::TextDisabled("checking...");
+            text_disabled("checking...");
         }
 
         ImGui::TextUnformatted("Patcher");
@@ -853,14 +919,13 @@ void draw_ui(app_state& state)
             "https://github.com/e-gleba/wemod_enhancer/releases/latest");
         ImGui::SameLine();
         if (script_ok) {
-            ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F), "ready");
+            text_colored(color_ok, "ready");
             ImGui::SameLine();
-            ImGui::TextDisabled("%s", state.script_path.c_str());
+            text_disabled(state.script_path);
         } else if (state.running && state.kind == run_kind::bootstrap) {
-            ImGui::TextDisabled("downloading the latest release...");
+            text_disabled("downloading the latest release...");
         } else {
-            ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
-                               "missing");
+            text_colored(color_err, "missing");
             ImGui::SameLine();
             ImGui::BeginDisabled(state.running);
             if (fit_button("Download now")) {
@@ -880,15 +945,14 @@ void draw_ui(app_state& state)
                 "https://github.com/DeckCheatz/wemod-launcher");
             ImGui::SameLine();
             if (state.launcher_present) {
-                ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
-                                   "found");
+                text_colored(color_ok, "found");
                 ImGui::SameLine();
-                ImGui::TextDisabled("%s", launcher.string().c_str());
+                text_disabled(launcher.string());
             } else {
-                ImGui::TextColored(ImVec4(0.90F, 0.60F, 0.20F, 1.00F),
-                                   "not found in the home dir");
+                text_colored(color_warn, "not found in the home dir");
                 ImGui::SameLine();
-                ImGui::TextUnformatted("- download it like in the tutorial?");
+                ImGui::TextUnformatted(
+                    "- download it like in the tutorial?");
                 ImGui::SameLine();
                 ImGui::BeginDisabled(state.running);
                 if (fit_button("Yes, download")) {
@@ -901,11 +965,11 @@ void draw_ui(app_state& state)
                     state.launcher_note = !state.launcher_present;
                 }
                 if (state.launcher_note) {
-                    ImGui::TextColored(
-                        ImVec4(0.90F, 0.60F, 0.20F, 1.00F),
-                        "still not found at %s - if it lives elsewhere, "
-                        "point the WeMod folder above at it",
-                        launcher.string().c_str());
+                    text_colored(
+                        color_warn,
+                        "still not found at " + launcher.string() +
+                            " - if it lives elsewhere, point the WeMod "
+                            "folder above at it");
                 }
             }
         }
@@ -933,7 +997,7 @@ void draw_ui(app_state& state)
         help_marker(
             "The proxy DLL the patcher drops next to WeMod. Leave empty "
             "to use the copy downloaded next to wemod_enhancer.py.",
-        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
+            "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputTextWithHint("##version_dll",
                                  "auto: next to the script",
@@ -951,7 +1015,7 @@ void draw_ui(app_state& state)
                       ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
     if (state.log.empty()) {
-        ImGui::TextDisabled("Output of the patcher will appear here.");
+        text_disabled("Output of the patcher will appear here.");
     } else {
         ImGui::TextUnformatted(state.log.c_str());
     }
@@ -972,24 +1036,21 @@ void draw_ui(app_state& state)
         }
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(
-            "%s",
-            "Copy the environment info plus everything above - paste it "
-            "when asking for help");
+        tooltip_text("Copy the environment info plus everything above - "
+                     "paste it when asking for help");
     }
     ImGui::SameLine();
     if (fit_button("Report bug")) {
         // Pre-filled GitHub issue: env info + log tail as markdown.
         const std::string url = bug_report_url(state);
         if (!SDL_OpenURL(url.c_str())) {
-            SDL_Log("SDL_OpenURL(issue): %s", SDL_GetError());
+            sdl_log_error(std::string("SDL_OpenURL(issue): ") +
+                          SDL_GetError());
         }
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip(
-            "%s",
-            "Open a pre-filled GitHub issue - environment info and log "
-            "attached as markdown");
+        tooltip_text("Open a pre-filled GitHub issue - environment info "
+                     "and log attached as markdown");
     }
     ImGui::SameLine();
     if (fit_button("Clear")) {
@@ -999,7 +1060,7 @@ void draw_ui(app_state& state)
     if (state.copied_flash > 0.0F) {
         state.copied_flash -= io.DeltaTime;
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F), "Copied!");
+        text_colored(color_ok, "Copied!");
     }
 
     ImGui::End();
@@ -1043,7 +1104,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     }
     if (!SDL_SetRenderVSync(renderer, 1)) {
         // Non-fatal: worst case the UI redraws uncapped.
-        SDL_Log("SDL_SetRenderVSync: %s", SDL_GetError());
+        sdl_log_error(std::string("SDL_SetRenderVSync: ") + SDL_GetError());
     }
     SDL_SetWindowPosition(window,
                           SDL_WINDOWPOS_CENTERED,
@@ -1064,31 +1125,35 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
-    auto* state = new app_state{ .window = window,
-                                 .renderer = renderer,
-                                 .install_dir = default_install_dir(),
-                                 .script_path = cached_script(),
-                                 .python = std::string(default_python) };
-    state->launcher_present = launcher_installed();
+    // make_unique + release: ownership moves to the SDL appstate void*
+    // and is re-acquired by a unique_ptr in SDL_AppQuit - no raw
+    // new/delete anywhere (cppcoreguidelines-owning-memory).
+    auto state_owner = std::make_unique<app_state>();
+    app_state& state = *state_owner;
+    state.window = window;
+    state.renderer = renderer;
+    state.install_dir = default_install_dir();
+    state.script_path = cached_script();
+    state.python = std::string(default_python);
+    state.launcher_present = launcher_installed();
 
     // Say what was auto-detected up front - the log doubles as the
     // "what is happening" narration that bug reports share.
-    if (looks_like_wemod_install(state->install_dir)) {
-        state->log =
-            "auto-detected WeMod install: " + state->install_dir + "\n\n";
+    if (looks_like_wemod_install(state.install_dir)) {
+        state.log =
+            "auto-detected WeMod install: " + state.install_dir + "\n\n";
     }
 
     // The patcher always comes from the releases: reuse the unpacked
     // copy when present, otherwise download + unpack the latest asset.
-    if (state->script_path.empty()) {
-        start_bootstrap(*state);
+    if (state.script_path.empty()) {
+        start_bootstrap(state);
     } else {
-        state->log +=
-            "using downloaded patcher: " + state->script_path + "\n\n";
-        start_probe(*state);
+        state.log += "using downloaded patcher: " + state.script_path + "\n\n";
+        start_probe(state);
     }
 
-    *appstate = state;
+    *appstate = state_owner.release();
     return SDL_APP_CONTINUE;
 }
 
@@ -1148,19 +1213,21 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
     if (appstate == nullptr) {
         return;
     }
-    auto& state = *static_cast<app_state*>(appstate);
+    // Re-acquire ownership: the state is deleted automatically when
+    // this goes out of scope - no explicit delete.
+    const std::unique_ptr<app_state> state(
+        static_cast<app_state*>(appstate));
 
     // Wait for a running patch/restore so the pipe reader in the worker
     // thread finishes before the process exits.
-    if (state.pending.valid()) {
-        state.pending.wait();
+    if (state->pending.valid()) {
+        state->pending.wait();
     }
 
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_DestroyRenderer(state.renderer);
-    SDL_DestroyWindow(state.window);
-    delete &state;
+    SDL_DestroyRenderer(state->renderer);
+    SDL_DestroyWindow(state->window);
 }
