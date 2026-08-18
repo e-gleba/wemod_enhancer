@@ -13,6 +13,9 @@ cpmaddpackage(
 add_library(imgui STATIC)
 add_library(imgui::imgui ALIAS imgui)
 
+# NOTE: misc/freetype/imgui_freetype.cpp is deliberately NOT in this
+# list — it is added conditionally below, only when FreeType was found.
+# Compiling it without FreeType headers fails on #include <ft2build.h>.
 target_sources(
     imgui
     PRIVATE ${imgui_SOURCE_DIR}/imgui.cpp
@@ -20,8 +23,7 @@ target_sources(
             ${imgui_SOURCE_DIR}/imgui_draw.cpp
             ${imgui_SOURCE_DIR}/imgui_tables.cpp
             ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-            ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
-            ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp)
+            ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp)
 
 target_include_directories(
     imgui SYSTEM PUBLIC $<BUILD_INTERFACE:${imgui_SOURCE_DIR}>
