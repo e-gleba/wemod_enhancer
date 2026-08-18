@@ -78,9 +78,12 @@ include(GNUInstallDirs)
 install(TARGETS wemod_enhancer_gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Ship the PDB next to the exe so RelWithDebInfo crashes stay debuggable
-# for users and maintainers. OPTIONAL: toolchains without PDB support
-# (llvm-mingw) simply skip it.
+# for users and maintainers. install(CODE) checks existence at install
+# time: toolchains without PDB support (llvm-mingw) skip silently.
 if(WIN32)
-    install(FILES $<TARGET_PDB_FILE:wemod_enhancer_gui>
-            DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
+    install(
+        CODE "if(EXISTS \"$<TARGET_PDB_FILE:wemod_enhancer_gui>\")
+                  file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\"
+                       TYPE FILE FILES \"$<TARGET_PDB_FILE:wemod_enhancer_gui>\")
+              endif()")
 endif()
