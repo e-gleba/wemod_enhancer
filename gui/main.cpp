@@ -3,11 +3,14 @@
 // Dear ImGui (SDL3 + SDL_Renderer) frontend for the tested Python
 // patcher CLI (tools/wemod_enhancer.py). Runs `patch` / `restore` for
 // users who are not comfortable with a terminal and shows the script's
-// stdout/stderr plus exit code in a scrolling log.
+// stdout/stderr live, plus the exit code, in a scrolling log.
 //
 // The SDL3 renderer backend needs no OpenGL: SDL3 picks the platform's
 // own rendering API (Direct3D on Windows, OpenGL/Vulkan/software on
 // Linux) and loads it dynamically at runtime.
+//
+// NOTE: imgui's default font covers ASCII only - keep every literal in
+// this file plain ASCII (no em-dashes, arrows or ellipsis characters).
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -22,19 +25,13 @@
 #include <cfloat>
 #include <charconv>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <future>
-#include <sstream>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <vector>
-
-#ifndef _WIN32
-#include <sys/wait.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -52,6 +49,7 @@ struct app_state
     std::string install_dir;
     std::string script_path;
     std::string python;
+    std::string version_dll; // empty = the script auto-detects it
     std::string log;
     std::future<run_result> pending;
     bool running = false;
@@ -63,7 +61,7 @@ struct app_state
 
 // Report a fatal startup error and return the process exit code.
 // SDL_ShowSimpleMessageBox may be called before SDL_Init, so this
-// works for every early failure — and GUI users actually see it.
+// works for every early failure - and GUI users actually see it.
 int fatal_error(const std::string& what)
 {
     const std::string message = what + ": " + SDL_GetError();
@@ -74,7 +72,7 @@ int fatal_error(const std::string& what)
     return 1;
 }
 
-// Quote one argument for the platform shell behind std::system().
+// Quote one argument for the platform shell behind popen().
 std::string shell_quote(const std::string& arg)
 {
 #ifdef _WIN32
@@ -92,42 +90,47 @@ std::string shell_quote(const std::string& arg)
 #endif
 }
 
-// Run the command with stdout+stderr redirected to a temp file, then
-// read it back. Blocking — call from a worker thread.
+// Run the command, reading its stdout+stderr line by line as they are
+// produced (popen), so the log streams live instead of appearing only
+// after the process exits. Blocking - call from a worker thread.
 run_result run_command(const std::string& command)
 {
-    const auto stamp =
-        std::chrono::steady_clock::now().time_since_epoch().count();
-    const fs::path capture = fs::temp_directory_path() /
-        ("wemod_enhancer_gui_" + std::to_string(stamp) + ".log");
-
 #ifdef _WIN32
-    // std::system goes through `cmd /c`, which strips the outermost
-    // quote pair — wrap the whole line so quoted paths survive.
-    const std::string line = "\"" + command + " > " +
-        shell_quote(capture.string()) + " 2>&1\"";
+    const std::string line = command + " 2>&1";
+    FILE* pipe = _popen(line.c_str(), "r");
 #else
-    const std::string line =
-        command + " > " + shell_quote(capture.string()) + " 2>&1";
+    const std::string line = command + " 2>&1";
+    FILE* pipe = popen(line.c_str(), "r");
 #endif
 
-    const int status = std::system(line.c_str());
+    run_result result{ .exit_code = -1, .output = {} };
+    if (pipe == nullptr) {
+        result.output = "error: could not start the command\n";
+        return result;
+    }
 
-    std::ifstream in(capture, std::ios::binary);
-    std::ostringstream output;
-    output << in.rdbuf();
-    std::error_code ec;
-    fs::remove(capture, ec);
+    std::string pending_line;
+    char buffer[512];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        pending_line += buffer;
+        // Flush on newline so the log grows visibly while the patcher
+        // runs instead of arriving as one blob at the end.
+        if (pending_line.find('\n') != std::string::npos) {
+            result.output += pending_line;
+            pending_line.clear();
+        }
+    }
+    result.output += pending_line; // trailing partial line
 
-    int exit_code = -1;
 #ifdef _WIN32
-    exit_code = status; // already the process exit code
+    result.exit_code = _pclose(pipe); // already the process exit code
 #else
+    const int status = pclose(pipe);
     if (status != -1 && WIFEXITED(status)) {
-        exit_code = WEXITSTATUS(status);
+        result.exit_code = WEXITSTATUS(status);
     }
 #endif
-    return { .exit_code = exit_code, .output = output.str() };
+    return result;
 }
 
 // "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0.
@@ -230,7 +233,7 @@ bool looks_like_wemod_install(const std::string& dir)
 }
 
 // SDL dialog callback: may run on another thread; it only writes a
-// std::string that the UI thread reads next frame — safe in practice
+// std::string that the UI thread reads next frame - safe in practice
 // because the dialog is modal and the field is not edited meanwhile.
 void SDLCALL on_folder_chosen(void* userdata,
                               const char* const* filelist,
@@ -249,12 +252,17 @@ void start_run(app_state& state, const char* subcommand)
         return;
     }
 
-    state.log += "$ " + state.python + " " + state.script_path + " " +
-        subcommand + " --install-dir " + state.install_dir + "\n";
-
-    const std::string command = shell_quote(state.python) + " " +
+    std::string shown = "$ " + state.python + " " + state.script_path +
+        " " + subcommand + " --install-dir " + state.install_dir;
+    std::string command = shell_quote(state.python) + " " +
         shell_quote(state.script_path) + " " + subcommand +
         " --install-dir " + shell_quote(state.install_dir);
+    if (!state.version_dll.empty() &&
+        std::string_view(subcommand) == "patch") {
+        shown += " --version-dll " + state.version_dll;
+        command += " --version-dll " + shell_quote(state.version_dll);
+    }
+    state.log += shown + "\n";
 
     state.running = true;
     state.has_run = true;
@@ -292,17 +300,25 @@ void draw_ui(app_state& state)
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
+    // Steam-style layout: one compact control block pinned to the top
+    // (title, the single required input, actions), then the log fills
+    // the rest. Fixed-height sections keep every control reachable -
+    // nothing is pushed below the window edge.
+
     ImGui::TextUnformatted("WeMod Enhancer");
-    ImGui::TextDisabled(
-        "Close WeMod, pick its install folder, press Patch.");
+    ImGui::SameLine();
+    ImGui::TextDisabled("| close WeMod, pick its install folder, press Patch");
     ImGui::Spacing();
 
     // --- The only thing a user must provide: the WeMod folder -------
     const bool install_ok = looks_like_wemod_install(state.install_dir);
 
-    ImGui::TextUnformatted("WeMod install folder");
-    ImGui::SetNextItemWidth(-ImGui::GetFrameHeightWithSpacing() -
-                            ImGui::GetStyle().ItemSpacing.x);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("WeMod folder");
+    ImGui::SameLine();
+    const float browse_w = ImGui::CalcTextSize("Browse...").x +
+        ImGui::GetStyle().FramePadding.x * 2.0F;
+    ImGui::SetNextItemWidth(-browse_w - ImGui::GetStyle().ItemSpacing.x);
     if (!install_ok && !state.install_dir.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Border,
                               ImVec4(0.90F, 0.30F, 0.30F, 1.00F));
@@ -332,7 +348,7 @@ void draw_ui(app_state& state)
     }
     if (install_ok) {
         ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
-                           "Found resources/app.asar — looks good.");
+                           "Found resources/app.asar - looks good.");
     } else {
         ImGui::TextDisabled("The folder must contain resources\\app.asar");
     }
@@ -360,18 +376,53 @@ void draw_ui(app_state& state)
                                      : "Pick a valid WeMod folder first");
     }
     ImGui::EndDisabled();
+    ImGui::SameLine();
     if (state.running) {
-        ImGui::SameLine();
-        ImGui::TextUnformatted("Running...");
+        ImGui::TextUnformatted("Running - keep WeMod closed...");
+    } else if (state.has_run && state.last_exit_code == 0) {
+        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
+                           "Done - everything went fine.");
+    } else if (state.has_run) {
+        const std::string status = "Failed (exit code " +
+            std::to_string(state.last_exit_code) +
+            ") - press \"Copy output\" and share it when asking for help.";
+        ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
+                           "%s",
+                           status.c_str());
     }
 
     ImGui::Separator();
 
-    // --- Output -----------------------------------------------------
-    const float status_height = ImGui::GetFrameHeightWithSpacing();
-    const float toolbar_height = ImGui::GetFrameHeightWithSpacing();
+    // --- Advanced: for power users / debugging ----------------------
+    if (ImGui::CollapsingHeader("Advanced")) {
+        ImGui::Indent();
+        ImGui::TextUnformatted("Python interpreter");
+        ImGui::SetNextItemWidth(200.0F);
+        ImGui::InputTextWithHint("##python",
+#ifdef _WIN32
+                                 "python",
+#else
+                                 "python3",
+#endif
+                                 &state.python);
+        ImGui::TextUnformatted("Patcher script (wemod_enhancer.py)");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("##script", &state.script_path);
+        ImGui::TextUnformatted("version.dll (empty = auto-detect)");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputTextWithHint("##version_dll",
+                                 "auto: next to the script",
+                                 &state.version_dll);
+        ImGui::Unindent();
+    }
+
+    ImGui::Separator();
+
+    // --- Output: bounded child, toolbar pinned below it --------------
+    const float toolbar_height = ImGui::GetFrameHeightWithSpacing() +
+        ImGui::GetStyle().ItemSpacing.y;
     ImGui::BeginChild("##log",
-                      ImVec2(0.0F, -status_height - toolbar_height),
+                      ImVec2(0.0F, -toolbar_height),
                       ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
     if (state.log.empty()) {
@@ -394,7 +445,7 @@ void draw_ui(app_state& state)
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip(
             "%s",
-            "Copy everything above — paste it when asking for help");
+            "Copy everything above - paste it when asking for help");
     }
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
@@ -405,42 +456,6 @@ void draw_ui(app_state& state)
         state.copied_flash -= io.DeltaTime;
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F), "Copied!");
-    }
-
-    // --- Status line ------------------------------------------------
-    if (state.running) {
-        ImGui::TextUnformatted("Running - keep WeMod closed...");
-    } else if (state.has_run && state.last_exit_code == 0) {
-        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
-                           "Done — everything went fine.");
-    } else if (state.has_run) {
-        const std::string status = "Failed (exit code " +
-            std::to_string(state.last_exit_code) +
-            ") — press \"Copy output\" and share it when asking for help.";
-        ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
-                           "%s",
-                           status.c_str());
-    } else {
-        ImGui::TextDisabled(
-            "Restore reverts everything — the patcher keeps backups.");
-    }
-
-    // --- Advanced: for power users / debugging ----------------------
-    if (ImGui::CollapsingHeader("Advanced")) {
-        ImGui::Indent();
-        ImGui::TextUnformatted("Python interpreter");
-        ImGui::SetNextItemWidth(200.0F);
-        ImGui::InputTextWithHint("##python",
-#ifdef _WIN32
-                                 "python",
-#else
-                                 "python3",
-#endif
-                                 &state.python);
-        ImGui::TextUnformatted("Patcher script (wemod_enhancer.py)");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputText("##script", &state.script_path);
-        ImGui::Unindent();
     }
 
     ImGui::End();
@@ -545,8 +560,8 @@ int main(int argc, char* argv[])
         SDL_RenderPresent(renderer);
     }
 
-    // Wait for a running patch/restore so the temp-file capture in the
-    // worker thread finishes before the process exits.
+    // Wait for a running patch/restore so the pipe reader in the worker
+    // thread finishes before the process exits.
     if (state.pending.valid()) {
         state.pending.wait();
     }
