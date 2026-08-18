@@ -58,6 +58,19 @@ struct app_state
     int last_exit_code = 0;
 };
 
+// Report a fatal startup error and return the process exit code.
+// SDL_ShowSimpleMessageBox may be called before SDL_Init, so this
+// works for every early failure — and GUI users actually see it.
+int fatal_error(const std::string& what)
+{
+    const std::string message = what + ": " + SDL_GetError();
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                             "WeMod Enhancer",
+                             message.c_str(),
+                             nullptr);
+    return 1;
+}
+
 // Quote one argument for the platform shell behind std::system().
 std::string shell_quote(const std::string& arg)
 {
@@ -111,7 +124,7 @@ run_result run_command(const std::string& command)
         exit_code = WEXITSTATUS(status);
     }
 #endif
-    return { exit_code, output.str() };
+    return { .exit_code = exit_code, .output = output.str() };
 }
 
 // "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0.
@@ -299,7 +312,7 @@ void draw_ui(app_state& state)
     const float status_height = ImGui::GetFrameHeightWithSpacing();
     ImGui::BeginChild("##log",
                       ImVec2(0.0F, -status_height),
-                      ImGuiChildFlags_Border,
+                      ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::TextUnformatted(state.log.c_str());
     if (state.scroll_to_bottom) {
@@ -313,8 +326,9 @@ void draw_ui(app_state& state)
     } else if (state.has_run && state.last_exit_code == 0) {
         ImGui::TextUnformatted("Last run: success");
     } else if (state.has_run) {
-        ImGui::Text("Last run: failed (exit code %d)",
-                    state.last_exit_code);
+        const std::string status = "Last run: failed (exit code " +
+            std::to_string(state.last_exit_code) + ")";
+        ImGui::TextUnformatted(status.c_str());
     } else {
         ImGui::TextUnformatted(
             "Close WeMod, then press Patch. Restore reverts everything.");
@@ -325,11 +339,13 @@ void draw_ui(app_state& state)
 
 } // namespace
 
-int main(int, char**)
+int main(int argc, char* argv[])
 {
+    (void)argc;
+    (void)argv;
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        SDL_Log("Error: SDL_Init(): %s", SDL_GetError());
-        return 1;
+        return fatal_error("SDL_Init()");
     }
 
     // Window + SDL_Renderer (stock imgui SDL3+SDL_Renderer example)
@@ -343,13 +359,11 @@ int main(int, char**)
                          static_cast<int>(640 * main_scale),
                          window_flags);
     if (window == nullptr) {
-        SDL_Log("Error: SDL_CreateWindow(): %s", SDL_GetError());
-        return 1;
+        return fatal_error("SDL_CreateWindow()");
     }
     SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
     if (renderer == nullptr) {
-        SDL_Log("Error: SDL_CreateRenderer(): %s", SDL_GetError());
-        return 1;
+        return fatal_error("SDL_CreateRenderer()");
     }
     SDL_SetRenderVSync(renderer, 1);
     SDL_SetWindowPosition(window,
@@ -384,7 +398,7 @@ int main(int, char**)
 
     bool done = false;
     while (!done) {
-        SDL_Event event;
+        SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT) {
@@ -395,7 +409,7 @@ int main(int, char**)
                 done = true;
             }
         }
-        if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
+        if ((SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) != 0) {
             SDL_Delay(10);
             continue;
         }

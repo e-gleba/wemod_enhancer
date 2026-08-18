@@ -20,8 +20,18 @@ target_compile_definitions(
     wemod_enhancer_gui
     PRIVATE WEMOD_ENHANCER_SOURCE_DIR="${wemod_enhancer_source_dir}")
 
-# No console window on Windows; SDL_main.h provides WinMain.
-set_target_properties(wemod_enhancer_gui PROPERTIES WIN32_EXECUTABLE ON)
+set_target_properties(
+    wemod_enhancer_gui
+    PROPERTIES # No console window on Windows; SDL_main.h provides WinMain.
+               WIN32_EXECUTABLE ON
+               # No C++ modules are used. CMP0155 scanning makes
+               # GCC/Clang emit -fmodule-mapper flags that the
+               # clang-tidy co-compilation rejects (modmap errors).
+               CXX_SCAN_FOR_MODULES OFF
+               # cpplint enforces Google style (same-line braces, no
+               # non-const references), which conflicts with this
+               # project's .clang-format — clang-tidy stays the gate.
+               CXX_CPPLINT "")
 
 # Static MSVC CRT: the .exe must run on a bare Windows install.
 set_target_properties(
