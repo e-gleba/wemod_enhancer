@@ -27,29 +27,3 @@ if(lua_ADDED)
     # Build as C
     set_target_properties(lua PROPERTIES LINKER_LANGUAGE C)
 endif()
-
-option(SOL2_PATCHED "whether sol2 patch has been applied" OFF)
-
-if(NOT SOL2_PATCHED)
-    set(SOL2_PATCHED
-        ON
-        CACHE BOOL "whether sol2 patch has been applied" FORCE)
-
-    cpmaddpackage(
-        NAME
-        sol2
-        GIT_REPOSITORY
-        https://github.com/ThePhD/sol2.git
-        VERSION
-        3.3.0
-        PATCHES
-        "${CMAKE_SOURCE_DIR}/cmake/patches/sol2_emplace_fix.patch")
-else()
-    cpmaddpackage(
-        NAME
-        sol2
-        GIT_REPOSITORY
-        https://github.com/ThePhD/sol2.git
-        VERSION
-        3.3.0)
-endif()
