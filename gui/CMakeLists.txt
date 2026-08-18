@@ -47,11 +47,26 @@ if(WIN32
     target_link_options(wemod_enhancer_gui PRIVATE -static)
 endif()
 
-# Static libstdc++/libgcc: the ELF must run on a bare glibc system
-# (Steam Deck). X11/Wayland are dlopen'd by SDL3 at runtime.
+# Static libstdc++/libgcc: the ELF then needs only glibc at runtime
+# (X11/Wayland are dlopen'd by SDL3). Probed at configure time — not
+# every distro ships the static archives (Fedora splits them into
+# libstdc++-static), and a dynamic libstdc++ fallback is fine: like
+# glibc, it is part of every base system, Steam Deck included.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    target_link_options(wemod_enhancer_gui PRIVATE -static-libstdc++
-                                                   -static-libgcc)
+    include(CheckCXXCompilerFlag)
+    check_cxx_compiler_flag("-static-libstdc++ -static-libgcc"
+                            have_static_cxx_runtime)
+    if(have_static_cxx_runtime)
+        target_link_options(wemod_enhancer_gui
+                            PRIVATE -static-libstdc++ -static-libgcc)
+    else()
+        message(
+            STATUS
+                "wemod_enhancer_gui: static libstdc++/libgcc not found — "
+                "linking the C++ runtime dynamically.\n"
+                "  fedora: sudo dnf install libstdc++-static\n"
+                "  ubuntu: ships with libstdc++-*-dev")
+    endif()
 endif()
 
 include(GNUInstallDirs)
