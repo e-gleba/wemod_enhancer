@@ -61,20 +61,35 @@ Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cle
 
 ## Windows
 
-1. Close WeMod.
-2. Download `wemod_enhancer-windows-msvc-amd64.zip` from [Releases](https://github.com/e-gleba/wemod_enhancer/releases/latest) and extract it.
-3. From the extracted folder run (`--install-dir` = the folder containing `resources\app.asar`):
+Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
 
 ```powershell
-python bin\wemod_enhancer.py patch --install-dir "$env:LOCALAPPDATA\WeMod\app-9.0.0"
+# 1. Download + extract WeMod Enhancer (prebuilt version.dll included)
+cd $env:USERPROFILE\Downloads
+Invoke-WebRequest -Uri "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip" -OutFile "wemod_enhancer.zip"
+Expand-Archive wemod_enhancer.zip -DestinationPath wemod_enhancer -Force
+cd wemod_enhancer
+
+# 2. Auto-detect the newest WeMod install (the app-* folder with resources\app.asar) and patch it
+$wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
+         Where-Object { Test-Path "$_\resources\app.asar" } |
+         Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
+         Select-Object -First 1
+python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 ```
+
+> No Python yet? `winget install Python.Python.3.13`, then reopen PowerShell.
 
 ## Restore
 
 Originals are backed up automatically. One command reverts everything:
 
 ```sh
+# Linux
 python3 bin/wemod_enhancer.py restore --install-dir "<same install dir>"
+
+# Windows (PowerShell, same session as above)
+python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 ```
 
 ## Build from source
