@@ -43,6 +43,10 @@
 //     default-constructible members carry no redundant {} initializer
 //     (readability-redundant-member-init) - only non-empty defaults
 //     are spelled out.
+//   - window_title is a plain `const char*` (a string literal is
+//     always null-terminated), so SDL/ImGui C APIs take it directly -
+//     no string_view::data() that may not be null-terminated
+//     (bugprone-suspicious-stringview-data-usage).
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -123,7 +127,9 @@ constexpr std::size_t issue_log_budget{3000};
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
 
-constexpr std::string_view window_title{"WeMod Enhancer"};
+// A string literal is always null-terminated, so SDL/ImGui C APIs take
+// it directly - no string_view::data() that may not be null-terminated.
+constexpr const char* window_title{"WeMod Enhancer"};
 
 // Steam-sized main window: large, centered, everything reachable
 // without scrolling the chrome away.
@@ -241,7 +247,7 @@ void sdl_log_error(const std::string& message)
 {
     const std::string message{what + ": " + SDL_GetError()};
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                             window_title.data(),
+                             window_title,
                              message.c_str(),
                              nullptr);
     return SDL_APP_FAILURE;
@@ -834,7 +840,7 @@ void draw_ui(app_state& state)
     // the log filling the rest. Larger window + wider spacing keep
     // everything readable at a glance.
 
-    ImGui::TextUnformatted(window_title.data());
+    ImGui::TextUnformatted(window_title);
     ImGui::SameLine();
     text_disabled("| close WeMod, pick its install folder, press Patch");
     ImGui::Spacing();
@@ -1140,7 +1146,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
                                            SDL_WINDOW_HIDDEN |
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY};
     SDL_Window* window{
-        SDL_CreateWindow(window_title.data(),
+        SDL_CreateWindow(window_title,
                          static_cast<int>(window_width * main_scale),
                          static_cast<int>(window_height * main_scale),
                          window_flags)};
