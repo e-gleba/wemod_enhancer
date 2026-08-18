@@ -78,9 +78,12 @@ if(PROJECT_IS_TOP_LEVEL)
     add_subdirectory(scripts)
 
     # The GUI is an end-user artifact: build/install it only for
-    # top-level builds.
+    # top-level builds. It is a standalone downloader/automator,
+    # packaged apart from the DLL:
+    # wemod_enhancer_gui-<version>-<os>-<arch>.zip / .tar.xz
     if(WEMOD_ENHANCER_BUILD_GUI)
         add_subdirectory(gui)
+        set(CPACK_PACKAGE_NAME "wemod_enhancer_gui")
     endif()
 
     # Append processor to system name so packages for

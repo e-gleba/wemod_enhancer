@@ -28,6 +28,8 @@
 //   - std::async + std::future drives the worker thread: popen() has
 //     no cancellation point, so a std::jthread stop_token would be
 //     dead weight - SDL_AppIterate just polls wait_for(0) per frame.
+//   - "Report bug" opens a pre-filled GitHub issue (env info + log as
+//     markdown) via SDL_OpenURL - a one-click bug report.
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -93,6 +95,13 @@ constexpr std::string_view release_asset_url =
         : std::string_view(
               "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
               "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz");
+
+// "Report bug" target: a pre-filled GitHub issue. The body rides in
+// the URL query, so the log is capped to keep the URL portable across
+// browsers and proxies.
+constexpr std::string_view issue_new_url =
+    "https://github.com/e-gleba/wemod_enhancer/issues/new";
+constexpr std::size_t issue_log_budget = 3000;
 
 constexpr std::string_view default_python =
     is_windows ? std::string_view("python") : std::string_view("python3");
@@ -538,7 +547,7 @@ void poll_run(app_state& state)
     state.scroll_to_bottom = true;
 
     // Every failure says what happened and how to fix it - the log is
-    // the error report (see the Copy output button).
+    // the error report (see the Copy output / Report bug buttons).
     switch (state.kind) {
     case run_kind::bootstrap:
         if (result.exit_code != 0) {
@@ -557,8 +566,8 @@ void poll_run(app_state& state)
         } else {
             state.log += "error: release downloaded but wemod_enhancer.py "
                          "was not inside.\n"
-                         "  fix: press Copy output and report a bug with "
-                         "this log.\n\n";
+                         "  fix: press Report bug below - this should not "
+                         "happen.\n\n";
         }
         break;
     case run_kind::probe:
@@ -576,15 +585,16 @@ void poll_run(app_state& state)
     case run_kind::patcher:
         if (result.exit_code != 0) {
             state.log += "hint: close WeMod fully, then retry. If it still "
-                         "fails, press Copy output and share the log when "
-                         "asking for help.\n\n";
+                         "fails, press Report bug below - the issue opens "
+                         "pre-filled with this log.\n\n";
         }
         break;
     }
 }
 
-// Environment block prepended to the clipboard by Copy output, so a
-// shared log carries the locations and versions needed to reproduce it.
+// Environment block prepended to bug reports (clipboard and GitHub
+// issue alike), so a shared log carries the locations and versions
+// needed to reproduce it.
 [[nodiscard]] std::string env_info(const app_state& state)
 {
     std::string info = "wemod_enhancer gui\n";
@@ -607,6 +617,47 @@ void poll_run(app_state& state)
     }
     info += "\n";
     return info;
+}
+
+// RFC 3986 percent-encoding (unreserved characters pass through), for
+// the pre-filled GitHub issue URL behind the Report bug button.
+[[nodiscard]] std::string url_encode(std::string_view text)
+{
+    constexpr char hex[] = "0123456789ABCDEF";
+    std::string encoded;
+    encoded.reserve(text.size());
+    for (const unsigned char c : text) {
+        const bool unreserved = (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+            c == '_' || c == '.' || c == '~';
+        if (unreserved) {
+            encoded += static_cast<char>(c);
+        } else {
+            encoded += '%';
+            encoded += hex[c >> 4U];
+            encoded += hex[c & 0x0FU];
+        }
+    }
+    return encoded;
+}
+
+// Pre-filled issue URL: env info + the tail of the log as markdown
+// (fenced code blocks), capped so the URL stays portable - the full
+// log is always one "Copy output" away.
+[[nodiscard]] std::string bug_report_url(const app_state& state)
+{
+    std::string body = "## Environment\n\n```text\n" + env_info(state) +
+        "```\n\n## Log\n\n```text\n";
+    std::string_view log = state.log;
+    if (log.size() > issue_log_budget) {
+        body += "[... truncated - full log via \"Copy output\" ...]\n";
+        log = log.substr(log.size() - issue_log_budget);
+    }
+    body += log;
+    body += "\n```\n";
+    return std::string(issue_new_url) +
+        "?title=" + url_encode("bug: gui report") +
+        "&body=" + url_encode(body);
 }
 
 // Button that fits its label (no hardcoded width, so the text never
@@ -757,7 +808,7 @@ void draw_ui(app_state& state)
     } else if (state.has_run) {
         const std::string status = "Failed (exit code " +
             std::to_string(state.last_exit_code) +
-            ") - press \"Copy output\" and share it when asking for help.";
+            ") - press \"Report bug\" to open a pre-filled issue.";
         ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
                            "%s",
                            status.c_str());
@@ -927,6 +978,20 @@ void draw_ui(app_state& state)
             "when asking for help");
     }
     ImGui::SameLine();
+    if (fit_button("Report bug")) {
+        // Pre-filled GitHub issue: env info + log tail as markdown.
+        const std::string url = bug_report_url(state);
+        if (!SDL_OpenURL(url.c_str())) {
+            SDL_Log("SDL_OpenURL(issue): %s", SDL_GetError());
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "%s",
+            "Open a pre-filled GitHub issue - environment info and log "
+            "attached as markdown");
+    }
+    ImGui::SameLine();
     if (fit_button("Clear")) {
         state.log.clear();
         state.has_run = false;
@@ -1007,7 +1072,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     state->launcher_present = launcher_installed();
 
     // Say what was auto-detected up front - the log doubles as the
-    // "what is happening" narration that Copy output shares.
+    // "what is happening" narration that bug reports share.
     if (looks_like_wemod_install(state->install_dir)) {
         state->log =
             "auto-detected WeMod install: " + state->install_dir + "\n\n";

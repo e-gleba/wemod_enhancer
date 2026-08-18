@@ -65,6 +65,15 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # Standalone install rule (the GUI presets are mutually exclusive with
-# the version.dll ones - see the top-level CMakeLists.txt).
+# the version.dll ones - see the top-level CMakeLists.txt). Explicit
+# GNUInstallDirs destination: bin/ on every platform.
 include(GNUInstallDirs)
-install(TARGETS wemod_enhancer_gui RUNTIME)
+install(TARGETS wemod_enhancer_gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Ship the PDB next to the exe so RelWithDebInfo crashes stay debuggable
+# for users and maintainers. OPTIONAL: toolchains without PDB support
+# (llvm-mingw) simply skip it.
+if(WIN32)
+    install(FILES $<TARGET_PDB_FILE:wemod_enhancer_gui>
+            DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
+endif()

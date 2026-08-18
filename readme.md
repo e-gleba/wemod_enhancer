@@ -35,20 +35,28 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 ## GUI (optional)
 
-Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui app (SDL3, statically linked) that drives the same patcher:
+Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui app (SDL3, statically linked) that drives the same patcher — a pure downloader/automator, fully separate from the DLL build:
 
 - **Only input needed: the WeMod folder** — auto-detected at startup (newest `%LOCALAPPDATA%\WeMod\app-*` on Windows, `~/wemod-launcher/wemod_data/wemod_bin` on Linux). When found, the path is already filled in: just press Patch, no Browse dialog needed.
 - **Nothing else to download, ever** — the GUI pulls the latest release (`wemod_enhancer.py` + `version.dll`) itself: `curl` on Linux, PowerShell on Windows. No local files required; the exe is fully portable (no hardcoded paths), move it between PCs as-is.
 - **Setup / diagnostics** panel shows the detected Python (version + location) and the patcher, and on Linux offers to clone [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) into your home dir — the same step as the tutorial below.
-- Patch / Restore stream output live; **Copy output** grabs the environment info plus the whole log — a self-contained bug report.
+- Patch / Restore stream output live; **Copy output** grabs the environment info plus the whole log, and **Report bug** opens a pre-filled GitHub issue with the same data attached as markdown — a one-click bug report.
 
-The GUI presets are mutually exclusive with the plain-DLL ones (a GUI build never compiles `version.dll` — the GUI downloads it at runtime), and the GUI has its own CI workflow ([gui.yml](.github/workflows/gui.yml)) with an amd64 + arm64 matrix:
+The GUI presets are mutually exclusive with the plain-DLL ones (a GUI build never compiles `version.dll` — the GUI downloads it at runtime), ship as their own package (`wemod_enhancer_gui-<version>-<os>-<arch>.zip` / `.tar.xz`), and are built **RelWithDebInfo** so crashes stay debuggable (PDB next to the exe on Windows, symbols in the `.elf` on Linux). The GUI has its own CI workflow ([gui.yml](.github/workflows/gui.yml)) with a compiler × arch matrix:
+
+| Preset | Host | Compiler | Artifact |
+| :----- | :--- | :------- | :------- |
+| `gui-windows-msvc-amd64-full` | Windows x86-64 | MSVC | `wemod_enhancer_gui.exe` + `.pdb` |
+| `gui-windows-clang-amd64-full` | Windows x86-64 | Clang (MSVC ABI, lld-link) | `wemod_enhancer_gui.exe` + `.pdb` |
+| `gui-windows-msvc-arm64-full` | Windows ARM64 (ARM64 host) | MSVC | `wemod_enhancer_gui.exe` + `.pdb` |
+| `gui-windows-llvm-mingw-amd64-full` | Linux → Windows x86-64 | LLVM-MinGW | `wemod_enhancer_gui.exe` |
+| `gui-linux-gcc-amd64-full` | Linux x86-64 | GCC | `wemod_enhancer_gui.elf` |
+| `gui-linux-clang-amd64-full` | Linux x86-64 | Clang | `wemod_enhancer_gui.elf` |
+| `gui-linux-gcc-arm64-full` | Linux ARM64 | GCC | `wemod_enhancer_gui.elf` |
 
 ```sh
-cmake --workflow --preset gui-windows-amd64-full  # Windows x86-64: build/gui-windows-amd64/Release/wemod_enhancer_gui.exe
-cmake --workflow --preset gui-windows-arm64-full  # Windows ARM64 (native ARM64 host)
-cmake --workflow --preset gui-linux-amd64-full    # Linux x86-64:   build/gui-linux-amd64/Release/wemod_enhancer_gui.elf
-cmake --workflow --preset gui-linux-arm64-full    # Linux ARM64:    build/gui-linux-arm64/Release/wemod_enhancer_gui.elf
+cmake --workflow --preset gui-windows-msvc-amd64-full   # build/gui-windows-msvc-amd64/RelWithDebInfo/wemod_enhancer_gui.exe
+cmake --workflow --preset gui-linux-gcc-amd64-full      # build/gui-linux-gcc-amd64/RelWithDebInfo/wemod_enhancer_gui.elf
 ```
 
 Linux host builds need SDL3 Wayland/X11 dev packages (build-time only), e.g. `sudo apt-get install libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.

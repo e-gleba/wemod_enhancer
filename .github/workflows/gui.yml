@@ -1,100 +1,76 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# gui.yml
+#
+# CI for the opt-in Dear ImGui GUI (WEMOD_ENHANCER_BUILD_GUI). Separate
+# from the base version.dll workflow on purpose: the GUI pulls in
+# SDL3 + imgui and targets end-user desktops, while the base workflow
+# stays a lean Windows-DLL pipeline. Both run in parallel.
+#
+# The matrix mirrors the base workflow's compiler set for the GUI and
+# adds Linux: MSVC + pure Clang on windows-2022, LLVM-MinGW cross on
+# ubuntu-24.04, MSVC on windows-11-arm, GCC + Clang on ubuntu-24.04,
+# GCC on ubuntu-24.04-arm. No bespoke setup steps: the GitHub runner
+# images already ship MSVC / Clang / GCC / Ninja, and LLVM-MinGW comes
+# from the same e-gleba/setup-llvm-mingw action the base workflow uses.
+
 name: gui_multiplatform_workflow
 
-# GUI-only CI, running in parallel with the base cmake_multiplatform
-# workflow: the base one checks version.dll, this one checks
-# wemod_enhancer_gui on every supported OS/arch combination.
 on:
     push:
         branches: [main]
-        paths: &paths
-            - "gui/**"
-            - "cmake/**"
-            - "**/CMakeLists.txt"
-            - "CMakePresets.json"
-            - ".github/workflows/gui.yml"
     pull_request:
-        branches: [main]
-        paths: *paths
     workflow_dispatch:
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
     cancel-in-progress: true
 
-permissions:
-    contents: read
-
 env:
-    CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
+    CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm-cache
 
 jobs:
-    gui:
-        name: gui-${{ matrix.artifact-name }}
+    build:
+        name: ${{ matrix.name }}
         runs-on: ${{ matrix.os }}
         strategy:
             fail-fast: false
             matrix:
                 include:
-                    - os: windows-2022
-                      preset: gui-windows-amd64-full
-                      artifact-name: windows-amd64
-                      build-dir: build/gui-windows-amd64
-                    - os: windows-11-arm
-                      preset: gui-windows-arm64-full
-                      artifact-name: windows-arm64
-                      build-dir: build/gui-windows-arm64
-                    - os: ubuntu-24.04
-                      preset: gui-linux-amd64-full
-                      artifact-name: linux-amd64
-                      build-dir: build/gui-linux-amd64
-                    - os: ubuntu-24.04-arm
-                      preset: gui-linux-arm64-full
-                      artifact-name: linux-arm64
-                      build-dir: build/gui-linux-arm64
+                    - { name: windows-msvc-amd64,       os: windows-2022,     preset: gui-windows-msvc-amd64 }
+                    - { name: windows-clang-amd64,      os: windows-2022,     preset: gui-windows-clang-amd64 }
+                    - { name: windows-llvm-mingw-amd64, os: ubuntu-24.04,     preset: gui-windows-llvm-mingw-amd64, mingw: true }
+                    - { name: windows-msvc-arm64,       os: windows-11-arm,   preset: gui-windows-msvc-arm64 }
+                    - { name: linux-gcc-amd64,          os: ubuntu-24.04,     preset: gui-linux-gcc-amd64 }
+                    - { name: linux-clang-amd64,        os: ubuntu-24.04,     preset: gui-linux-clang-amd64 }
+                    - { name: linux-gcc-arm64,          os: ubuntu-24.04-arm, preset: gui-linux-gcc-arm64 }
 
         steps:
-            - name: checkout
-              uses: actions/checkout@v7
+            - uses: actions/checkout@v7
 
-            # SDL3 needs the Wayland/X11 development packages at build
-            # time only - at runtime it dlopen's them (see the readme).
-            - name: install linux build tools + sdl3 deps
-              if: runner.os == 'Linux'
-              run: |
-                  sudo apt-get update -qq
-                  sudo apt-get install -y --no-install-recommends \
-                      ninja-build \
-                      libwayland-dev libxkbcommon-dev libdbus-1-dev \
-                      libibus-1.0-dev libdecor-0-dev
-
-            - name: cache cpm sources
+            - name: Restore CPM source cache
               uses: actions/cache@v6
               with:
-                  path: .cpm_cache
-                  key: cpm-gui-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
-                  restore-keys: cpm-gui-${{ matrix.artifact-name }}-
+                  path: ${{ env.CPM_SOURCE_CACHE }}
+                  key: cpm-gui-${{ matrix.name }}-${{ hashFiles('cmake/cpm-config.cmake') }}
+                  restore-keys: cpm-gui-${{ matrix.name }}-
 
-            - name: build
-              run: cmake --workflow --preset ${{ matrix.preset }}
+            - name: Set up LLVM-MinGW
+              if: matrix.mingw
+              uses: e-gleba/setup-llvm-mingw@v1
 
-            - name: rename package
-              shell: bash
+            - name: Install SDL3 build dependencies (Linux)
+              if: runner.os == 'Linux' && !matrix.mingw
               run: |
-                  cd "${{ matrix.build-dir }}"
-                  shopt -s nullglob
-                  for f in *.zip *.tar.xz; do
-                    case "$f" in
-                      *.zip)    ext="zip" ;;
-                      *.tar.xz) ext="tar.xz" ;;
-                    esac
-                    mv -- "$f" "wemod_enhancer-gui-${{ matrix.artifact-name }}.$ext"
-                  done
+                  sudo apt-get update
+                  sudo apt-get install -y libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev
 
-            - name: upload package
+            - name: Configure + build + package (RelWithDebInfo)
+              run: cmake --workflow --preset ${{ matrix.preset }}-full
+
+            - name: Upload package
               uses: actions/upload-artifact@v7
               with:
-                  name: gui-${{ matrix.artifact-name }}
-                  path: ${{ matrix.build-dir }}/wemod_enhancer-gui-*
-                  if-no-files-found: ignore
-                  compression-level: 0
+                  name: wemod_enhancer_gui-${{ matrix.name }}
+                  path: |
+                      build/${{ matrix.preset }}/*.zip
+                      build/${{ matrix.preset }}/*.tar.xz
+                  if-no-files-found: error
