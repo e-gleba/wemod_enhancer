@@ -46,7 +46,6 @@ if(PROJECT_IS_TOP_LEVEL)
     find_package(clang_format CONFIG REQUIRED)
     find_package(clang_tidy CONFIG REQUIRED)
     find_package(clang_doc CONFIG REQUIRED)
-    find_package(cpplint CONFIG REQUIRED)
     find_package(ct_doxygen CONFIG REQUIRED)
 endif()
 
