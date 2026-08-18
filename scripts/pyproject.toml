@@ -1,15 +1,39 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cmake-template-tools"
-version = "0.1.0"
-description = "CMake template tooling"
-requires-python = ">=3.14"
+name = "wemod_enhancer"
+version = "1.0.2"
+description = "Cross-platform Wand/WeMod Electron patcher and Windows ASAR fuse proxy"
+readme = "readme.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+    { name = "Evgeniy Gleba", email = "evgeniy.gleba@yandex.ru" },
+]
+keywords = ["wemod", "wand", "electron", "asar", "patcher"]
+classifiers = [
+    "Environment :: Win32 (MS Windows)",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/e-gleba/wemod_enhancer"
+Repository = "https://github.com/e-gleba/wemod_enhancer"
+Issues = "https://github.com/e-gleba/wemod_enhancer/issues"
 
 [project.scripts]
-tool = "tool:main"
+wemod-enhancer = "wemod_enhancer:cli"
 
 [tool.setuptools]
-py-modules = ["tool"]
+packages = ["wemod_enhancer"]
+
+# The release workflow drops the prebuilt version.dll into the package
+# before building the wheel. In a plain source checkout it is absent and
+# the patcher falls back to building it with CMake.
+[tool.setuptools.package-data]
+wemod_enhancer = ["version.dll"]
