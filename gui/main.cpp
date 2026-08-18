@@ -50,6 +50,11 @@
 //   - No hand-rolled UI scale factor: the display content scale from
 //     SDL (main_scale) is the one correct multiplier - it tracks the
 //     monitor's DPI, so the UI looks identical on every display.
+//   - Folder validity is an INVARIANT of the current field text:
+//     resolve_wemod_dir() runs every frame and accepts both the
+//     app-x.y.z directory and the WeMod root above it (resolved to the
+//     newest app-* inside), so the field can never look "ok" while
+//     Patch refuses to run.
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -417,13 +422,22 @@ version_parts(std::string name)
     return {};
 }
 
-// A folder counts as a WeMod install when resources/app.asar exists
-// inside it (the app-* layout the patcher patches).
-[[nodiscard]] bool looks_like_wemod_install(const std::string& dir) noexcept
+// Resolve whatever the user picked to the directory the patcher needs:
+// the app-x.y.z folder holding resources/app.asar. Accepts that folder
+// directly OR the WeMod root above it (the newest app-* inside wins) -
+// both are what a Browse dialog naturally returns. This is the single
+// validity invariant: it runs every frame on the current field text,
+// so the field can never look valid while Patch refuses to run.
+[[nodiscard]] fs::path resolve_wemod_dir(const std::string& dir)
 {
+    if (dir.empty()) {
+        return {};
+    }
     std::error_code ec;
-    return !dir.empty() &&
-        fs::is_regular_file(fs::path(dir) / "resources" / "app.asar", ec);
+    if (fs::is_regular_file(fs::path(dir) / "resources" / "app.asar", ec)) {
+        return fs::path(dir);
+    }
+    return find_app_dir(dir); // WeMod root -> newest app-*, else {}
 }
 
 // SDL dialog callback: may run on another thread; it only writes a
@@ -851,14 +865,22 @@ void draw_ui(app_state& state)
     ImGui::Spacing();
 
     // --- WeMod folder: the only thing a user must provide -----------
-    const bool install_ok{looks_like_wemod_install(state.install_dir)};
+    // Validity is an invariant of the current field text, recomputed
+    // every frame: the app-x.y.z dir itself OR the WeMod root above it
+    // (resolved to the newest app-* inside). Typing or deleting text
+    // re-validates immediately; Patch normalizes the field to the
+    // resolved dir so the log always shows the exact folder used.
+    const fs::path resolved_dir{resolve_wemod_dir(state.install_dir)};
+    const bool install_ok{!resolved_dir.empty()};
     const bool script_ok{!state.script_path.empty() &&
                          fs::is_regular_file(state.script_path)};
 
     settings_row("WeMod folder");
     help_marker(
         "Folder where WeMod is installed - the app-x.y.z directory that "
-        "contains resources\\app.asar. Auto-detected when possible.",
+        "contains resources\\app.asar, or the WeMod root above it (the "
+        "newest app-* inside is used automatically). Auto-detected at "
+        "startup when possible.",
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (ImGui::GetStyle().FramePadding.x * 2.0F)};
@@ -909,6 +931,9 @@ void draw_ui(app_state& state)
                              0.5F};
     ImGui::BeginDisabled(!can_run);
     if (ImGui::Button("Patch", ImVec2{button_width, 0.0F})) {
+        // Normalize: the field and the log show the exact app-* dir
+        // the patcher receives - no hidden indirection.
+        state.install_dir = resolved_dir.string();
         start_run(state, "patch");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -917,6 +942,7 @@ void draw_ui(app_state& state)
     }
     ImGui::SameLine();
     if (ImGui::Button("Restore", ImVec2{button_width, 0.0F})) {
+        state.install_dir = resolved_dir.string();
         start_run(state, "restore");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -1198,8 +1224,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     state.launcher_present = launcher_installed();
 
     // Say what was auto-detected up front - the log doubles as the
-    // "what is happening" narration that bug reports share.
-    if (looks_like_wemod_install(state.install_dir)) {
+    // "what is happening" narration that bug reports share. The field
+    // is normalized to the resolved app-* dir right away.
+    if (const fs::path app{resolve_wemod_dir(state.install_dir)};
+        !app.empty()) {
+        state.install_dir = app.string();
         state.log =
             "auto-detected WeMod install: " + state.install_dir + "\n\n";
     }
