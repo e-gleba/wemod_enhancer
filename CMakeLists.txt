@@ -72,10 +72,12 @@ if(PROJECT_IS_TOP_LEVEL)
     include(GNUInstallDirs)
     find_package(package_description CONFIG REQUIRED)
 
-    # Install the Python patcher CLI next to version.dll so the
-    # install tree is self-contained: users need only Python (no CMake)
-    # to run `python wemod_enhancer.py patch --install-dir ...`.
-    add_subdirectory(scripts)
+    # The Python patcher CLI (wemod_enhancer.py) is part of the
+    # version.dll package - the GUI downloads it from the releases
+    # at runtime, so a GUI package must not carry it.
+    if(NOT WEMOD_ENHANCER_BUILD_GUI)
+        add_subdirectory(scripts)
+    endif()
 
     # The GUI is an end-user artifact: build/install it only for
     # top-level builds. It is a standalone downloader/automator,
@@ -90,6 +92,11 @@ if(PROJECT_IS_TOP_LEVEL)
     # different architectures don't collide (e.g.
     # "Windows-x86_64" vs "Windows-aarch64").
     string(APPEND CPACK_SYSTEM_NAME "-${CMAKE_SYSTEM_PROCESSOR}")
+
+    # Keep debug info in packages: RelWithDebInfo emits PDB (MSVC) or
+    # DWARF (GCC/Clang); stripping them would make release crashes
+    # undebuggable. CPack strips by default on some generators.
+    set(CPACK_STRIP_FILES OFF)
 
     # include(CPack) must come AFTER all CPACK_* variables
     # are set — it reads them at include-time and ignores
