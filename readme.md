@@ -46,9 +46,8 @@ The GUI presets are mutually exclusive with the plain-DLL ones (a GUI build neve
 
 | Preset | Host | Compiler | Artifact |
 | :----- | :--- | :------- | :------- |
-| `gui-windows-msvc-amd64-full` | Windows x86-64 | MSVC | `wemod_enhancer_gui.exe` + `.pdb` |
-| `gui-windows-clang-amd64-full` | Windows x86-64 | Clang (MSVC ABI, lld-link) | `wemod_enhancer_gui.exe` + `.pdb` |
-| `gui-windows-msvc-arm64-full` | Windows ARM64 (ARM64 host) | MSVC | `wemod_enhancer_gui.exe` + `.pdb` |
+| `gui-windows-msvc-amd64-full` | Windows x86-64 | MSVC | `wemod_enhancer_gui.exe` |
+| `gui-windows-clang-amd64-full` | Windows x86-64 | Clang (MSVC ABI, lld-link) | `wemod_enhancer_gui.exe` |
 | `gui-windows-llvm-mingw-amd64-full` | Linux → Windows x86-64 | LLVM-MinGW | `wemod_enhancer_gui.exe` |
 | `gui-linux-gcc-amd64-full` | Linux x86-64 | GCC | `wemod_enhancer_gui.elf` |
 | `gui-linux-clang-amd64-full` | Linux x86-64 | Clang | `wemod_enhancer_gui.elf` |
@@ -59,7 +58,7 @@ cmake --workflow --preset gui-windows-msvc-amd64-full   # build/gui-windows-msvc
 cmake --workflow --preset gui-linux-gcc-amd64-full      # build/gui-linux-gcc-amd64/RelWithDebInfo/wemod_enhancer_gui.elf
 ```
 
-Linux host builds need SDL3 Wayland/X11 dev packages (build-time only), e.g. `sudo apt-get install libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+Linux host builds need SDL3 Wayland/X11 dev packages (build-time only), e.g. `sudo apt-get install libx11-dev libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
 
 ## Linux / Steam Deck
 
@@ -78,6 +77,8 @@ cd wemod_enhancer
 # 3. Launch your game once through the launcher, then patch the WeMod install
 python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
+
+> **Important:** `wemod_bin` only appears **after** you launch a game through wemod-launcher at least once and log in to your WeMod account. The launcher downloads the WeMod client into `~/wemod-launcher/wemod_data/wemod_bin` on first run — patch only after that folder exists. See the [wemod-launcher tutorial](https://github.com/DeckCheatz/wemod-launcher#quick-guide) for the full setup (Proton, launch options, first login).
 
 > No `python3`? It's preinstalled on SteamOS and most distros — otherwise install it with your package manager (3.11+).
 
@@ -129,7 +130,6 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
 
 ```sh
-python3 tools/wemod_enhancer.py build-dll           # just the proxy DLL
 cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
 cmake --workflow --preset msvc-full                 # Windows (MSVC) package
 ```
@@ -143,7 +143,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Language** | C + Python (stdlib only) | C# / .NET / WPF |
 | **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
+| **Build from source** | `cmake --workflow --preset llvm-mingw-x86_64-full` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
 | **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
