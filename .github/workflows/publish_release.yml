@@ -69,6 +69,70 @@ jobs:
           path: build/llvm-mingw-x86_64/*.tar.xz
           if-no-files-found: error
 
+  # ── Linux native (GUI .elf) + combined Linux archive ───────────────────────
+  # Builds the GUI natively on Linux (.elf) and the Windows cross package
+  # (llvm-mingw), then merges them into one Linux archive that carries the
+  # native .elf, the Windows .exe, version.dll and the Python CLI - so a
+  # Linux / Steam Deck user gets everything in a single download.
+  linux_combined_amd64:
+    name: linux-combined-amd64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup_python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: install_dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build \
+            libwayland-dev libxkbcommon-dev libdbus-1-dev \
+            libibus-1.0-dev libdecor-0-dev
+          pip install "cmake>=3.31"
+
+      # Native Linux GUI (.elf) + its own package.
+      - name: build_linux_native
+        run: cmake --workflow --preset linux-native-full
+
+      # Windows cross package (version.dll + wemod_enhancer_gui.exe + python).
+      - name: build_windows_cross
+        run: cmake --workflow --preset llvm-mingw-x86_64-full
+
+      # Merge: unpack the Windows package, drop the native .elf beside the
+      # .exe, repack as the combined Linux archive.
+      - name: assemble_combined
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          tar -xf build/llvm-mingw-x86_64/*.tar.xz -C "$work"
+          # The package nests everything under a top-level dir; find bin/.
+          bin_dir=$(find "$work" -type d -name bin | head -n1)
+          cp build/linux-native/gui/Release/wemod_enhancer_gui.elf "$bin_dir/"
+          chmod +x "$bin_dir/wemod_enhancer_gui.elf"
+          out=wemod_enhancer-linux-combined-amd64.tar.xz
+          tar -cJf "$out" -C "$work" .
+          mv "$out" build/linux-native/
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-combined-amd64
+          path: build/linux-native/wemod_enhancer-linux-combined-amd64.tar.xz
+          if-no-files-found: error
+
   # ── Clang Windows AMD64 (MSVC ABI) ─────────────────────────────────────────
   windows_clang_amd64:
     name: windows-clang-amd64
@@ -148,7 +212,7 @@ jobs:
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [windows_llvm_mingw_amd64, windows_clang_amd64, windows_msvc_amd64]
+    needs: [windows_llvm_mingw_amd64, windows_clang_amd64, windows_msvc_amd64, linux_combined_amd64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -184,6 +248,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: windows-msvc-amd64
+          path: artifacts/
+
+      - name: download_linux_combined_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-combined-amd64
           path: artifacts/
 
       - name: generate_release_notes
