@@ -47,6 +47,9 @@
 //     always null-terminated), so SDL/ImGui C APIs take it directly -
 //     no string_view::data() that may not be null-terminated
 //     (bugprone-suspicious-stringview-data-usage).
+//   - No hand-rolled UI scale factor: the display content scale from
+//     SDL (main_scale) is the one correct multiplier - it tracks the
+//     monitor's DPI, so the UI looks identical on every display.
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -131,14 +134,9 @@ constexpr std::string_view default_python{
 // it directly - no string_view::data() that may not be null-terminated.
 constexpr const char* window_title{"WeMod Enhancer"};
 
-// 1.5x UI scale on top of the display DPI scale: large, readable,
-// Steam-like proportions without hand-tuning every widget.
-constexpr float ui_scale{1.5F};
-
-// Base window size (before ui_scale * display DPI). 1024x720 * 1.5 =
-// 1536x1080 at 1.0 display scale.
+// Base window size, multiplied by the display DPI scale at startup.
 constexpr std::int32_t window_width{1024};
-constexpr std::int32_t window_height{720};
+constexpr std::int32_t window_height{640};
 static_assert(window_width > 0 && window_height > 0,
               "window size must be positive");
 
@@ -150,6 +148,9 @@ constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 constexpr ImVec4 color_ok{0.35F, 0.85F, 0.45F, 1.00F};
 constexpr ImVec4 color_err{0.90F, 0.30F, 0.30F, 1.00F};
 constexpr ImVec4 color_warn{0.90F, 0.60F, 0.20F, 1.00F};
+
+// Input field tint when the path is valid: quiet green fill.
+constexpr ImVec4 field_ok_bg{0.14F, 0.32F, 0.16F, 0.70F};
 
 struct run_result final
 {
@@ -775,17 +776,6 @@ bool fit_button(const char* label)
     return ImGui::Button(label, ImVec2{width, 0.0F});
 }
 
-// Big action button: Patch / Restore get visual weight so the primary
-// action is obvious at a glance. Returns true when clicked.
-bool big_button(const char* label, const float width, const float height)
-{
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                        ImVec2{16.0F * ui_scale, 12.0F * ui_scale});
-    const bool clicked{ImGui::Button(label, ImVec2{width, height})};
-    ImGui::PopStyleVar();
-    return clicked;
-}
-
 // Why an action button is disabled, or what it does when it is not -
 // no nested conditional operators, just early returns.
 [[nodiscard]] const char* action_tooltip(const bool install_ok,
@@ -852,8 +842,8 @@ void draw_ui(app_state& state)
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
-    // Steam-style layout: title, big actions in focus, then the log.
-    // Settings merged into one section - no separate Advanced tab.
+    // Clean single-column layout: title, the one required input, the
+    // two actions, a collapsed Settings section, then the log.
 
     ImGui::TextUnformatted(window_title);
     ImGui::Spacing();
@@ -873,10 +863,11 @@ void draw_ui(app_state& state)
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (ImGui::GetStyle().FramePadding.x * 2.0F)};
     ImGui::SetNextItemWidth(-browse_w - ImGui::GetStyle().ItemSpacing.x);
-    // Green field = valid path. Red border = invalid. No text needed.
+    // The field itself is the validity indicator, no extra text:
+    // valid path -> quiet green fill; invalid path -> red border only;
+    // empty -> plain.
     if (install_ok) {
-        ImGui::PushStyleColor(ImGuiCol_FrameBg,
-                              ImVec4{0.15F, 0.35F, 0.15F, 0.60F});
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, field_ok_bg);
     } else if (!state.install_dir.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Border, color_err);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
@@ -910,16 +901,14 @@ void draw_ui(app_state& state)
     }
 
     ImGui::Spacing();
-    ImGui::Spacing();
 
-    // --- Actions: big, in focus --------------------------------------
+    // --- Actions: Patch / Restore side by side, half width each -----
     const bool can_run{!state.running && install_ok && script_ok};
     const float button_width{(ImGui::GetContentRegionAvail().x -
                               ImGui::GetStyle().ItemSpacing.x) *
                              0.5F};
-    const float button_height{ImGui::GetFrameHeight() * 2.0F};
     ImGui::BeginDisabled(!can_run);
-    if (big_button("Patch", button_width, button_height)) {
+    if (ImGui::Button("Patch", ImVec2{button_width, 0.0F})) {
         start_run(state, "patch");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -927,7 +916,7 @@ void draw_ui(app_state& state)
             action_tooltip(install_ok, script_ok, "Unlock Pro features"));
     }
     ImGui::SameLine();
-    if (big_button("Restore", button_width, button_height)) {
+    if (ImGui::Button("Restore", ImVec2{button_width, 0.0F})) {
         start_run(state, "restore");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -1051,7 +1040,7 @@ void draw_ui(app_state& state)
             "How Python 3.11+ is started on your system. Usually "
             "'python' on Windows, 'python3' on Linux.",
             "https://www.python.org/downloads/");
-        ImGui::SetNextItemWidth(200.0F * ui_scale);
+        ImGui::SetNextItemWidth(200.0F);
         constexpr const char* python_hint{is_windows ? "python" : "python3"};
         ImGui::InputTextWithHint("##python", python_hint, &state.python);
 
@@ -1146,7 +1135,9 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     }
 
     // Window + SDL_Renderer (stock imgui SDL3+SDL_Renderer example).
-    // Guard the content scale: SDL returns 0.0 when the display scale
+    // The display content scale from SDL is the one correct multiplier:
+    // it tracks the monitor DPI, so the UI keeps the same physical
+    // size on every display. Guard it: SDL returns 0.0 when the scale
     // is unknown, which would size the window to nothing.
     const float main_scale{[] {
         const float scale{
@@ -1158,10 +1149,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY};
     SDL_Window* window{
         SDL_CreateWindow(window_title,
-                         static_cast<int>(window_width * main_scale *
-                                          ui_scale),
-                         static_cast<int>(window_height * main_scale *
-                                          ui_scale),
+                         static_cast<int>(window_width * main_scale),
+                         static_cast<int>(window_height * main_scale),
                          window_flags)};
     if (window == nullptr) {
         SDL_Quit();
@@ -1190,8 +1179,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     ImGui::StyleColorsDark();
 
     ImGuiStyle& style{ImGui::GetStyle()};
-    style.ScaleAllSizes(main_scale * ui_scale);
-    style.FontScaleDpi = main_scale * ui_scale;
+    style.ScaleAllSizes(main_scale);
+    style.FontScaleDpi = main_scale;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
