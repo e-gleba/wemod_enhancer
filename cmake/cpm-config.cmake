@@ -30,3 +30,16 @@ endif()
 
 find_package(doctest CONFIG REQUIRED)
 find_package(gsl CONFIG REQUIRED)
+
+# GUI frontend dependencies — native desktop builds only.
+# Skipped when cross-compiling: the llvm-mingw sysroot has no OpenGL
+# development files, and the gui/ directory is only added to the build
+# for native targets anyway.
+# Order matters: cmake/cpm/imgui-config.cmake creates the
+# imgui::sdl3_opengl3 backend target only if SDL3::SDL3 and OpenGL::GL
+# already exist at that point.
+if(NOT CMAKE_CROSSCOMPILING)
+    find_package(OpenGL REQUIRED)
+    find_package(sdl3 CONFIG REQUIRED)
+    find_package(imgui CONFIG REQUIRED)
+endif()

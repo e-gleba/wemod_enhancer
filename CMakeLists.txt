@@ -52,6 +52,12 @@ endif()
 
 add_subdirectory(src)
 
+# The GUI links OpenGL/SDL3/imgui, which cmake/cpm-config.cmake only
+# resolves for native builds — keep this guard in sync with that file.
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(gui)
+endif()
+
 # CTest, CPack, and install rules for top-level metadata files
 # should only run when this project owns the build. If another
 # project pulls us in via add_subdirectory() or FetchContent,

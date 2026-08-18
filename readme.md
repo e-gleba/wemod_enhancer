@@ -95,6 +95,16 @@ python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_
 python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 ```
 
+## GUI
+
+Prefer clicking over typing? Native (non-cross) builds also produce `wemod_enhancer_gui` — a small Dear ImGui (SDL3 + OpenGL3) window that runs the same tested `wemod_enhancer.py patch` / `restore` commands and shows their stdout/stderr and exit code. It pre-fills the newest WeMod `app-*` install on Windows and the wemod-launcher path on Linux. Python 3.11+ is still required at runtime.
+
+```sh
+cmake --workflow --preset msvc-full   # Windows: build/msvc/gui/Release/wemod_enhancer_gui.exe
+```
+
+Linux host builds additionally need OpenGL + Wayland/X11 development packages for SDL3, e.g. `sudo apt-get install libgl1-mesa-dev libglu1-mesa-dev libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`.
+
 ## Build from source
 
 Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
@@ -116,7 +126,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
 | **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
-| **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
+| **Interface** | CLI + minimal ImGui GUI | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
 | **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
 | **Pro activation** | Intercepts `/v3/account` responses | Same |
