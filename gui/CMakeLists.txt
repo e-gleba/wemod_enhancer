@@ -1,10 +1,10 @@
 # ImGui frontend for the Python patcher CLI: runs the tested
 # tools/wemod_enhancer.py commands and shows their output.
 #
-# SDL3 and imgui are resolved in cmake/cpm-config.cmake for every build
-# (native and cross). imgui::sdl3_renderer links imgui::imgui and a
-# static SDL3 publicly; combined with the static C++ runtime / CRT
-# below, the produced binary is fully self-contained.
+# SDL3 and imgui are resolved in cmake/cpm-config.cmake. The
+# imgui::sdl3_renderer target links imgui::imgui and a static SDL3
+# publicly; combined with the static C++ runtime / CRT below, the
+# produced binary is fully self-contained.
 
 add_executable(wemod_enhancer_gui main.cpp)
 

@@ -1,9 +1,9 @@
 // gui/main.cpp
 //
-// Minimal Dear ImGui (SDL3 + SDL_Renderer) frontend for the tested
-// Python patcher CLI (tools/wemod_enhancer.py). Runs `patch` /
-// `restore` for users who are not comfortable with a terminal and
-// shows the script's stdout/stderr plus exit code in a scrolling log.
+// Dear ImGui (SDL3 + SDL_Renderer) frontend for the tested Python
+// patcher CLI (tools/wemod_enhancer.py). Runs `patch` / `restore` for
+// users who are not comfortable with a terminal and shows the script's
+// stdout/stderr plus exit code in a scrolling log.
 //
 // The SDL3 renderer backend needs no OpenGL: SDL3 picks the platform's
 // own rendering API (Direct3D on Windows, OpenGL/Vulkan/software on
@@ -15,6 +15,7 @@
 #include "imgui_stdlib.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_main.h>
 
 #include <algorithm>
@@ -47,6 +48,7 @@ struct run_result
 
 struct app_state
 {
+    SDL_Window* window = nullptr;
     std::string install_dir;
     std::string script_path;
     std::string python;
@@ -56,6 +58,7 @@ struct app_state
     bool scroll_to_bottom = false;
     bool has_run = false;
     int last_exit_code = 0;
+    float copied_flash = 0.0F; // seconds left of "Copied!" feedback
 };
 
 // Report a fatal startup error and return the process exit code.
@@ -217,16 +220,32 @@ std::string default_script_path()
     return {};
 }
 
+// A folder counts as a WeMod install when resources/app.asar exists
+// inside it (the app-* layout the patcher patches).
+bool looks_like_wemod_install(const std::string& dir)
+{
+    std::error_code ec;
+    return !dir.empty() &&
+        fs::is_regular_file(fs::path(dir) / "resources" / "app.asar", ec);
+}
+
+// SDL dialog callback: may run on another thread; it only writes a
+// std::string that the UI thread reads next frame — safe in practice
+// because the dialog is modal and the field is not edited meanwhile.
+void SDLCALL on_folder_chosen(void* userdata,
+                              const char* const* filelist,
+                              int filter)
+{
+    (void)filter;
+    auto* target = static_cast<std::string*>(userdata);
+    if (filelist != nullptr && *filelist != nullptr) {
+        *target = *filelist;
+    }
+}
+
 void start_run(app_state& state, const char* subcommand)
 {
     if (state.running) {
-        return;
-    }
-    if (state.install_dir.empty() || state.script_path.empty() ||
-        state.python.empty()) {
-        state.log += "error: python command, script path and install "
-                     "directory must all be set\n\n";
-        state.scroll_to_bottom = true;
         return;
     }
 
@@ -273,35 +292,74 @@ void draw_ui(app_state& state)
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
-    ImGui::TextUnformatted("Python interpreter");
-    ImGui::SetNextItemWidth(160.0F);
-    ImGui::InputText("##python", &state.python);
+    ImGui::TextUnformatted("WeMod Enhancer");
+    ImGui::TextDisabled(
+        "Close WeMod, pick its install folder, press Patch.");
+    ImGui::Spacing();
 
-    ImGui::TextUnformatted("Patcher script (wemod_enhancer.py)");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputText("##script", &state.script_path);
+    // --- The only thing a user must provide: the WeMod folder -------
+    const bool install_ok = looks_like_wemod_install(state.install_dir);
 
-    ImGui::TextUnformatted(
-        "WeMod install directory (app-* folder with resources/app.asar)");
-    ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputText("##install_dir", &state.install_dir);
+    ImGui::TextUnformatted("WeMod install folder");
+    ImGui::SetNextItemWidth(-ImGui::GetFrameHeightWithSpacing() -
+                            ImGui::GetStyle().ItemSpacing.x);
+    if (!install_ok && !state.install_dir.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Border,
+                              ImVec4(0.90F, 0.30F, 0.30F, 1.00F));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
+    }
+    ImGui::InputTextWithHint(
+        "##install_dir",
+#ifdef _WIN32
+        "C:\\Users\\<you>\\AppData\\Local\\WeMod\\app-10.x.x",
+#else
+        "~/wemod-launcher/wemod_data/wemod_bin",
+#endif
+        &state.install_dir);
+    if (!install_ok && !state.install_dir.empty()) {
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...")) {
+        SDL_ShowOpenFolderDialog(on_folder_chosen,
+                                 &state.install_dir,
+                                 state.window,
+                                 state.install_dir.empty()
+                                     ? nullptr
+                                     : state.install_dir.c_str(),
+                                 false);
+    }
+    if (install_ok) {
+        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
+                           "Found resources/app.asar — looks good.");
+    } else {
+        ImGui::TextDisabled("The folder must contain resources\\app.asar");
+    }
 
     ImGui::Spacing();
 
-    ImGui::BeginDisabled(state.running);
-    if (ImGui::Button("Patch")) {
+    // --- Actions ----------------------------------------------------
+    const bool can_run = !state.running && install_ok;
+    ImGui::BeginDisabled(!can_run);
+    if (ImGui::Button("Patch", ImVec2(120.0F, 0.0F))) {
         start_run(state, "patch");
     }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s",
+                          install_ok ? "Unlock Pro features"
+                                     : "Pick a valid WeMod folder first");
+    }
     ImGui::SameLine();
-    if (ImGui::Button("Restore")) {
+    if (ImGui::Button("Restore", ImVec2(120.0F, 0.0F))) {
         start_run(state, "restore");
     }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Clear log")) {
-        state.log.clear();
-        state.has_run = false;
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("%s",
+                          install_ok ? "Undo every change (uses backups)"
+                                     : "Pick a valid WeMod folder first");
     }
+    ImGui::EndDisabled();
     if (state.running) {
         ImGui::SameLine();
         ImGui::TextUnformatted("Running...");
@@ -309,29 +367,80 @@ void draw_ui(app_state& state)
 
     ImGui::Separator();
 
+    // --- Output -----------------------------------------------------
     const float status_height = ImGui::GetFrameHeightWithSpacing();
+    const float toolbar_height = ImGui::GetFrameHeightWithSpacing();
     ImGui::BeginChild("##log",
-                      ImVec2(0.0F, -status_height),
+                      ImVec2(0.0F, -status_height - toolbar_height),
                       ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
-    ImGui::TextUnformatted(state.log.c_str());
+    if (state.log.empty()) {
+        ImGui::TextDisabled("Output of the patcher will appear here.");
+    } else {
+        ImGui::TextUnformatted(state.log.c_str());
+    }
     if (state.scroll_to_bottom) {
         ImGui::SetScrollHereY(1.0F);
         state.scroll_to_bottom = false;
     }
     ImGui::EndChild();
 
+    if (ImGui::Button("Copy output")) {
+        if (!state.log.empty()) {
+            SDL_SetClipboardText(state.log.c_str());
+            state.copied_flash = 1.5F;
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "%s",
+            "Copy everything above — paste it when asking for help");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Clear")) {
+        state.log.clear();
+        state.has_run = false;
+    }
+    if (state.copied_flash > 0.0F) {
+        state.copied_flash -= io.DeltaTime;
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F), "Copied!");
+    }
+
+    // --- Status line ------------------------------------------------
     if (state.running) {
         ImGui::TextUnformatted("Running - keep WeMod closed...");
     } else if (state.has_run && state.last_exit_code == 0) {
-        ImGui::TextUnformatted("Last run: success");
+        ImGui::TextColored(ImVec4(0.35F, 0.85F, 0.45F, 1.00F),
+                           "Done — everything went fine.");
     } else if (state.has_run) {
-        const std::string status = "Last run: failed (exit code " +
-            std::to_string(state.last_exit_code) + ")";
-        ImGui::TextUnformatted(status.c_str());
+        const std::string status = "Failed (exit code " +
+            std::to_string(state.last_exit_code) +
+            ") — press \"Copy output\" and share it when asking for help.";
+        ImGui::TextColored(ImVec4(0.90F, 0.30F, 0.30F, 1.00F),
+                           "%s",
+                           status.c_str());
     } else {
-        ImGui::TextUnformatted(
-            "Close WeMod, then press Patch. Restore reverts everything.");
+        ImGui::TextDisabled(
+            "Restore reverts everything — the patcher keeps backups.");
+    }
+
+    // --- Advanced: for power users / debugging ----------------------
+    if (ImGui::CollapsingHeader("Advanced")) {
+        ImGui::Indent();
+        ImGui::TextUnformatted("Python interpreter");
+        ImGui::SetNextItemWidth(200.0F);
+        ImGui::InputTextWithHint("##python",
+#ifdef _WIN32
+                                 "python",
+#else
+                                 "python3",
+#endif
+                                 &state.python);
+        ImGui::TextUnformatted("Patcher script (wemod_enhancer.py)");
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::InputText("##script", &state.script_path);
+        ImGui::Unindent();
     }
 
     ImGui::End();
@@ -355,8 +464,8 @@ int main(int argc, char* argv[])
         SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     SDL_Window* window =
         SDL_CreateWindow("WeMod Enhancer",
-                         static_cast<int>(960 * main_scale),
-                         static_cast<int>(640 * main_scale),
+                         static_cast<int>(860 * main_scale),
+                         static_cast<int>(620 * main_scale),
                          window_flags);
     if (window == nullptr) {
         return fatal_error("SDL_CreateWindow()");
@@ -386,6 +495,7 @@ int main(int argc, char* argv[])
     ImGui_ImplSDLRenderer3_Init(renderer);
 
     app_state state;
+    state.window = window;
     state.install_dir = default_install_dir();
     state.script_path = default_script_path();
 #ifdef _WIN32

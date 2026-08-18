@@ -97,7 +97,9 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 
 ## GUI
 
-Prefer clicking over typing? Builds also produce `wemod_enhancer_gui` — a small Dear ImGui window (stock SDL3 + SDL_Renderer backend) that runs the same tested `wemod_enhancer.py patch` / `restore` commands and shows their stdout/stderr and exit code. It pre-fills the newest WeMod `app-*` install on Windows and the wemod-launcher path on Linux. SDL3, the C++ runtime and the CRT are linked statically where the toolchain ships the static archives — the binary runs on a bare OS install; Python 3.11+ is the only requirement.
+Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui window (stock SDL3 + SDL_Renderer backend) that runs the same tested `wemod_enhancer.py patch` / `restore` commands and shows their output. Pick the WeMod folder (auto-detected when possible, with a Browse… dialog), press Patch — a "Copy output" button grabs the full log for error reports, and the python command / script path live under a collapsed "Advanced" section. SDL3, the C++ runtime and the CRT are linked statically where the toolchain ships the static archives — the binary runs on a bare OS install; Python 3.11+ is the only requirement.
+
+The GUI is opt-in (`-DWEMOD_ENHANCER_BUILD_GUI=ON`); the plain DLL build never touches SDL3/imgui:
 
 ```sh
 cmake --workflow --preset msvc-full              # Windows: build/msvc/gui/Release/wemod_enhancer_gui.exe

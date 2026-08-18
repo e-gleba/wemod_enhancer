@@ -1,39 +1,17 @@
-include(FetchContent)
-
-set(cpm_version "0.42.1")
-set(cpm_expected_hash
-    "f3a6dcc6a04ce9e7f51a127307fa4f699fb2bade357a8eb4c5b45df76e1dc6a5")
-
-fetchcontent_declare(
-    get_cpm
-    URL "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${cpm_version}/CPM.cmake"
-    URL_HASH SHA256=${cpm_expected_hash}
-    DOWNLOAD_NO_EXTRACT TRUE)
-
-fetchcontent_makeavailable(get_cpm)
-
-include("${get_cpm_SOURCE_DIR}/CPM.cmake")
-
-# Enable local package reuse (vcpkg, system, etc.)
-# Ref: https://github.com/cpm-cmake/CPM.cmake#find_package-integration
-set(CPM_USE_LOCAL_PACKAGES ON)
-# set(CPM_SOURCE_CACHE "/tmp/cpm-cache")
-
-file(WRITE "${CPM_SOURCE_CACHE}/.clang-tidy" "Checks: '-*'\n")
-
-set(cpm_deps_dir "${CMAKE_CURRENT_LIST_DIR}/cpm")
-
-list(APPEND CMAKE_PREFIX_PATH "${cpm_deps_dir}")
-if(CMAKE_CROSSCOMPILING)
-    list(APPEND CMAKE_FIND_ROOT_PATH "${cpm_deps_dir}")
-endif()
+# cmake/cpm-config.cmake
+# Third-party dependencies resolved through CPM.cmake.
+#
+# Each package has a wrapper in cmake/cpm/ named <pkg>-config.cmake.
+# With CPM_USE_LOCAL_PACKAGES=ON, CPM routes find_package() calls
+# through those wrappers, so dependency sources and build options live
+# in one place.
 
 find_package(doctest CONFIG REQUIRED)
 find_package(gsl CONFIG REQUIRED)
 
-# GUI frontend dependencies — resolved for native and cross builds
-# alike. The GUI uses the SDL3 renderer backend, which needs no OpenGL
-# development files (SDL3 loads the platform graphics APIs at runtime),
-# and SDL3 is linked statically into the executable.
-find_package(sdl3 CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
+if(WEMOD_ENHANCER_BUILD_GUI)
+    # imgui-config.cmake creates the imgui::sdl3_renderer backend target
+    # only when SDL3::SDL3 already exists, so resolve SDL3 first.
+    find_package(sdl3 CONFIG REQUIRED)
+    find_package(imgui CONFIG REQUIRED)
+endif()

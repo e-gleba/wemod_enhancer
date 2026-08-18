@@ -2,87 +2,41 @@ cmake_minimum_required(VERSION 3.31)
 
 project(
     wemod_enhancer
-    VERSION 1.0.2
+    VERSION 1.0.0
     DESCRIPTION
-        "Cross-platform Wand/WeMod Electron patcher and Windows ASAR fuse proxy"
+        "Cross-platform patcher for WeMod: Pro unlock, DevTools, no auto-updates"
     HOMEPAGE_URL "https://github.com/e-gleba/wemod_enhancer"
     LANGUAGES C CXX)
 
-set(PROJECT_VENDOR "e-gleba")
-set(PROJECT_CONTACT "evgeniy.gleba@yandex.ru")
-set(PROJECT_LICENSE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/license.md")
-set(PROJECT_README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/readme.md")
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# CMAKE_CURRENT_LIST_DIR is used instead of CMAKE_SOURCE_DIR so
-# that this file works correctly if the project is ever consumed
-# as a subdirectory of a larger build.
-# Ref: Professional CMake §8.3 "Project-relative Variables"
-list(
-    APPEND
-    CMAKE_PREFIX_PATH
-    "${CMAKE_CURRENT_LIST_DIR}/cmake"
-    "${CMAKE_CURRENT_LIST_DIR}/cmake/description"
-    "${CMAKE_CURRENT_LIST_DIR}/cmake/code_quality")
+# Statically link the C++ runtime into every target so the produced
+# binaries have no libstdc++/libc++ runtime dependency.
+set(CMAKE_MSVC_RUNTIME_LIBRARY
+    "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-# When cross-compiling, CMAKE_FIND_ROOT_PATH_MODE_PACKAGE is
-# typically set to ONLY in the toolchain file. That restricts
-# find_package() to searching only under CMAKE_FIND_ROOT_PATH
-# and CMAKE_SYSROOT — our local cmake/ dirs wouldn't be found.
-# Adding them to CMAKE_FIND_ROOT_PATH fixes this
-if(CMAKE_CROSSCOMPILING)
-    list(
-        APPEND
-        CMAKE_FIND_ROOT_PATH
-        "${CMAKE_CURRENT_LIST_DIR}/cmake"
-        "${CMAKE_CURRENT_LIST_DIR}/cmake/description"
-        "${CMAKE_CURRENT_LIST_DIR}/cmake/code_quality")
+include(cmake/cpm-bootstrap.cmake)
+include(cmake/cpm-config.cmake)
+include(cmake/code_quality/clang_tidy-config.cmake)
+include(cmake/code_quality/cpplint-config.cmake)
+include(cmake/code_quality/warnings-config.cmake)
+
+option(WEMOD_ENHANCER_BUILD_GUI "Build the ImGui GUI frontend (SDL3)" OFF)
+
+if(WEMOD_ENHANCER_BUILD_GUI)
+    add_subdirectory(gui)
 endif()
 
-find_package(cpm CONFIG REQUIRED)
-
-find_package(warnings CONFIG REQUIRED)
-
-if(PROJECT_IS_TOP_LEVEL)
-    find_package(clang_format CONFIG REQUIRED)
-    find_package(clang_tidy CONFIG REQUIRED)
-    find_package(clang_doc CONFIG REQUIRED)
-    find_package(cpplint CONFIG REQUIRED)
-    find_package(ct_doxygen CONFIG REQUIRED)
+if(WIN32)
+    add_subdirectory(src)
 endif()
 
-add_subdirectory(src)
-add_subdirectory(gui)
-
-# CTest, CPack, and install rules for top-level metadata files
-# should only run when this project owns the build. If another
-# project pulls us in via add_subdirectory() or FetchContent,
-# it controls testing and packaging — we should not interfere.
-# Ref: Professional CMake §8.3, §39 "FetchContent"
-if(PROJECT_IS_TOP_LEVEL)
-    # include(CTest) creates the BUILD_TESTING cache option
-    # (default ON) and sets up CDash integration.
-    include(CTest)
-
-    if(BUILD_TESTING)
-        add_subdirectory(tests)
-    endif()
-
-    include(GNUInstallDirs)
-    find_package(package_description CONFIG REQUIRED)
-
-    # Install the Python patcher CLI next to version.dll so the
-    # install tree is self-contained: users need only Python (no CMake)
-    # to run `python wemod_enhancer.py patch --install-dir ...`.
-    add_subdirectory(tools)
-
-    # Append processor to system name so packages for
-    # different architectures don't collide (e.g.
-    # "Windows-x86_64" vs "Windows-aarch64").
-    string(APPEND CPACK_SYSTEM_NAME "-${CMAKE_SYSTEM_PROCESSOR}")
-
-    # include(CPack) must come AFTER all CPACK_* variables
-    # are set — it reads them at include-time and ignores
-    # any changes made afterward.
-    # Ref: Professional CMake §36.1 "Packaging Basics"
-    include(CPack)
+if(NOT CMAKE_CROSSCOMPILING)
+    add_subdirectory(tests)
 endif()
+
+# The patcher CLI is a stdlib-only Python script — install it next to
+# the executables so the GUI finds it at runtime.
+install(FILES tools/wemod_enhancer.py DESTINATION bin)

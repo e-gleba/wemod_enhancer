@@ -1,220 +1,267 @@
 {
-    "$schema": "https://cmake.org/cmake/help/latest/_downloads/3e2d73bff478d88a7de0de736ba5e361/schema.json",
-    "version": 10,
-    "cmakeMinimumRequired": {
-        "major": 3,
-        "minor": 31,
-        "patch": 0
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 31,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "msvc",
+      "displayName": "MSVC (Windows, AMD64)",
+      "description": "Windows host build with the Visual Studio MSVC toolchain.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/msvc",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
     },
-    "configurePresets": [
+    {
+      "name": "llvm-mingw-x86_64",
+      "displayName": "LLVM-MinGW (Windows AMD64 target)",
+      "description": "Cross-compiles Windows AMD64 binaries from any host with the auto-downloaded LLVM-MinGW toolchain.",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/llvm-mingw-x86_64",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "cmake/toolchains/llvm_mingw.cmake",
+        "LLVM_MINGW_TARGET": "x86_64-w64-mingw32",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      }
+    },
+    {
+      "name": "linux-native",
+      "displayName": "Linux native (GCC/Clang)",
+      "description": "Native Linux build. Produces the GUI ELF; the proxy DLL is Win32-only and is built by the llvm-mingw preset.",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/linux-native",
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release",
+        "WEMOD_ENHANCER_BUILD_GUI": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "clang-windows-amd64",
+      "displayName": "Clang (Windows, MSVC ABI)",
+      "description": "Windows host build with Clang targeting the MSVC ABI (clang-cl).",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/clang-windows-amd64",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "llvm-mingw-x86_64-debug",
+      "configurePreset": "llvm-mingw-x86_64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "llvm-mingw-x86_64-release",
+      "configurePreset": "llvm-mingw-x86_64",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-native-debug",
+      "configurePreset": "linux-native",
+      "configuration": "Debug",
+      "targets": ["wemod_enhancer_gui"]
+    },
+    {
+      "name": "linux-native-release",
+      "configurePreset": "linux-native",
+      "configuration": "Release",
+      "targets": ["wemod_enhancer_gui"]
+    },
+    {
+      "name": "clang-windows-amd64-debug",
+      "configurePreset": "clang-windows-amd64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "clang-windows-amd64-release",
+      "configurePreset": "clang-windows-amd64",
+      "configuration": "Release"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-windows-amd64-debug",
+      "configurePreset": "clang-windows-amd64",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "clang-windows-amd64-release",
+      "configurePreset": "clang-windows-amd64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ],
+  "packagePresets": [
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc",
+      "configurations": ["Release"],
+      "generators": [
         {
-            "name": "llvm-mingw-x86_64",
-            "displayName": "LLVM-MinGW Windows x86-64",
-            "description": "Cross-compile version.dll for Windows x86-64 from Linux",
-            "generator": "Ninja Multi-Config",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "toolchainFile": "${sourceDir}/cmake/toolchains/llvm_mingw.cmake",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_PROCESSOR": "x86_64"
-            },
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
-        },
-        {
-            "name": "msvc",
-            "displayName": "Microsoft Visual C++ x86-64",
-            "description": "Build version.dll natively on Windows with MSVC",
-            "generator": "Visual Studio 17 2022",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "architecture": {
-                "value": "x64",
-                "strategy": "set"
-            },
-            "toolset": {
-                "value": "host=x64",
-                "strategy": "set"
-            },
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
-            "name": "clang-windows-amd64",
-            "displayName": "Clang Windows AMD64 (MSVC ABI)",
-            "description": "Native Windows 64-bit build using pure Clang (GNU driver, MSVC ABI) with Ninja",
-            "generator": "Ninja Multi-Config",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "cacheVariables": {
-                "CMAKE_SYSTEM_PROCESSOR": "x86_64",
-                "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++",
-                "CMAKE_C_COMPILER_TARGET": "x86_64-pc-windows-msvc",
-                "CMAKE_CXX_COMPILER_TARGET": "x86_64-pc-windows-msvc",
-                "CMAKE_RC_COMPILER": "llvm-rc",
-                "CMAKE_EXE_LINKER_FLAGS_INIT": "-fuse-ld=lld-link -Xlinker /machine:x64",
-                "CMAKE_SHARED_LINKER_FLAGS_INIT": "-fuse-ld=lld-link -Xlinker /machine:x64",
-                "CMAKE_MODULE_LINKER_FLAGS_INIT": "-fuse-ld=lld-link -Xlinker /machine:x64"
-            },
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Windows"
-            }
-        },
-        {
-            "name": "linux-native",
-            "displayName": "Linux native (ELF)",
-            "description": "Native Linux build — used for the wemod_enhancer_gui ELF; version.dll is a Windows-only target and is not built by this preset",
-            "generator": "Ninja Multi-Config",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
+          "type": "ZIP",
+          "packageName": "wemod_enhancer",
+          "packageVersion": "${projectVersion}",
+          "packageDirectory": "dist"
         }
-    ],
-    "buildPresets": [
+      ]
+    },
+    {
+      "name": "llvm-mingw-x86_64-release",
+      "configurePreset": "llvm-mingw-x86_64",
+      "configurations": ["Release"],
+      "generators": [
         {
-            "name": "llvm-mingw-x86_64",
-            "displayName": "LLVM-MinGW Windows x86-64 Release",
-            "configurePreset": "llvm-mingw-x86_64",
-            "configuration": "Release"
-        },
-        {
-            "name": "msvc-release",
-            "displayName": "MSVC x86-64 Release",
-            "configurePreset": "msvc",
-            "configuration": "Release"
-        },
-        {
-            "name": "clang-windows-amd64-release",
-            "displayName": "Clang Windows AMD64 Release",
-            "configurePreset": "clang-windows-amd64",
-            "configuration": "Release"
-        },
-        {
-            "name": "linux-native-release",
-            "displayName": "Linux native Release (GUI only)",
-            "configurePreset": "linux-native",
-            "configuration": "Release",
-            "targets": [
-                "wemod_enhancer_gui"
-            ]
+          "type": "TXZ",
+          "packageName": "wemod_enhancer",
+          "packageVersion": "${projectVersion}",
+          "packageDirectory": "dist"
         }
-    ],
-    "packagePresets": [
+      ]
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "msvc-full",
+      "steps": [
         {
-            "name": "llvm-mingw-x86_64-package",
-            "displayName": "LLVM-MinGW Windows x86-64 Package",
-            "configurePreset": "llvm-mingw-x86_64",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "TXZ"
-            ]
+          "type": "configure",
+          "name": "msvc"
         },
         {
-            "name": "msvc-package",
-            "displayName": "MSVC Windows x86-64 Package",
-            "configurePreset": "msvc",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "ZIP"
-            ]
+          "type": "build",
+          "name": "msvc-debug"
         },
         {
-            "name": "clang-windows-amd64-package",
-            "displayName": "Clang Windows AMD64 Package",
-            "configurePreset": "clang-windows-amd64",
-            "configurations": [
-                "Release"
-            ],
-            "generators": [
-                "ZIP"
-            ]
+          "type": "build",
+          "name": "msvc-release"
+        },
+        {
+          "type": "test",
+          "name": "msvc-debug"
+        },
+        {
+          "type": "test",
+          "name": "msvc-release"
+        },
+        {
+          "type": "package",
+          "name": "msvc-release"
         }
-    ],
-    "workflowPresets": [
+      ]
+    },
+    {
+      "name": "llvm-mingw-x86_64-full",
+      "steps": [
         {
-            "name": "llvm-mingw-x86_64-full",
-            "displayName": "LLVM-MinGW Windows x86-64 Pipeline",
-            "description": "Configure, build, and package Windows x86-64 version.dll on Linux",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "llvm-mingw-x86_64"
-                },
-                {
-                    "type": "build",
-                    "name": "llvm-mingw-x86_64"
-                },
-                {
-                    "type": "package",
-                    "name": "llvm-mingw-x86_64-package"
-                }
-            ]
+          "type": "configure",
+          "name": "llvm-mingw-x86_64"
         },
         {
-            "name": "msvc-full",
-            "displayName": "MSVC Windows x86-64 Pipeline",
-            "description": "Configure, build, and package Windows x86-64 version.dll on Windows",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "msvc"
-                },
-                {
-                    "type": "build",
-                    "name": "msvc-release"
-                },
-                {
-                    "type": "package",
-                    "name": "msvc-package"
-                }
-            ]
+          "type": "build",
+          "name": "llvm-mingw-x86_64-debug"
         },
         {
-            "name": "clang-windows-amd64-full",
-            "displayName": "Clang Windows AMD64 Pipeline",
-            "description": "Configure, build, and package Windows x86-64 version.dll with pure Clang on Windows",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "clang-windows-amd64"
-                },
-                {
-                    "type": "build",
-                    "name": "clang-windows-amd64-release"
-                },
-                {
-                    "type": "package",
-                    "name": "clang-windows-amd64-package"
-                }
-            ]
+          "type": "build",
+          "name": "llvm-mingw-x86_64-release"
         },
         {
-            "name": "linux-native-full",
-            "displayName": "Linux Native GUI Pipeline",
-            "description": "Configure and build the native Linux wemod_enhancer_gui ELF (GUI target only — version.dll is Windows-only)",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "linux-native"
-                },
-                {
-                    "type": "build",
-                    "name": "linux-native-release"
-                }
-            ]
+          "type": "package",
+          "name": "llvm-mingw-x86_64-release"
         }
-    ]
+      ]
+    },
+    {
+      "name": "linux-native-full",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-native"
+        },
+        {
+          "type": "build",
+          "name": "linux-native-release"
+        }
+      ]
+    },
+    {
+      "name": "clang-windows-amd64-full",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "clang-windows-amd64"
+        },
+        {
+          "type": "build",
+          "name": "clang-windows-amd64-debug"
+        },
+        {
+          "type": "build",
+          "name": "clang-windows-amd64-release"
+        },
+        {
+          "type": "test",
+          "name": "clang-windows-amd64-debug"
+        },
+        {
+          "type": "test",
+          "name": "clang-windows-amd64-release"
+        }
+      ]
+    }
+  ]
 }
