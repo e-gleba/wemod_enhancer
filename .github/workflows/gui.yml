@@ -58,7 +58,7 @@ jobs:
               if: runner.os == 'Linux' && !contains(matrix.preset, 'mingw')
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev
+                  sudo apt-get install -y libx11-dev libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev
 
             - name: Configure + build + package (RelWithDebInfo)
               run: cmake --workflow --preset ${{ matrix.preset }}-full
