@@ -1,37 +1,70 @@
-add_library(version SHARED fuses.c library.c library.def)
+# SPDX-License-Identifier: GPL-3.0-or-later
 
-set_target_properties(
-    version
-    PROPERTIES PREFIX ""
-               OUTPUT_NAME "version"
-               MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# version.dll proxy - WeMod Pro unlocker
+#
+# Build configurations:
+#   - Windows MSVC:  cmake --preset windows-msvc-x86_64
+#   - Windows MinGW: cmake --preset windows-llvm-mingw-x86_64
+#   - Cross-compile: cmake --preset llvm-mingw-x86_64 (on Linux)
 
-target_compile_features(version PRIVATE c_std_11)
-
-# MinGW-Clang needs -static to link static libgcc; MSVC-ABI Clang uses
-# MSVC_RUNTIME_LIBRARY (above) for static CRT and does not understand -static
-# the same way through lld-link.
-if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_C_COMPILER_TARGET MATCHES "msvc")
-    target_link_options(version PRIVATE -static)
-endif()
-
-include(GNUInstallDirs)
-install(
-    TARGETS version
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}" # MSVC import .lib
+# Sources
+set(VERSION_SOURCES
+    dll_main.c
+    hooks.c
+    hooks.h
+    ini_config.c
+    ini_config.h
+    logger.c
+    logger.h
+    proxy.c
+    proxy.h
+    version.def
 )
 
-# Ship the PDB next to the DLL so RelWithDebInfo crashes inside the
-# proxy stay debuggable (users can send a stack trace, maintainers can
-# debug a release build). Only MSVC and Windows-targeting Clang
-# (clang-cl) emit PDB; GCC/MinGW/LLVM-MinGW do not. The generator
-# expression $<TARGET_PDB_FILE:> fails at configure time if the linker
-# doesn't support PDB, so we guard on the compiler ID instead of
-# checking file existence at install time.
-if(MSVC OR (CMAKE_C_COMPILER_ID STREQUAL "Clang" AND WIN32))
-    install(FILES $<TARGET_PDB_FILE:version>
-            DESTINATION "${CMAKE_INSTALL_BINDIR}"
-            OPTIONAL)
+# Create the DLL
+add_library(version SHARED ${VERSION_SOURCES})
+add_library(wemod::version ALIAS version)
+
+# Properties
+set_target_properties(version PROPERTIES
+    OUTPUT_NAME "version"
+    PREFIX ""
+    C_STANDARD 23
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+
+# Definitions
+target_compile_definitions(version PRIVATE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    UNICODE
+    _UNICODE
+    $<$<CONFIG:Debug>:DEBUG;_DEBUG>
+    $<$<CONFIG:Release>:NDEBUG>
+)
+
+# Compiler options
+if(MSVC)
+    target_compile_options(version PRIVATE /W4 /utf-8 /wd4100)
+    target_link_options(version PRIVATE /INCREMENTAL:NO)
+else()
+    target_compile_options(version PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
+
+# Link libraries
+target_link_libraries(version PRIVATE
+    kernel32
+    user32
+    advapi32
+    shlwapi
+    $<$<BOOL:${MINGW}>:-static>
+    $<$<BOOL:${MINGW}>:-static-libgcc>
+)
+
+# Install
+install(TARGETS version
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
