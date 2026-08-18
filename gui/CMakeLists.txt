@@ -10,11 +10,15 @@ target_link_libraries(wemod_enhancer_gui PRIVATE imgui::sdl3_renderer)
 
 target_compile_features(wemod_enhancer_gui PRIVATE cxx_std_23)
 
-# In-tree fallback for the patcher script when no installed copy of
-# wemod_enhancer.py sits next to the executable.
-target_compile_definitions(
-    wemod_enhancer_gui
-    PRIVATE WEMOD_ENHANCER_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+# Code-generate the build-tree config header with the absolute path to
+# the in-tree patcher script, so a dev build finds wemod_enhancer.py
+# even though the exe and the script live in different directories.
+# (Install layout - script next to the exe - is checked first at
+# runtime; this is only the build-tree fallback.)
+set(WEMOD_ENHANCER_DEV_SCRIPT "${PROJECT_SOURCE_DIR}/tools/wemod_enhancer.py")
+configure_file(config.hpp.in config.hpp @ONLY)
+target_include_directories(wemod_enhancer_gui
+                           PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # No console window on Windows (GUI subsystem), .app bundle on macOS.
 set_target_properties(wemod_enhancer_gui PROPERTIES WIN32_EXECUTABLE TRUE

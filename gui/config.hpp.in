@@ -1,0 +1,17 @@
+// gui/config.hpp.in
+//
+// Code-generated build-tree configuration, configured by
+// gui/CMakeLists.txt (configure_file). Only the @VAR@ placeholders are
+// substituted; the generated header lands in the build tree and is
+// never committed.
+//
+// WEMOD_ENHANCER_DEV_SCRIPT is the absolute path to the in-tree
+// patcher CLI. It lets a dev build find wemod_enhancer.py even though
+// the executable (build/<preset>/gui/Release/) and the script
+// (tools/) live in different directories. In an installed tree the
+// script sits next to the executable, which is checked first - this
+// is only a fallback for running from the build tree.
+
+#pragma once
+
+#define WEMOD_ENHANCER_DEV_SCRIPT "@WEMOD_ENHANCER_DEV_SCRIPT@"
