@@ -131,8 +131,12 @@ constexpr std::string_view default_python{
 // it directly - no string_view::data() that may not be null-terminated.
 constexpr const char* window_title{"WeMod Enhancer"};
 
-// Steam-sized main window: large, centered, everything reachable
-// without scrolling the chrome away.
+// 1.5x UI scale on top of the display DPI scale: large, readable,
+// Steam-like proportions without hand-tuning every widget.
+constexpr float ui_scale{1.5F};
+
+// Base window size (before ui_scale * display DPI). 1024x720 * 1.5 =
+// 1536x1080 at 1.0 display scale.
 constexpr std::int32_t window_width{1024};
 constexpr std::int32_t window_height{720};
 static_assert(window_width > 0 && window_height > 0,
@@ -774,7 +778,7 @@ bool fit_button(const char* label)
 bool big_button(const char* label, const float width, const float height)
 {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                        ImVec2{16.0F, 12.0F});
+                        ImVec2{16.0F * ui_scale, 12.0F * ui_scale});
     const bool clicked{ImGui::Button(label, ImVec2{width, height})};
     ImGui::PopStyleVar();
     return clicked;
@@ -1045,7 +1049,7 @@ void draw_ui(app_state& state)
             "How Python 3.11+ is started on your system. Usually "
             "'python' on Windows, 'python3' on Linux.",
             "https://www.python.org/downloads/");
-        ImGui::SetNextItemWidth(200.0F);
+        ImGui::SetNextItemWidth(200.0F * ui_scale);
         constexpr const char* python_hint{is_windows ? "python" : "python3"};
         ImGui::InputTextWithHint("##python", python_hint, &state.python);
 
@@ -1152,8 +1156,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY};
     SDL_Window* window{
         SDL_CreateWindow(window_title,
-                         static_cast<int>(window_width * main_scale),
-                         static_cast<int>(window_height * main_scale),
+                         static_cast<int>(window_width * main_scale *
+                                          ui_scale),
+                         static_cast<int>(window_height * main_scale *
+                                          ui_scale),
                          window_flags)};
     if (window == nullptr) {
         SDL_Quit();
@@ -1182,8 +1188,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     ImGui::StyleColorsDark();
 
     ImGuiStyle& style{ImGui::GetStyle()};
-    style.ScaleAllSizes(main_scale);
-    style.FontScaleDpi = main_scale;
+    style.ScaleAllSizes(main_scale * ui_scale);
+    style.FontScaleDpi = main_scale * ui_scale;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
