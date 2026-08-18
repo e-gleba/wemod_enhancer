@@ -51,6 +51,12 @@ jobs:
         uses: renovatebot/github-action@v46.2.1
         with:
           configurationFile: .github/renovate.json5
+          # Token pushes branches AND opens PRs.
+          # - RENOVATE_TOKEN (if set): PAT needs Contents: RW +
+          #   Pull requests: RW on this repo — otherwise branches get
+          #   pushed but PR creation silently fails.
+          # - Fallback GITHUB_TOKEN: works via the job permissions above,
+          #   but its PRs don't trigger CI workflows (GitHub recursion guard).
           token: ${{ secrets.RENOVATE_TOKEN || secrets.GITHUB_TOKEN }}
         env:
           RENOVATE_DRY_RUN: ${{ github.event.inputs.dryRun || 'false' }}
