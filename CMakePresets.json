@@ -149,6 +149,17 @@
             "generators": [
                 "ZIP"
             ]
+        },
+        {
+            "name": "linux-native-package",
+            "displayName": "Linux Native x86-64 Package (GUI + Python)",
+            "configurePreset": "linux-native",
+            "configurations": [
+                "Release"
+            ],
+            "generators": [
+                "TXZ"
+            ]
         }
     ],
     "workflowPresets": [
@@ -212,7 +223,7 @@
         {
             "name": "linux-native-full",
             "displayName": "Linux Native x86-64 Pipeline",
-            "description": "Configure and build the GUI natively on Linux (no package step: version.dll needs the llvm-mingw-x86_64 cross preset)",
+            "description": "Configure, build, and package the GUI natively on Linux (version.dll needs the llvm-mingw-x86_64 cross preset)",
             "steps": [
                 {
                     "type": "configure",
@@ -221,6 +232,10 @@
                 {
                     "type": "build",
                     "name": "linux-native-release"
+                },
+                {
+                    "type": "package",
+                    "name": "linux-native-package"
                 }
             ]
         }
