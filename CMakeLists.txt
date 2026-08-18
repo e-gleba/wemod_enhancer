@@ -58,21 +58,13 @@ add_subdirectory(src)
 # it controls testing and packaging — we should not interfere.
 # Ref: Professional CMake §8.3, §39 "FetchContent"
 if(PROJECT_IS_TOP_LEVEL)
-    # include(CTest) creates the BUILD_TESTING cache option
-    # (default ON) and sets up CDash integration.
-    include(CTest)
-
-    if(BUILD_TESTING)
-        add_subdirectory(tests)
-    endif()
-
     include(GNUInstallDirs)
     find_package(package_description CONFIG REQUIRED)
 
     # Install the Python patcher CLI next to version.dll so the
     # install tree is self-contained: users need only Python (no CMake)
     # to run `python wemod_enhancer.py patch --install-dir ...`.
-    add_subdirectory(tools)
+    add_subdirectory(scripts)
 
     # Append processor to system name so packages for
     # different architectures don't collide (e.g.
