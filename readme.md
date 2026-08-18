@@ -102,17 +102,31 @@ cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
 cmake --workflow --preset msvc-full                 # Windows (MSVC) package
 ```
 
-## GitHub Actions
+## vs Wand-Enhancer
 
-| Action | How to run | What it does |
-| :----- | :--------- | :----------- |
-| **Release** | [Actions → publish_release](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml) → *Run workflow* → enter version (e.g. `v1.0.0`) | Builds MSVC + Clang + LLVM-MinGW archives, tags the commit, publishes a GitHub Release with generated notes |
-| **CI** | Automatic on push/PR — manual: [Actions → cmake_multiplatform_workflow](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml) → *Run workflow* | Builds and packages every preset |
-| **Renovate** | Automatic weekly — manual: [Actions → Renovate](https://github.com/e-gleba/wemod_enhancer/actions/workflows/renovate.yml) → *Run workflow* (`dryRun` optional) | Dependency-update PRs |
+Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) — same core job, zero runtime dependencies, fully cross-platform:
 
----
+| | **WeMod Enhancer** | **Wand-Enhancer** |
+| :-- | :------------------- | :------------------- |
+| **Language** | C + Python (stdlib only) | C# / .NET / WPF |
+| **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
+| **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
+| **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
+| **Platform** | Steam Deck, Linux, Windows | Windows only |
+| **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
+| **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
+| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
+| **Pro activation** | Intercepts `/v3/account` responses | Same |
+| **DevTools** | F12 hotkey hook | Not available |
+| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` → no-op | Not available |
+| **Disable mobile pairing** | `requestRemoteAuthCode()` → reject | Not available |
+| **Remote web panel** | Not included | Built-in LAN HTTP/WebSocket server |
+| **Custom script injection** | Not included | Bundled `.js` injection at patch time |
+| **Fail-safe** | Fails closed on mismatched patches | — |
+| **Backup & restore** | Automatic, one-command restore | — |
+| **License** | MIT | Apache-2.0 |
 
-Ground-up rewrite of [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) (C#/.NET WPF, Windows-only) — same core job, zero runtime dependencies, fully cross-platform.
+> WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
 
 <div align="center">
 <sub>MIT © 2026 Evgeniy Gleba · Not affiliated with WeMod.</sub>
