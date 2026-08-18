@@ -65,6 +65,18 @@
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
             }
+        },
+        {
+            "name": "linux-native",
+            "displayName": "Linux native (ELF)",
+            "description": "Native Linux build — used for the wemod_enhancer_gui ELF; version.dll is a Windows-only target and is not built by this preset",
+            "generator": "Ninja Multi-Config",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
         }
     ],
     "buildPresets": [
@@ -85,6 +97,15 @@
             "displayName": "Clang Windows AMD64 Release",
             "configurePreset": "clang-windows-amd64",
             "configuration": "Release"
+        },
+        {
+            "name": "linux-native-release",
+            "displayName": "Linux native Release (GUI only)",
+            "configurePreset": "linux-native",
+            "configuration": "Release",
+            "targets": [
+                "wemod_enhancer_gui"
+            ]
         }
     ],
     "packagePresets": [
@@ -177,6 +198,21 @@
                 {
                     "type": "package",
                     "name": "clang-windows-amd64-package"
+                }
+            ]
+        },
+        {
+            "name": "linux-native-full",
+            "displayName": "Linux Native GUI Pipeline",
+            "description": "Configure and build the native Linux wemod_enhancer_gui ELF (GUI target only — version.dll is Windows-only)",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "linux-native"
+                },
+                {
+                    "type": "build",
+                    "name": "linux-native-release"
                 }
             ]
         }

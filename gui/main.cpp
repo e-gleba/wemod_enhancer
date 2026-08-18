@@ -1,23 +1,21 @@
 // gui/main.cpp
 //
-// Minimal Dear ImGui (SDL3 + OpenGL3) frontend for the tested Python
-// patcher CLI (tools/wemod_enhancer.py). Runs `patch` / `restore` for
-// users who are not comfortable with a terminal and shows the script's
-// stdout/stderr plus exit code in a scrolling log.
+// Minimal Dear ImGui (SDL3 + SDL_Renderer) frontend for the tested
+// Python patcher CLI (tools/wemod_enhancer.py). Runs `patch` /
+// `restore` for users who are not comfortable with a terminal and
+// shows the script's stdout/stderr plus exit code in a scrolling log.
+//
+// The SDL3 renderer backend needs no OpenGL: SDL3 picks the platform's
+// own rendering API (Direct3D on Windows, OpenGL/Vulkan/software on
+// Linux) and loads it dynamically at runtime.
 
 #include "imgui.h"
-#include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
+#include "imgui_impl_sdlrenderer3.h"
 #include "imgui_stdlib.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-#include <SDL3/SDL_opengles2.h>
-#else
-#include <SDL3/SDL_opengl.h>
-#endif
 
 #include <algorithm>
 #include <cfloat>
@@ -334,40 +332,11 @@ int main(int, char**)
         return 1;
     }
 
-    // GL context versions: stock imgui SDL3+OpenGL3 example defaults
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-    const char* glsl_version = "#version 100";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                        SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#elif defined(__APPLE__)
-    const char* glsl_version = "#version 150";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
-                        SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                        SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-#else
-    const char* glsl_version = "#version 130";
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-                        SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#endif
-
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
+    // Window + SDL_Renderer (stock imgui SDL3+SDL_Renderer example)
     const float main_scale =
         SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
-    const SDL_WindowFlags window_flags =
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN |
-        SDL_WINDOW_HIGH_PIXEL_DENSITY;
+    const SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE |
+        SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
     SDL_Window* window =
         SDL_CreateWindow("WeMod Enhancer",
                          static_cast<int>(960 * main_scale),
@@ -377,13 +346,12 @@ int main(int, char**)
         SDL_Log("Error: SDL_CreateWindow(): %s", SDL_GetError());
         return 1;
     }
-    SDL_GLContext gl_context = SDL_GL_CreateContext(window);
-    if (gl_context == nullptr) {
-        SDL_Log("Error: SDL_GL_CreateContext(): %s", SDL_GetError());
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
+    if (renderer == nullptr) {
+        SDL_Log("Error: SDL_CreateRenderer(): %s", SDL_GetError());
         return 1;
     }
-    SDL_GL_MakeCurrent(window, gl_context);
-    SDL_GL_SetSwapInterval(1); // vsync
+    SDL_SetRenderVSync(renderer, 1);
     SDL_SetWindowPosition(window,
                           SDL_WINDOWPOS_CENTERED,
                           SDL_WINDOWPOS_CENTERED);
@@ -400,8 +368,8 @@ int main(int, char**)
     style.ScaleAllSizes(main_scale);
     style.FontScaleDpi = main_scale;
 
-    ImGui_ImplSDL3_InitForOpenGL(window, gl_context);
-    ImGui_ImplOpenGL3_Init(glsl_version);
+    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
+    ImGui_ImplSDLRenderer3_Init(renderer);
 
     app_state state;
     state.install_dir = default_install_dir();
@@ -432,24 +400,25 @@ int main(int, char**)
             continue;
         }
 
-        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
         draw_ui(state);
 
         ImGui::Render();
-        glViewport(0,
-                   0,
-                   static_cast<int>(io.DisplaySize.x),
-                   static_cast<int>(io.DisplaySize.y));
-        glClearColor(clear_color.x * clear_color.w,
-                     clear_color.y * clear_color.w,
-                     clear_color.z * clear_color.w,
-                     clear_color.w);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(window);
+        SDL_SetRenderScale(renderer,
+                           io.DisplayFramebufferScale.x,
+                           io.DisplayFramebufferScale.y);
+        SDL_SetRenderDrawColorFloat(renderer,
+                                    clear_color.x,
+                                    clear_color.y,
+                                    clear_color.z,
+                                    clear_color.w);
+        SDL_RenderClear(renderer);
+        ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),
+                                              renderer);
+        SDL_RenderPresent(renderer);
     }
 
     // Wait for a running patch/restore so the temp-file capture in the
@@ -458,11 +427,11 @@ int main(int, char**)
         state.pending.wait();
     }
 
-    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_GL_DestroyContext(gl_context);
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
 

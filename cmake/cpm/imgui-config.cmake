@@ -52,6 +52,37 @@ else()
         STATUS "imgui: FreeType not found — custom font rasterizer disabled.")
 endif()
 
+# SDL3 renderer backend: stock imgui_impl_sdl3 + imgui_impl_sdlrenderer3.
+# Needs no OpenGL development files — SDL3 loads the platform graphics
+# APIs (Direct3D/Vulkan/OpenGL/software) dynamically at runtime, so the
+# executable stays self-contained. Works for native and cross builds.
+if(TARGET SDL3::SDL3)
+    add_library(imgui_sdl3_renderer STATIC)
+    add_library(imgui::sdl3_renderer ALIAS imgui_sdl3_renderer)
+
+    target_sources(
+        imgui_sdl3_renderer
+        PRIVATE ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+                ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp)
+
+    # Backends include <imgui.h> and <imgui_impl_*.h>.
+    # imgui::imgui already exposes ${imgui_SOURCE_DIR}; we only need the
+    # backends directory here.
+    target_include_directories(
+        imgui_sdl3_renderer SYSTEM
+        PUBLIC $<BUILD_INTERFACE:${imgui_SOURCE_DIR}/backends>)
+
+    target_link_libraries(imgui_sdl3_renderer PUBLIC imgui::imgui
+                                                     SDL3::SDL3)
+
+    target_compile_features(imgui_sdl3_renderer PUBLIC cxx_std_23)
+else()
+    message(
+        STATUS
+            "imgui: SDL3::SDL3 target missing — skipping SDL3 renderer backend."
+        )
+endif()
+
 # Platform packages needed:
 #   Windows : vcpkg install opengl --triplet=x64-windows
 #   Fedora  : sudo dnf install mesa-libGL-devel mesa-libGLU-devel
