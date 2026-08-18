@@ -289,6 +289,31 @@ void poll_run(app_state& state)
     state.scroll_to_bottom = true;
 }
 
+// Button that fits its label (no hardcoded width, so the text never
+// overflows). Returns true when clicked.
+bool fit_button(const char* label)
+{
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float width = ImGui::CalcTextSize(label).x +
+        style.FramePadding.x * 2.0F;
+    return ImGui::Button(label, ImVec2(width, 0.0F));
+}
+
+// Small "(?)" marker: hover shows a short description, click opens the
+// docs link in the system browser. Used sparingly, only where a new
+// user genuinely needs a pointer.
+void help_marker(const char* description, const char* url)
+{
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s\n\nClick to open: %s", description, url);
+    }
+    if (ImGui::IsItemClicked()) {
+        SDL_OpenURL(url);
+    }
+}
+
 void draw_ui(app_state& state)
 {
     poll_run(state);
@@ -315,6 +340,10 @@ void draw_ui(app_state& state)
 
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("WeMod folder");
+    help_marker(
+        "Folder where WeMod is installed - the app-x.y.z directory that "
+        "contains resources\\app.asar. Auto-detected when possible.",
+        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     ImGui::SameLine();
     const float browse_w = ImGui::CalcTextSize("Browse...").x +
         ImGui::GetStyle().FramePadding.x * 2.0F;
@@ -337,7 +366,7 @@ void draw_ui(app_state& state)
         ImGui::PopStyleColor();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Browse...")) {
+    if (fit_button("Browse...")) {
         SDL_ShowOpenFolderDialog(on_folder_chosen,
                                  &state.install_dir,
                                  state.window,
@@ -358,7 +387,7 @@ void draw_ui(app_state& state)
     // --- Actions ----------------------------------------------------
     const bool can_run = !state.running && install_ok;
     ImGui::BeginDisabled(!can_run);
-    if (ImGui::Button("Patch", ImVec2(120.0F, 0.0F))) {
+    if (fit_button("Patch")) {
         start_run(state, "patch");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -367,7 +396,7 @@ void draw_ui(app_state& state)
                                      : "Pick a valid WeMod folder first");
     }
     ImGui::SameLine();
-    if (ImGui::Button("Restore", ImVec2(120.0F, 0.0F))) {
+    if (fit_button("Restore")) {
         start_run(state, "restore");
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -376,6 +405,10 @@ void draw_ui(app_state& state)
                                      : "Pick a valid WeMod folder first");
     }
     ImGui::EndDisabled();
+    help_marker(
+        "Patch unlocks Pro features; Restore puts the original files "
+        "back from the backups the patcher made.",
+        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     ImGui::SameLine();
     if (state.running) {
         ImGui::TextUnformatted("Running - keep WeMod closed...");
@@ -396,7 +429,11 @@ void draw_ui(app_state& state)
     // --- Advanced: for power users / debugging ----------------------
     if (ImGui::CollapsingHeader("Advanced")) {
         ImGui::Indent();
-        ImGui::TextUnformatted("Python interpreter");
+        ImGui::TextUnformatted("Python command");
+        help_marker(
+            "How Python 3.11+ is started on your system. Usually "
+            "'python' on Windows, 'python3' on Linux.",
+            "https://www.python.org/downloads/");
         ImGui::SetNextItemWidth(200.0F);
         ImGui::InputTextWithHint("##python",
 #ifdef _WIN32
@@ -409,6 +446,10 @@ void draw_ui(app_state& state)
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##script", &state.script_path);
         ImGui::TextUnformatted("version.dll (empty = auto-detect)");
+        help_marker(
+            "The proxy DLL the patcher drops next to WeMod. Leave empty "
+            "to use the copy that sits next to wemod_enhancer.py.",
+        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputTextWithHint("##version_dll",
                                  "auto: next to the script",
@@ -436,7 +477,7 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    if (ImGui::Button("Copy output")) {
+    if (fit_button("Copy output")) {
         if (!state.log.empty()) {
             SDL_SetClipboardText(state.log.c_str());
             state.copied_flash = 1.5F;
@@ -448,7 +489,7 @@ void draw_ui(app_state& state)
             "Copy everything above - paste it when asking for help");
     }
     ImGui::SameLine();
-    if (ImGui::Button("Clear")) {
+    if (fit_button("Clear")) {
         state.log.clear();
         state.has_run = false;
     }
