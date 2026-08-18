@@ -25,9 +25,12 @@ install(
 
 # Ship the PDB next to the DLL so RelWithDebInfo crashes inside the
 # proxy stay debuggable (users can send a stack trace, maintainers can
-# debug a release build). OPTIONAL: toolchains without PDB support
-# (llvm-mingw) simply skip it.
+# debug a release build). install(CODE) checks existence at install
+# time: toolchains without PDB support (llvm-mingw) skip silently.
 if(WIN32)
-    install(FILES $<TARGET_PDB_FILE:version>
-            DESTINATION "${CMAKE_INSTALL_BINDIR}" OPTIONAL)
+    install(
+        CODE "if(EXISTS \"$<TARGET_PDB_FILE:version>\")
+                  file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\"
+                       TYPE FILE FILES \"$<TARGET_PDB_FILE:version>\")
+              endif()")
 endif()
