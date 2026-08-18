@@ -12,6 +12,8 @@
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
 
+#include "config.hpp"
+
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
@@ -205,20 +207,22 @@ std::string default_install_dir()
     return {};
 }
 
+// Where the patcher script lives. Resolution order:
+//   1. next to the executable  - the installed layout (cmake --install
+//      puts wemod_enhancer.py beside the exe in the same bin dir);
+//   2. the code-generated dev path - the in-tree tools/ script, baked
+//      in by configure_file so a build-tree run still finds it.
 std::string default_script_path()
 {
-    // Install layout: wemod_enhancer.py sits next to the executable.
     if (const char* base = SDL_GetBasePath()) {
         if (const fs::path beside = fs::path(base) / "wemod_enhancer.py";
             fs::is_regular_file(beside)) {
             return beside.string();
         }
     }
-    // Build-tree layout: fall back to the in-tree CLI.
-    if (const fs::path in_tree = fs::path(WEMOD_ENHANCER_SOURCE_DIR) /
-            "tools" / "wemod_enhancer.py";
-        fs::is_regular_file(in_tree)) {
-        return in_tree.string();
+    if (const fs::path dev = WEMOD_ENHANCER_DEV_SCRIPT;
+        fs::is_regular_file(dev)) {
+        return dev.string();
     }
     return {};
 }
