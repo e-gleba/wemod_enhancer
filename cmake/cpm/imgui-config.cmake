@@ -13,6 +13,9 @@ cpmaddpackage(
 add_library(imgui STATIC)
 add_library(imgui::imgui ALIAS imgui)
 
+# NOTE: misc/freetype/imgui_freetype.cpp is deliberately NOT in this
+# list — it is added conditionally below, only when FreeType was found.
+# Compiling it without FreeType headers fails on #include <ft2build.h>.
 target_sources(
     imgui
     PRIVATE ${imgui_SOURCE_DIR}/imgui.cpp
@@ -20,14 +23,17 @@ target_sources(
             ${imgui_SOURCE_DIR}/imgui_draw.cpp
             ${imgui_SOURCE_DIR}/imgui_tables.cpp
             ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-            ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
-            ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp)
+            ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp)
 
 target_include_directories(
     imgui SYSTEM PUBLIC $<BUILD_INTERFACE:${imgui_SOURCE_DIR}>
                         $<BUILD_INTERFACE:${imgui_SOURCE_DIR}/misc/cpp>)
 
 target_compile_features(imgui PUBLIC cxx_std_23)
+
+# No C++ modules anywhere: CMP0155 scanning would make GCC/Clang emit
+# -fmodule-mapper flags that the clang-tidy co-compilation rejects.
+set_target_properties(imgui PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
 if(Freetype_FOUND)
     if(NOT TARGET Freetype::Freetype)
@@ -50,6 +56,39 @@ if(Freetype_FOUND)
 else()
     message(
         STATUS "imgui: FreeType not found — custom font rasterizer disabled.")
+endif()
+
+# SDL3 renderer backend: stock imgui_impl_sdl3 + imgui_impl_sdlrenderer3.
+# Needs no OpenGL development files — SDL3 loads the platform graphics
+# APIs (Direct3D/Vulkan/OpenGL/software) dynamically at runtime, so the
+# executable stays self-contained. Works for native and cross builds.
+if(TARGET SDL3::SDL3)
+    add_library(imgui_sdl3_renderer STATIC)
+    add_library(imgui::sdl3_renderer ALIAS imgui_sdl3_renderer)
+
+    target_sources(
+        imgui_sdl3_renderer
+        PRIVATE ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+                ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp)
+
+    # Backends include <imgui.h> and <imgui_impl_*.h>.
+    # imgui::imgui already exposes ${imgui_SOURCE_DIR}; we only need the
+    # backends directory here.
+    target_include_directories(
+        imgui_sdl3_renderer SYSTEM
+        PUBLIC $<BUILD_INTERFACE:${imgui_SOURCE_DIR}/backends>)
+
+    target_link_libraries(imgui_sdl3_renderer PUBLIC imgui::imgui
+                                                     SDL3::SDL3)
+
+    target_compile_features(imgui_sdl3_renderer PUBLIC cxx_std_23)
+    set_target_properties(imgui_sdl3_renderer
+                          PROPERTIES CXX_SCAN_FOR_MODULES OFF)
+else()
+    message(
+        STATUS
+            "imgui: SDL3::SDL3 target missing — skipping SDL3 renderer backend."
+        )
 endif()
 
 # Platform packages needed:
@@ -79,6 +118,8 @@ if(TARGET SDL3::SDL3 AND TARGET OpenGL::GL)
                                                     OpenGL::GL)
 
     target_compile_features(imgui_sdl3_opengl3 PUBLIC cxx_std_23)
+    set_target_properties(imgui_sdl3_opengl3
+                          PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 else()
     if(NOT TARGET SDL3::SDL3)
         message(

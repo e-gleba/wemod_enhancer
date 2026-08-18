@@ -32,6 +32,25 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 | **No mobile pairing** | `requestRemoteAuthCode()` → reject |
 | **Fail-safe** | Automatic backup, all-or-nothing patching, one-command restore |
 
+## GUI (optional)
+
+Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui app (SDL3, statically linked) that drives the same patcher:
+
+- **Only input needed: the WeMod folder** — auto-detected when possible, with a Browse… dialog.
+- **Nothing else to download** — on first run the GUI pulls the latest release (`wemod_enhancer.py` + `version.dll`) by itself: `curl` on Linux, PowerShell on Windows.
+- **Setup / diagnostics** panel checks Python and the patcher, and on Linux offers to clone [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) into your home dir — the same step as the tutorial below.
+- Patch / Restore stream output live; **Copy output** grabs the whole log for bug reports.
+
+The GUI is opt-in (`WEMOD_ENHANCER_BUILD_GUI`, already ON in these presets); the plain DLL build never touches SDL3/imgui:
+
+```sh
+cmake --workflow --preset msvc-full              # Windows: build/msvc/gui/Release/wemod_enhancer_gui.exe
+cmake --workflow --preset llvm-mingw-x86_64-full # on Linux: Windows .exe (cross) + version.dll
+cmake --workflow --preset linux-native-full      # on Linux: build/linux-native/gui/Release/wemod_enhancer_gui.elf
+```
+
+Linux host builds need SDL3 Wayland/X11 dev packages (build-time only), e.g. `sudo apt-get install libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+
 ## Linux / Steam Deck
 
 WeMod has no Linux build — [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton. WeMod Enhancer unlocks Pro on top of it.

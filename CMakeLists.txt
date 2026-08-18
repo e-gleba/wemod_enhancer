@@ -13,6 +13,10 @@ set(PROJECT_CONTACT "evgeniy.gleba@yandex.ru")
 set(PROJECT_LICENSE_FILE "${CMAKE_CURRENT_SOURCE_DIR}/license.md")
 set(PROJECT_README_FILE "${CMAKE_CURRENT_SOURCE_DIR}/readme.md")
 
+# Opt-in Dear ImGui desktop frontend for the Python patcher CLI.
+# OFF by default: the plain version.dll build never touches SDL3/imgui.
+option(WEMOD_ENHANCER_BUILD_GUI "Build the ImGui desktop app (opt-in)" OFF)
+
 # CMAKE_CURRENT_LIST_DIR is used instead of CMAKE_SOURCE_DIR so
 # that this file works correctly if the project is ever consumed
 # as a subdirectory of a larger build.
@@ -64,6 +68,12 @@ if(PROJECT_IS_TOP_LEVEL)
     # install tree is self-contained: users need only Python (no CMake)
     # to run `python wemod_enhancer.py patch --install-dir ...`.
     add_subdirectory(scripts)
+
+    # The GUI is an end-user artifact: build/install it only for
+    # top-level builds, next to version.dll + wemod_enhancer.py.
+    if(WEMOD_ENHANCER_BUILD_GUI)
+        add_subdirectory(gui)
+    endif()
 
     # Append processor to system name so packages for
     # different architectures don't collide (e.g.
