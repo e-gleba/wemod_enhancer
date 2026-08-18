@@ -9,8 +9,9 @@
 # adds Linux: MSVC + pure Clang on windows-2022, LLVM-MinGW cross on
 # ubuntu-24.04, MSVC on windows-11-arm, GCC + Clang on ubuntu-24.04,
 # GCC on ubuntu-24.04-arm. No bespoke setup steps: the GitHub runner
-# images already ship MSVC / Clang / GCC / Ninja, and LLVM-MinGW comes
-# from the same e-gleba/setup-llvm-mingw action the base workflow uses.
+# images already ship MSVC / Clang / GCC / Ninja, and the llvm-mingw
+# toolchain file (cmake/toolchains/llvm_mingw.cmake) auto-downloads
+# the cross compiler on first configure.
 
 name: gui_multiplatform_workflow
 
@@ -37,7 +38,7 @@ jobs:
                 include:
                     - { name: windows-msvc-amd64,       os: windows-2022,     preset: gui-windows-msvc-amd64 }
                     - { name: windows-clang-amd64,      os: windows-2022,     preset: gui-windows-clang-amd64 }
-                    - { name: windows-llvm-mingw-amd64, os: ubuntu-24.04,     preset: gui-windows-llvm-mingw-amd64, mingw: true }
+                    - { name: windows-llvm-mingw-amd64, os: ubuntu-24.04,     preset: gui-windows-llvm-mingw-amd64 }
                     - { name: windows-msvc-arm64,       os: windows-11-arm,   preset: gui-windows-msvc-arm64 }
                     - { name: linux-gcc-amd64,          os: ubuntu-24.04,     preset: gui-linux-gcc-amd64 }
                     - { name: linux-clang-amd64,        os: ubuntu-24.04,     preset: gui-linux-clang-amd64 }
@@ -53,15 +54,8 @@ jobs:
                   key: cpm-gui-${{ matrix.name }}-${{ hashFiles('cmake/cpm-config.cmake') }}
                   restore-keys: cpm-gui-${{ matrix.name }}-
 
-            # The toolchain file (cmake/toolchains/llvm-mingw.cmake) only
-            # *points at* llvm-mingw - the compiler itself must exist on
-            # the runner. Same action the base workflow uses, same reason.
-            - name: Set up LLVM-MinGW
-              if: matrix.mingw
-              uses: e-gleba/setup-llvm-mingw@v1
-
             - name: Install SDL3 build dependencies (Linux)
-              if: runner.os == 'Linux' && !matrix.mingw
+              if: runner.os == 'Linux' && !contains(matrix.preset, 'mingw')
               run: |
                   sudo apt-get update
                   sudo apt-get install -y libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev
