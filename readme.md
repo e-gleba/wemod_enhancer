@@ -99,7 +99,7 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 
 Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui window (stock SDL3 + SDL_Renderer backend) that runs the same tested `wemod_enhancer.py patch` / `restore` commands and shows their output. Pick the WeMod folder (auto-detected when possible, with a Browse… dialog), press Patch — a "Copy output" button grabs the full log for error reports, and the python command / script path live under a collapsed "Advanced" section. SDL3, the C++ runtime and the CRT are linked statically where the toolchain ships the static archives — the binary runs on a bare OS install; Python 3.11+ is the only requirement.
 
-The GUI is opt-in (`-DWEMOD_ENHANCER_BUILD_GUI=ON`); the plain DLL build never touches SDL3/imgui:
+The GUI is opt-in (`-DWEMOD_ENHANCER_BUILD_GUI=ON`, already set in the presets below); the plain DLL build never touches SDL3/imgui:
 
 ```sh
 cmake --workflow --preset msvc-full              # Windows: build/msvc/gui/Release/wemod_enhancer_gui.exe
@@ -114,7 +114,6 @@ Linux host builds need Wayland/X11 development packages for SDL3, e.g. `sudo apt
 Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
 
 ```sh
-python3 tools/wemod_enhancer.py build-dll           # just the proxy DLL
 cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
 cmake --workflow --preset msvc-full                 # Windows (MSVC) package
 ```
@@ -128,7 +127,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Language** | C + Python (stdlib only) | C# / .NET / WPF |
 | **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
+| **Build from source** | `cmake --workflow --preset llvm-mingw-x86_64-full` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
 | **Interface** | CLI + minimal ImGui GUI | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Build/install version.dll and patch Wand/WeMod Electron app.asar."""
+"""Patch/restore the Wand/WeMod Electron app.asar with a prebuilt version.dll."""
 from __future__ import annotations
 
-import argparse, hashlib, json, os, re, shutil, struct, subprocess, sys, tempfile
+import argparse, hashlib, json, re, shutil, struct, sys, tempfile
 from pathlib import Path, PurePosixPath
 
-ROOT = Path(__file__).resolve().parents[1]
 BLOCK_SIZE = 4 * 1024 * 1024
 PATCHES = {
  "activate-pro-account": (r'getUserAccount\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.fetch\(\{.*?\}\)\}', lambda m: f'getUserAccount(){{return this.#{m["s"]}.fetch({{endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}}).then(response=>{{response.subscription={{period:"yearly",state:"active"}};return response;}})}}'),
@@ -118,11 +117,6 @@ def pe_x64(path: Path):
     off = u32(data, 0x3c)
     if off + 6 > len(data) or data[:2] != b"MZ" or data[off:off+4] != b"PE\0\0" or struct.unpack_from("<H", data, off+4)[0] != 0x8664: raise RuntimeError("version.dll is not PE x86-64")
 
-def find_dll(build: Path) -> Path:
-    found = list(build.rglob("version.dll"))
-    if not found: raise RuntimeError("build completed without version.dll")
-    return found[0]
-
 def find_bundled_dll() -> Path | None:
     """Find version.dll next to this script (CMake install layout).
 
@@ -133,19 +127,14 @@ def find_bundled_dll() -> Path | None:
     dll = Path(__file__).resolve().parent / "version.dll"
     return dll if dll.is_file() else None
 
-def build_dll() -> Path:
-    build = ROOT / "build" / "proxy"
-    args = ["cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
-    if os.name != "nt": args += ["-DCMAKE_TOOLCHAIN_FILE=" + str(ROOT / "cmake/toolchains/llvm_mingw.cmake"), "-DCMAKE_SYSTEM_PROCESSOR=x86_64"]
-    subprocess.run(args, check=True); subprocess.run(["cmake", "--build", str(build), "--config", "Release"], check=True)
-    dll = find_dll(build); pe_x64(dll); return dll
-
 def resolve_dll(explicit: Path | None) -> Path:
-    """Pick version.dll: explicit flag > bundled > build from source."""
+    """Pick version.dll: explicit flag > bundled next to this script."""
     if explicit: return explicit
     bundled = find_bundled_dll()
     if bundled: return bundled
-    return build_dll()
+    raise FileNotFoundError(
+        "version.dll not found next to the script — pass --version-dll or "
+        "build it first: cmake --workflow --preset llvm-mingw-x86_64-full")
 
 def paths(install: Path):
     resources = install / "resources"
@@ -181,9 +170,8 @@ def main():
     for name in ("patch", "restore"):
         q = sub.add_parser(name); q.add_argument("--install-dir", type=Path, required=True)
         if name == "patch": q.add_argument("--version-dll", type=Path)
-    sub.add_parser("build-dll"); a = p.parse_args()
-    if a.cmd == "build-dll": print(build_dll())
-    elif a.cmd == "patch": patch(a.install_dir.resolve(), a.version_dll.resolve() if a.version_dll else None)
+    a = p.parse_args()
+    if a.cmd == "patch": patch(a.install_dir.resolve(), a.version_dll.resolve() if a.version_dll else None)
     else: restore(a.install_dir.resolve())
 
 if __name__ == "__main__":
