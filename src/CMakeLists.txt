@@ -22,3 +22,12 @@ install(
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}" # MSVC import .lib
 )
+
+# Ship the PDB next to the DLL so RelWithDebInfo crashes inside the
+# proxy stay debuggable (users can send a stack trace, maintainers can
+# debug a release build). OPTIONAL: toolchains without PDB support
+# (llvm-mingw) simply skip it.
+if(WIN32)
+    install(FILES $<TARGET_PDB_FILE:version>
+            DESTINATION "${CMAKE_INSTALL_BINDIR}" OPTIONAL)
+endif()
