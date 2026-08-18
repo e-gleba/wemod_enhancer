@@ -38,11 +38,11 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui app (SDL3, statically linked) that drives the same patcher:
 
 - **Only input needed: the WeMod folder** — auto-detected at startup (newest `%LOCALAPPDATA%\WeMod\app-*` on Windows, `~/wemod-launcher/wemod_data/wemod_bin` on Linux). When found, the path is already filled in: just press Patch, no Browse dialog needed.
-- **Nothing else to download** — on first run the GUI pulls the latest release (`wemod_enhancer.py` + `version.dll`) by itself: `curl` on Linux, PowerShell on Windows.
-- **Setup / diagnostics** panel checks Python and the patcher, and on Linux offers to clone [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) into your home dir — the same step as the tutorial below.
-- Patch / Restore stream output live; **Copy output** grabs the whole log for bug reports.
+- **Nothing else to download, ever** — the GUI pulls the latest release (`wemod_enhancer.py` + `version.dll`) itself: `curl` on Linux, PowerShell on Windows. No local files required; the exe is fully portable (no hardcoded paths), move it between PCs as-is.
+- **Setup / diagnostics** panel shows the detected Python (version + location) and the patcher, and on Linux offers to clone [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) into your home dir — the same step as the tutorial below.
+- Patch / Restore stream output live; **Copy output** grabs the environment info plus the whole log — a self-contained bug report.
 
-The GUI has its own presets (the plain-DLL presets never build it) and its own CI workflow ([gui.yml](.github/workflows/gui.yml)) with an amd64 + arm64 matrix:
+The GUI presets are mutually exclusive with the plain-DLL ones (a GUI build never compiles `version.dll` — the GUI downloads it at runtime), and the GUI has its own CI workflow ([gui.yml](.github/workflows/gui.yml)) with an amd64 + arm64 matrix:
 
 ```sh
 cmake --workflow --preset gui-windows-amd64-full  # Windows x86-64: build/gui-windows-amd64/Release/wemod_enhancer_gui.exe

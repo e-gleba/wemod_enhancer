@@ -10,7 +10,7 @@
         {
             "name": "llvm-mingw-x86_64",
             "displayName": "LLVM-MinGW Windows x86-64",
-            "description": "Cross-compile version.dll for Windows x86-64 from Linux",
+            "description": "Cross-compile version.dll for Windows x86-64 from Linux (DLL only, no GUI)",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/toolchains/llvm_mingw.cmake",
@@ -26,7 +26,7 @@
         {
             "name": "msvc",
             "displayName": "Microsoft Visual C++ x86-64",
-            "description": "Build version.dll natively on Windows with MSVC",
+            "description": "Build version.dll natively on Windows with MSVC (DLL only, no GUI)",
             "generator": "Visual Studio 17 2022",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "architecture": {
@@ -46,7 +46,7 @@
         {
             "name": "clang-windows-amd64",
             "displayName": "Clang Windows AMD64 (MSVC ABI)",
-            "description": "Native Windows 64-bit build using pure Clang (GNU driver, MSVC ABI) with Ninja",
+            "description": "Native Windows 64-bit version.dll using pure Clang (GNU driver, MSVC ABI) with Ninja (DLL only, no GUI)",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -68,7 +68,7 @@
         },
         {
             "name": "gui-base",
-            "description": "Shared settings for the GUI presets (the plain-DLL presets above never build the GUI)",
+            "description": "Shared settings for the GUI presets. GUI presets are mutually exclusive with the DLL presets: a GUI configure never builds version.dll (the GUI downloads it from the GitHub releases at runtime)",
             "hidden": true,
             "cacheVariables": {
                 "WEMOD_ENHANCER_BUILD_GUI": "ON"
@@ -77,7 +77,7 @@
         {
             "name": "gui-windows-amd64",
             "displayName": "GUI Windows AMD64 (MSVC)",
-            "description": "Build wemod_enhancer_gui.exe natively on Windows x86-64 with MSVC",
+            "description": "Build wemod_enhancer_gui.exe natively on Windows x86-64 with MSVC (GUI only, no version.dll)",
             "inherits": [
                 "msvc",
                 "gui-base"
@@ -87,7 +87,7 @@
         {
             "name": "gui-windows-arm64",
             "displayName": "GUI Windows ARM64 (MSVC)",
-            "description": "Build wemod_enhancer_gui.exe natively on Windows ARM64 with MSVC (needs an ARM64 host, e.g. the windows-11-arm CI runner)",
+            "description": "Build wemod_enhancer_gui.exe natively on Windows ARM64 with MSVC (GUI only, no version.dll; needs an ARM64 host, e.g. the windows-11-arm CI runner)",
             "inherits": [
                 "msvc",
                 "gui-base"
@@ -105,7 +105,7 @@
         {
             "name": "gui-linux-amd64",
             "displayName": "GUI Linux AMD64",
-            "description": "Build wemod_enhancer_gui.elf natively on Linux x86-64 (version.dll is Win32-only and is skipped)",
+            "description": "Build wemod_enhancer_gui.elf natively on Linux x86-64 (GUI only, no version.dll)",
             "inherits": "gui-base",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
@@ -118,7 +118,7 @@
         {
             "name": "gui-linux-arm64",
             "displayName": "GUI Linux ARM64",
-            "description": "Build wemod_enhancer_gui.elf natively on Linux ARM64 (version.dll is Win32-only and is skipped)",
+            "description": "Build wemod_enhancer_gui.elf natively on Linux ARM64 (GUI only, no version.dll)",
             "inherits": "gui-linux-amd64",
             "binaryDir": "${sourceDir}/build/${presetName}"
         }
@@ -146,17 +146,23 @@
             "name": "gui-windows-amd64-release",
             "displayName": "GUI Windows AMD64 Release",
             "configurePreset": "gui-windows-amd64",
-            "configuration": "Release"
+            "configuration": "Release",
+            "targets": [
+                "wemod_enhancer_gui"
+            ]
         },
         {
             "name": "gui-windows-arm64-release",
             "displayName": "GUI Windows ARM64 Release",
             "configurePreset": "gui-windows-arm64",
-            "configuration": "Release"
+            "configuration": "Release",
+            "targets": [
+                "wemod_enhancer_gui"
+            ]
         },
         {
             "name": "gui-linux-amd64-release",
-            "displayName": "GUI Linux AMD64 Release (GUI only)",
+            "displayName": "GUI Linux AMD64 Release",
             "configurePreset": "gui-linux-amd64",
             "configuration": "Release",
             "targets": [
@@ -165,7 +171,7 @@
         },
         {
             "name": "gui-linux-arm64-release",
-            "displayName": "GUI Linux ARM64 Release (GUI only)",
+            "displayName": "GUI Linux ARM64 Release",
             "configurePreset": "gui-linux-arm64",
             "configuration": "Release",
             "targets": [
@@ -231,7 +237,7 @@
         },
         {
             "name": "gui-linux-amd64-package",
-            "displayName": "GUI Linux AMD64 Package (GUI + Python)",
+            "displayName": "GUI Linux AMD64 Package",
             "configurePreset": "gui-linux-amd64",
             "configurations": [
                 "Release"
@@ -242,7 +248,7 @@
         },
         {
             "name": "gui-linux-arm64-package",
-            "displayName": "GUI Linux ARM64 Package (GUI + Python)",
+            "displayName": "GUI Linux ARM64 Package",
             "configurePreset": "gui-linux-arm64",
             "configurations": [
                 "Release"

@@ -53,10 +53,13 @@ if(PROJECT_IS_TOP_LEVEL)
     find_package(ct_doxygen CONFIG REQUIRED)
 endif()
 
-# version.dll is Win32-only (src/ includes <windows.h> unconditionally):
-# build it only when targeting Windows, native or cross. A native Linux
-# configure (the gui-linux-* presets) has no Windows SDK to compile it.
-if(WIN32)
+# version.dll and the GUI are mutually exclusive on purpose:
+#   - src/ includes <windows.h> unconditionally, so only a Windows
+#     target (native or cross) can compile it;
+#   - a GUI configure never builds the DLL - the GUI downloads
+#     version.dll from the GitHub releases at runtime, so a GUI
+#     package carrying a stale DLL would only cause conflicts.
+if(WIN32 AND NOT WEMOD_ENHANCER_BUILD_GUI)
     add_subdirectory(src)
 endif()
 
@@ -75,7 +78,7 @@ if(PROJECT_IS_TOP_LEVEL)
     add_subdirectory(scripts)
 
     # The GUI is an end-user artifact: build/install it only for
-    # top-level builds, next to version.dll + wemod_enhancer.py.
+    # top-level builds.
     if(WEMOD_ENHANCER_BUILD_GUI)
         add_subdirectory(gui)
     endif()

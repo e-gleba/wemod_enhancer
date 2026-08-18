@@ -2,23 +2,19 @@
 #
 # Dear ImGui frontend for the Python patcher CLI. Opt-in via
 # WEMOD_ENHANCER_BUILD_GUI (see the top-level CMakeLists.txt).
+#
+# The executable is fully relocatable: nothing in here bakes a build-
+# machine path into the binary - the patcher script is downloaded from
+# the GitHub releases at runtime, never looked up in the source tree.
 
 add_executable(wemod_enhancer_gui main.cpp)
 
-# imgui::sdl3_renderer publicly carries imgui::imgui + SDL3::SDL3.
-target_link_libraries(wemod_enhancer_gui PRIVATE imgui::sdl3_renderer)
+# imgui::sdl3_renderer publicly carries imgui::imgui + SDL3::SDL3;
+# Microsoft.GSL::GSL is header-only (not_null / finally / Expects).
+target_link_libraries(
+    wemod_enhancer_gui PRIVATE imgui::sdl3_renderer Microsoft.GSL::GSL)
 
 target_compile_features(wemod_enhancer_gui PRIVATE cxx_std_23)
-
-# Code-generate the build-tree config header with the absolute path to
-# the in-tree patcher script, so a dev build finds wemod_enhancer.py
-# even though the exe and the script live in different directories.
-# (Install layout - script next to the exe - is checked first at
-# runtime; this is only the build-tree fallback.)
-set(WEMOD_ENHANCER_DEV_SCRIPT "${PROJECT_SOURCE_DIR}/scripts/wemod_enhancer.py")
-configure_file(config.hpp.in config.hpp @ONLY)
-target_include_directories(wemod_enhancer_gui
-                           PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # No console window on Windows (GUI subsystem), .app bundle on macOS.
 set_target_properties(wemod_enhancer_gui PROPERTIES WIN32_EXECUTABLE TRUE
@@ -68,7 +64,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 endif()
 
-# Install next to the DLL and the Python CLI (see src/ and scripts/).
-# RUNTIME installs with the executable bit set on Linux.
+# Standalone install rule (the GUI presets are mutually exclusive with
+# the version.dll ones - see the top-level CMakeLists.txt).
 include(GNUInstallDirs)
 install(TARGETS wemod_enhancer_gui RUNTIME)
