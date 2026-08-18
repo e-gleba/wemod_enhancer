@@ -53,7 +53,12 @@ if(PROJECT_IS_TOP_LEVEL)
     find_package(ct_doxygen CONFIG REQUIRED)
 endif()
 
-add_subdirectory(src)
+# version.dll is Win32-only (src/ includes <windows.h> unconditionally):
+# build it only when targeting Windows, native or cross. A native Linux
+# configure (the gui-linux-* presets) has no Windows SDK to compile it.
+if(WIN32)
+    add_subdirectory(src)
+endif()
 
 # CTest, CPack, and install rules for top-level metadata files
 # should only run when this project owns the build. If another

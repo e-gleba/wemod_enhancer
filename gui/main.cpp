@@ -9,13 +9,23 @@
 // the app downloads the latest GitHub release itself (curl on Linux,
 // PowerShell on Windows) and unpacks wemod_enhancer.py + version.dll
 // into a per-user cache dir - the only thing the user must provide is
-// the WeMod folder. A "Setup / diagnostics" block checks Python, the
-// patcher and, on Linux, offers to git-clone wemod-launcher into the
-// home directory, as in the readme tutorial.
+// the WeMod folder (auto-detected at startup, so usually even that is
+// just pressing Patch). A "Setup / diagnostics" block checks Python,
+// the patcher and, on Linux, offers to git-clone wemod-launcher into
+// the home directory, as in the readme tutorial.
 //
-// The SDL3 renderer backend needs no OpenGL: SDL3 picks the platform's
-// own rendering API (Direct3D on Windows, OpenGL/Vulkan/software on
-// Linux) and loads it dynamically at runtime.
+// Modern C++23 notes:
+//   - `if constexpr` on the compile-time SDL platform tag replaces
+//     #ifdef everywhere both branches compile; the preprocessor only
+//     remains where names do not exist cross-platform (popen/pclose).
+//   - SDL3 owns the platform glue: SDL_GetEnvironmentVariable instead
+//     of std::getenv, SDL_GetPrefPath instead of hand-rolled cache-dir
+//     logic, SDL_Log for status, RAII for SDL_malloc'd strings.
+//   - gsl::not_null for the SDL handles, gsl::finally for SDL_Quit,
+//     Expects() for preconditions.
+//   - std::async + std::future drives the worker thread: popen() has
+//     no cancellation point, so a std::jthread stop_token would be
+//     dead weight - the UI thread just polls wait_for(0) per frame.
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -31,16 +41,19 @@
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_main.h>
 
+#include <gsl/gsl> // gsl::not_null, gsl::finally, Expects
+
 #include <algorithm>
 #include <cfloat>
 #include <charconv>
 #include <chrono>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <future>
+#include <memory>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #ifndef _WIN32
@@ -51,18 +64,30 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// Compile-time platform tag from SDL3's platform defines.
+#ifdef SDL_PLATFORM_WINDOWS
+constexpr bool is_windows = true;
+#else
+constexpr bool is_windows = false;
+#endif
+
 // Latest GitHub release asset carrying the patcher (wemod_enhancer.py
 // + version.dll under bin/). Downloaded on demand when no local copy
 // of the script is found - keeps the GUI a single-file download.
-#ifdef _WIN32
 constexpr std::string_view release_asset_url =
-    "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
-    "wemod_enhancer-windows-msvc-amd64.zip";
-#else
-constexpr std::string_view release_asset_url =
-    "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
-    "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz";
-#endif
+    is_windows
+        ? std::string_view(
+              "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
+              "wemod_enhancer-windows-msvc-amd64.zip")
+        : std::string_view(
+              "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
+              "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz");
+
+constexpr std::string_view default_python =
+    is_windows ? std::string_view("python") : std::string_view("python3");
+
+constexpr int window_width = 860;
+constexpr int window_height = 620;
 
 struct run_result
 {
@@ -96,6 +121,19 @@ struct app_state
     bool launcher_note = false;    // "I've done it" but still missing
 };
 
+// RAII for SDL_malloc'd strings (SDL_GetBasePath, SDL_GetPrefPath).
+struct sdl_free
+{
+    void operator()(void* ptr) const noexcept { SDL_free(ptr); }
+};
+using sdl_string = std::unique_ptr<char, sdl_free>;
+
+// Process environment via SDL3 (no std::getenv, no CRT quirks).
+[[nodiscard]] const char* env_var(const char* name) noexcept
+{
+    return SDL_GetEnvironmentVariable(SDL_GetEnvironment(), name);
+}
+
 // Report a fatal startup error and return the process exit code.
 // SDL_ShowSimpleMessageBox may be called before SDL_Init, so this
 // works for every early failure - and GUI users actually see it.
@@ -110,21 +148,21 @@ int fatal_error(const std::string& what)
 }
 
 // Quote one argument for the platform shell behind popen().
-std::string shell_quote(const std::string& arg)
+[[nodiscard]] constexpr std::string shell_quote(std::string_view arg)
 {
-#ifdef _WIN32
-    return "\"" + arg + "\"";
-#else
-    std::string quoted = "'";
-    for (const char c : arg) {
-        if (c == '\'') {
-            quoted += "'\\''";
-        } else {
-            quoted += c;
+    if constexpr (is_windows) {
+        return "\"" + std::string(arg) + "\"";
+    } else {
+        std::string quoted = "'";
+        for (const char c : arg) {
+            if (c == '\'') {
+                quoted += "'\\''";
+            } else {
+                quoted += c;
+            }
         }
+        return quoted + "'";
     }
-    return quoted + "'";
-#endif
 }
 
 // Run the command, reading its stdout+stderr line by line as they are
@@ -132,12 +170,13 @@ std::string shell_quote(const std::string& arg)
 // after the process exits. Blocking - call from a worker thread.
 run_result run_command(const std::string& command)
 {
+    // 2>&1: child stderr lands in the same live stream as stdout.
+    // popen/pclose carry underscore names in the MSVC CRT - the one
+    // place where #ifdef is unavoidable.
 #ifdef _WIN32
-    const std::string line = command + " 2>&1";
-    FILE* pipe = _popen(line.c_str(), "r");
+    FILE* pipe = _popen((command + " 2>&1").c_str(), "r");
 #else
-    const std::string line = command + " 2>&1";
-    FILE* pipe = popen(line.c_str(), "r");
+    FILE* pipe = popen((command + " 2>&1").c_str(), "r");
 #endif
 
     run_result result{ .exit_code = -1, .output = {} };
@@ -171,7 +210,7 @@ run_result run_command(const std::string& command)
 }
 
 // "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0.
-std::vector<int> version_parts(std::string name)
+[[nodiscard]] constexpr std::vector<int> version_parts(std::string name)
 {
     constexpr std::string_view prefix = "app-";
     if (name.starts_with(prefix)) {
@@ -196,7 +235,7 @@ std::vector<int> version_parts(std::string name)
 
 // Newest app-* directory under root that contains resources/app.asar
 // (the layout the patcher expects as --install-dir).
-fs::path find_app_dir(const fs::path& root)
+[[nodiscard]] fs::path find_app_dir(const fs::path& root)
 {
     std::error_code ec;
     if (!fs::is_directory(root, ec)) {
@@ -219,26 +258,49 @@ fs::path find_app_dir(const fs::path& root)
     return newest == candidates.end() ? fs::path{} : *newest;
 }
 
-std::string default_install_dir()
+// Pre-gathered install dir: when this hits, the user never opens the
+// Browse dialog - the path is already filled in and Patch is ready.
+[[nodiscard]] std::string default_install_dir()
 {
-#ifdef _WIN32
-    // Mirror the readme PowerShell snippet: newest
-    // %LOCALAPPDATA%\WeMod\app-* that has resources\app.asar.
-    if (const char* local = std::getenv("LOCALAPPDATA")) {
-        const fs::path wemod = fs::path(local) / "WeMod";
-        if (const fs::path app = find_app_dir(wemod); !app.empty()) {
-            return app.string();
+    if constexpr (is_windows) {
+        // Mirror the readme PowerShell snippet: newest
+        // %LOCALAPPDATA%\WeMod\app-* that has resources\app.asar.
+        if (const char* local = env_var("LOCALAPPDATA")) {
+            const fs::path wemod = fs::path(local) / "WeMod";
+            if (const fs::path app = find_app_dir(wemod); !app.empty()) {
+                return app.string();
+            }
+            return wemod.string();
         }
-        return wemod.string();
+    } else {
+        // wemod-launcher layout (see readme "Linux / Steam Deck").
+        if (const char* home = env_var("HOME")) {
+            return (fs::path(home) / "wemod-launcher" / "wemod_data" /
+                    "wemod_bin")
+                .string();
+        }
     }
-#else
-    // wemod-launcher layout (see readme "Linux / Steam Deck").
-    if (const char* home = std::getenv("HOME")) {
-        return (fs::path(home) / "wemod-launcher" / "wemod_data" /
-                "wemod_bin")
-            .string();
+    return {};
+}
+
+// Where the Browse... dialog opens: the usual install location, so the
+// user is one click away instead of navigating from the filesystem root.
+[[nodiscard]] std::string browse_root()
+{
+    if constexpr (is_windows) {
+        if (const char* local = env_var("LOCALAPPDATA")) {
+            return (fs::path(local) / "WeMod").string();
+        }
+    } else {
+        if (const char* home = env_var("HOME")) {
+            const fs::path launcher = fs::path(home) / "wemod-launcher";
+            std::error_code ec;
+            if (fs::is_directory(launcher, ec)) {
+                return launcher.string();
+            }
+            return std::string(home);
+        }
     }
-#endif
     return {};
 }
 
@@ -247,10 +309,11 @@ std::string default_install_dir()
 //      puts wemod_enhancer.py beside the exe in the same bin dir);
 //   2. the code-generated dev path - the in-tree scripts/ script,
 //      baked in by configure_file so a build-tree run still finds it.
-std::string default_script_path()
+[[nodiscard]] std::string default_script_path()
 {
-    if (const char* base = SDL_GetBasePath()) {
-        if (const fs::path beside = fs::path(base) / "wemod_enhancer.py";
+    // SDL3 returns an SDL_malloc'd string here - RAII, not a leak.
+    if (const sdl_string base(SDL_GetBasePath())) {
+        if (const fs::path beside = fs::path(base.get()) / "wemod_enhancer.py";
             fs::is_regular_file(beside)) {
             return beside.string();
         }
@@ -264,7 +327,7 @@ std::string default_script_path()
 
 // A folder counts as a WeMod install when resources/app.asar exists
 // inside it (the app-* layout the patcher patches).
-bool looks_like_wemod_install(const std::string& dir)
+[[nodiscard]] bool looks_like_wemod_install(const std::string& dir) noexcept
 {
     std::error_code ec;
     return !dir.empty() &&
@@ -279,34 +342,26 @@ void SDLCALL on_folder_chosen(void* userdata,
                               int filter)
 {
     (void)filter;
-    auto* target = static_cast<std::string*>(userdata);
+    const gsl::not_null target(static_cast<std::string*>(userdata));
     if (filelist != nullptr && *filelist != nullptr) {
         *target = *filelist;
     }
 }
 
-// Per-user cache dir for the self-downloaded patcher.
-fs::path bootstrap_root()
+// Per-user writable dir for the self-downloaded patcher. SDL_GetPrefPath
+// picks the right place on every OS (%APPDATA%\org\app on Windows,
+// XDG data home on Linux) and creates the directory for us.
+[[nodiscard]] fs::path bootstrap_root()
 {
-#ifdef _WIN32
-    if (const char* local = std::getenv("LOCALAPPDATA")) {
-        return fs::path(local) / "wemod_enhancer";
+    if (const sdl_string pref(SDL_GetPrefPath("e-gleba", "wemod_enhancer"))) {
+        return fs::path(pref.get());
     }
-#else
-    if (const char* xdg = std::getenv("XDG_CACHE_HOME");
-        xdg != nullptr && *xdg != '\0') {
-        return fs::path(xdg) / "wemod_enhancer";
-    }
-    if (const char* home = std::getenv("HOME")) {
-        return fs::path(home) / ".cache" / "wemod_enhancer";
-    }
-#endif
     return fs::temp_directory_path() / "wemod_enhancer";
 }
 
 // The release archive carries the CLI under bin/; search recursively
 // so a layout tweak does not silently break the bootstrap.
-fs::path find_script_under(const fs::path& root)
+[[nodiscard]] fs::path find_script_under(const fs::path& root)
 {
     std::error_code ec;
     for (const auto& entry : fs::recursive_directory_iterator(root, ec)) {
@@ -325,6 +380,7 @@ void start_command(app_state& state,
                    const std::string& shown,
                    const std::string& command)
 {
+    Expects(!command.empty());
     if (state.running) {
         return;
     }
@@ -340,9 +396,12 @@ void start_command(app_state& state,
 
 void start_run(app_state& state, const char* subcommand)
 {
-    std::string shown = state.python + " " + state.script_path + " " +
+    // python -u: unbuffered stdout/stderr. Python block-buffers pipes
+    // by default, which would make the "live" log arrive in 4 KiB
+    // chunks - with -u every print lands immediately.
+    std::string shown = state.python + " -u " + state.script_path + " " +
         subcommand + " --install-dir " + state.install_dir;
-    std::string command = shell_quote(state.python) + " " +
+    std::string command = shell_quote(state.python) + " -u " +
         shell_quote(state.script_path) + " " + subcommand +
         " --install-dir " + shell_quote(state.install_dir);
     if (!state.version_dll.empty() &&
@@ -358,25 +417,27 @@ void start_run(app_state& state, const char* subcommand)
 void start_bootstrap(app_state& state)
 {
     const fs::path dir = bootstrap_root() / "patcher";
-#ifdef _WIN32
-    const fs::path archive = bootstrap_root() / "patcher.zip";
-    const std::string command =
-        "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
-        "$ProgressPreference='SilentlyContinue'; "
-        "New-Item -ItemType Directory -Force -Path '" + dir.string() +
-        "' | Out-Null; "
-        "Invoke-WebRequest -Uri '" + std::string(release_asset_url) +
-        "' -OutFile '" + archive.string() + "'; "
-        "Expand-Archive -Force -Path '" + archive.string() +
-        "' -DestinationPath '" + dir.string() + "'\"";
-#else
-    const fs::path archive = bootstrap_root() / "patcher.tar.xz";
-    const std::string command =
-        "mkdir -p " + shell_quote(dir.string()) + " && curl -fL " +
-        shell_quote(std::string(release_asset_url)) + " -o " +
-        shell_quote(archive.string()) + " && tar -xf " +
-        shell_quote(archive.string()) + " -C " + shell_quote(dir.string());
-#endif
+    std::string command;
+    if constexpr (is_windows) {
+        const fs::path archive = bootstrap_root() / "patcher.zip";
+        command =
+            "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+            "$ProgressPreference='SilentlyContinue'; "
+            "New-Item -ItemType Directory -Force -Path '" + dir.string() +
+            "' | Out-Null; "
+            "Invoke-WebRequest -Uri '" + std::string(release_asset_url) +
+            "' -OutFile '" + archive.string() + "'; "
+            "Expand-Archive -Force -Path '" + archive.string() +
+            "' -DestinationPath '" + dir.string() + "'\"";
+    } else {
+        const fs::path archive = bootstrap_root() / "patcher.tar.xz";
+        command =
+            "mkdir -p " + shell_quote(dir.string()) + " && curl -fL " +
+            shell_quote(release_asset_url) + " -o " +
+            shell_quote(archive.string()) + " && tar -xf " +
+            shell_quote(archive.string()) + " -C " +
+            shell_quote(dir.string());
+    }
     start_command(state,
                   run_kind::bootstrap,
                   "fetch " + std::string(release_asset_url),
@@ -392,14 +453,21 @@ void start_probe(app_state& state)
                   shell_quote(state.python) + " --version");
 }
 
-#ifndef _WIN32
-// wemod-launcher clone location used by the readme tutorial.
-fs::path launcher_dir()
+// wemod-launcher clone location used by the readme tutorial. Linux-only
+// in practice (HOME is unset on Windows, so the row stays hidden).
+[[nodiscard]] fs::path launcher_dir()
 {
-    if (const char* home = std::getenv("HOME")) {
+    if (const char* home = env_var("HOME")) {
         return fs::path(home) / "wemod-launcher";
     }
     return {};
+}
+
+[[nodiscard]] bool launcher_installed()
+{
+    std::error_code ec;
+    const fs::path dir = launcher_dir();
+    return !dir.empty() && fs::is_directory(dir, ec);
 }
 
 // Same steps as the readme tutorial: clone into ~, mark the launcher
@@ -415,7 +483,6 @@ void start_launcher_clone(app_state& state)
             shell_quote(dir.string()) + " && chmod +x " +
             shell_quote((dir / "wemod").string()));
 }
-#endif
 
 void poll_run(app_state& state)
 {
@@ -435,17 +502,18 @@ void poll_run(app_state& state)
     state.running = false;
     state.scroll_to_bottom = true;
 
+    // Every failure says what happened and how to fix it - the log is
+    // the error report (see the Copy output button).
     switch (state.kind) {
     case run_kind::bootstrap:
         if (result.exit_code != 0) {
-            state.log +=
-                "error: could not download the patcher (needs network + "
-#ifdef _WIN32
-                "powershell"
-#else
-                "curl"
-#endif
-                ") - or set the script path under Advanced\n\n";
+            state.log += is_windows
+                ? "error: could not download the patcher.\n"
+                  "  fix: check the network connection and that powershell "
+                  "is available, or set the script path under Advanced.\n\n"
+                : "error: could not download the patcher.\n"
+                  "  fix: check the network connection and that curl is "
+                  "installed, or set the script path under Advanced.\n\n";
             break;
         }
         if (const fs::path script =
@@ -456,19 +524,28 @@ void poll_run(app_state& state)
             start_probe(state); // chain: confirm Python works too
         } else {
             state.log += "error: release downloaded but wemod_enhancer.py "
-                         "was not inside\n\n";
+                         "was not inside.\n"
+                         "  fix: press Copy output and report a bug with "
+                         "this log.\n\n";
         }
         break;
     case run_kind::probe:
         state.python_ok = result.exit_code == 0 ? 1 : 0;
         break;
     case run_kind::launcher:
-#ifndef _WIN32
-        state.launcher_present =
-            !launcher_dir().empty() && fs::is_directory(launcher_dir());
-#endif
+        state.launcher_present = launcher_installed();
+        if (!state.launcher_present && result.exit_code != 0) {
+            state.log += "error: could not clone wemod-launcher.\n"
+                         "  fix: make sure git is installed (preinstalled "
+                         "on SteamOS), then retry.\n\n";
+        }
         break;
     case run_kind::patcher:
+        if (result.exit_code != 0) {
+            state.log += "hint: close WeMod fully, then retry. If it still "
+                         "fails, press Copy output and share the log when "
+                         "asking for help.\n\n";
+        }
         break;
     }
 }
@@ -493,8 +570,8 @@ void help_marker(const char* description, const char* url)
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s\n\nClick to open: %s", description, url);
     }
-    if (ImGui::IsItemClicked()) {
-        SDL_OpenURL(url);
+    if (ImGui::IsItemClicked() && !SDL_OpenURL(url)) {
+        SDL_Log("SDL_OpenURL(%s): %s", url, SDL_GetError());
     }
 }
 
@@ -539,26 +616,29 @@ void draw_ui(app_state& state)
                               ImVec4(0.90F, 0.30F, 0.30F, 1.00F));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0F);
     }
-    ImGui::InputTextWithHint(
-        "##install_dir",
-#ifdef _WIN32
-        "C:\\Users\\<you>\\AppData\\Local\\WeMod\\app-10.x.x",
-#else
-        "~/wemod-launcher/wemod_data/wemod_bin",
-#endif
-        &state.install_dir);
+    constexpr const char* install_hint =
+        is_windows ? "C:\\Users\\<you>\\AppData\\Local\\WeMod\\app-10.x.x"
+                   : "~/wemod-launcher/wemod_data/wemod_bin";
+    ImGui::InputTextWithHint("##install_dir", install_hint, &state.install_dir);
     if (!install_ok && !state.install_dir.empty()) {
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
     }
     ImGui::SameLine();
     if (fit_button("Browse...")) {
+        const std::string start_dir = [&state] {
+            std::error_code ec;
+            if (!state.install_dir.empty() &&
+                fs::is_directory(state.install_dir, ec)) {
+                return state.install_dir;
+            }
+            return browse_root();
+        }();
         SDL_ShowOpenFolderDialog(on_folder_chosen,
                                  &state.install_dir,
                                  state.window,
-                                 state.install_dir.empty()
-                                     ? nullptr
-                                     : state.install_dir.c_str(),
+                                 start_dir.empty() ? nullptr
+                                                   : start_dir.c_str(),
                                  false);
     }
     if (install_ok) {
@@ -680,7 +760,6 @@ void draw_ui(app_state& state)
             ImGui::TextDisabled("not set - pick it above");
         }
 
-#ifndef _WIN32
         // wemod-launcher (Linux / Steam Deck): the Proton wrapper from
         // the readme tutorial. Offer to fetch it the same way, or let
         // the user confirm it is already installed.
@@ -709,7 +788,7 @@ void draw_ui(app_state& state)
                 ImGui::EndDisabled();
                 ImGui::SameLine();
                 if (fit_button("I've done it")) {
-                    state.launcher_present = fs::is_directory(launcher);
+                    state.launcher_present = launcher_installed();
                     state.launcher_note = !state.launcher_present;
                 }
                 if (state.launcher_note) {
@@ -721,7 +800,6 @@ void draw_ui(app_state& state)
                 }
             }
         }
-#endif
 
         ImGui::Unindent();
     }
@@ -737,13 +815,8 @@ void draw_ui(app_state& state)
             "'python' on Windows, 'python3' on Linux.",
             "https://www.python.org/downloads/");
         ImGui::SetNextItemWidth(200.0F);
-        ImGui::InputTextWithHint("##python",
-#ifdef _WIN32
-                                 "python",
-#else
-                                 "python3",
-#endif
-                                 &state.python);
+        constexpr const char* python_hint = is_windows ? "python" : "python3";
+        ImGui::InputTextWithHint("##python", python_hint, &state.python);
         ImGui::TextUnformatted("Patcher script (wemod_enhancer.py)");
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##script", &state.script_path);
@@ -780,8 +853,7 @@ void draw_ui(app_state& state)
     ImGui::EndChild();
 
     if (fit_button("Copy output")) {
-        if (!state.log.empty()) {
-            SDL_SetClipboardText(state.log.c_str());
+        if (!state.log.empty() && SDL_SetClipboardText(state.log.c_str())) {
             state.copied_flash = 1.5F;
         }
     }
@@ -814,25 +886,37 @@ int main(int argc, char* argv[])
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         return fatal_error("SDL_Init()");
     }
+    // From here on SDL_Quit() runs automatically on every return path.
+    const auto sdl_quit = gsl::finally([] { SDL_Quit(); });
 
-    // Window + SDL_Renderer (stock imgui SDL3+SDL_Renderer example)
-    const float main_scale =
-        SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
-    const SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE |
+    // Window + SDL_Renderer (stock imgui SDL3+SDL_Renderer example).
+    // Guard the content scale: SDL returns 0.0 when the display scale
+    // is unknown, which would size the window to nothing.
+    const float main_scale = [] {
+        const float scale =
+            SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+        return scale > 0.0F ? scale : 1.0F;
+    }();
+    constexpr SDL_WindowFlags window_flags = SDL_WINDOW_RESIZABLE |
         SDL_WINDOW_HIDDEN | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    SDL_Window* window =
+    SDL_Window* window_ptr =
         SDL_CreateWindow("WeMod Enhancer",
-                         static_cast<int>(860 * main_scale),
-                         static_cast<int>(620 * main_scale),
+                         static_cast<int>(window_width * main_scale),
+                         static_cast<int>(window_height * main_scale),
                          window_flags);
-    if (window == nullptr) {
+    if (window_ptr == nullptr) {
         return fatal_error("SDL_CreateWindow()");
     }
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (renderer == nullptr) {
+    const gsl::not_null window(window_ptr);
+    SDL_Renderer* renderer_ptr = SDL_CreateRenderer(window, nullptr);
+    if (renderer_ptr == nullptr) {
         return fatal_error("SDL_CreateRenderer()");
     }
-    SDL_SetRenderVSync(renderer, 1);
+    const gsl::not_null renderer(renderer_ptr);
+    if (!SDL_SetRenderVSync(renderer, 1)) {
+        // Non-fatal: worst case the UI redraws uncapped.
+        SDL_Log("SDL_SetRenderVSync: %s", SDL_GetError());
+    }
     SDL_SetWindowPosition(window,
                           SDL_WINDOWPOS_CENTERED,
                           SDL_WINDOWPOS_CENTERED);
@@ -856,13 +940,15 @@ int main(int argc, char* argv[])
     state.window = window;
     state.install_dir = default_install_dir();
     state.script_path = default_script_path();
-#ifdef _WIN32
-    state.python = "python";
-#else
-    state.python = "python3";
-    state.launcher_present =
-        !launcher_dir().empty() && fs::is_directory(launcher_dir());
-#endif
+    state.python = std::string(default_python);
+    state.launcher_present = launcher_installed();
+
+    // Say what was auto-detected up front - the log doubles as the
+    // "what is happening" narration that Copy output shares.
+    if (looks_like_wemod_install(state.install_dir)) {
+        state.log =
+            "auto-detected WeMod install: " + state.install_dir + "\n\n";
+    }
 
     // Self-bootstrap: with no local patcher script, pull the latest
     // release (curl on Linux, PowerShell on Windows) so the user only
@@ -927,7 +1013,7 @@ int main(int argc, char* argv[])
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-    SDL_Quit();
+    // SDL_Quit() via gsl::finally above.
 
     return 0;
 }

@@ -10,6 +10,7 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
 [![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
+[![gui ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/gui.yml?branch=main&label=gui%20ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/gui.yml)
 [![release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
 [![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake)](https://cmake.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
@@ -36,17 +37,18 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui app (SDL3, statically linked) that drives the same patcher:
 
-- **Only input needed: the WeMod folder** — auto-detected when possible, with a Browse… dialog.
+- **Only input needed: the WeMod folder** — auto-detected at startup (newest `%LOCALAPPDATA%\WeMod\app-*` on Windows, `~/wemod-launcher/wemod_data/wemod_bin` on Linux). When found, the path is already filled in: just press Patch, no Browse dialog needed.
 - **Nothing else to download** — on first run the GUI pulls the latest release (`wemod_enhancer.py` + `version.dll`) by itself: `curl` on Linux, PowerShell on Windows.
 - **Setup / diagnostics** panel checks Python and the patcher, and on Linux offers to clone [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) into your home dir — the same step as the tutorial below.
 - Patch / Restore stream output live; **Copy output** grabs the whole log for bug reports.
 
-The GUI is opt-in (`WEMOD_ENHANCER_BUILD_GUI`, already ON in these presets); the plain DLL build never touches SDL3/imgui:
+The GUI has its own presets (the plain-DLL presets never build it) and its own CI workflow ([gui.yml](.github/workflows/gui.yml)) with an amd64 + arm64 matrix:
 
 ```sh
-cmake --workflow --preset msvc-full              # Windows: build/msvc/gui/Release/wemod_enhancer_gui.exe
-cmake --workflow --preset llvm-mingw-x86_64-full # on Linux: Windows .exe (cross) + version.dll
-cmake --workflow --preset linux-native-full      # on Linux: build/linux-native/gui/Release/wemod_enhancer_gui.elf
+cmake --workflow --preset gui-windows-amd64-full  # Windows x86-64: build/gui-windows-amd64/Release/wemod_enhancer_gui.exe
+cmake --workflow --preset gui-windows-arm64-full  # Windows ARM64 (native ARM64 host)
+cmake --workflow --preset gui-linux-amd64-full    # Linux x86-64:   build/gui-linux-amd64/Release/wemod_enhancer_gui.elf
+cmake --workflow --preset gui-linux-arm64-full    # Linux ARM64:    build/gui-linux-arm64/Release/wemod_enhancer_gui.elf
 ```
 
 Linux host builds need SDL3 Wayland/X11 dev packages (build-time only), e.g. `sudo apt-get install libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
