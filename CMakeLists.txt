@@ -51,22 +51,32 @@ endif()
 # Combined Linux package
 # ---------------------------------------------------------------------------
 # A single Linux archive carrying the native GUI (.elf), the Windows cross
-# build (.exe + version.dll) and the Python CLI. CPack packages one build
-# tree's install rules, so the merge happens at install time: both build
-# trees are installed into a shared staging prefix, then cpack packs it.
+# build (.exe + version.dll) and the Python CLI.
 #
-# Usage (from the source dir, after both trees are configured+built):
+# CPack packages one build tree's install rules, so the merge happens at
+# install time: both build trees are installed into a shared staging prefix,
+# then packed. The cross tree is located via WEMOD_ENHANCER_MINGW_BUILD_DIR
+# (defaults to the conventional preset binaryDir).
+#
+# Usage:
+#   cmake --workflow --preset llvm-mingw-x86_64-full   # Windows cross
+#   cmake --workflow --preset linux-native-full        # native .elf
 #   cmake --build --preset linux-native-release --target package-combined
-#
-# The target lives in the linux-native tree and pulls the Windows cross
-# artifacts from the sibling llvm-mingw-x86_64 tree.
 if(WEMOD_ENHANCER_BUILD_GUI
    AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
    AND NOT CMAKE_CROSSCOMPILING
    AND PROJECT_IS_TOP_LEVEL)
+
+    # Path to the already-built Windows cross build tree. Configurable so the
+    # target is testable and not tied to the preset layout.
+    set(WEMOD_ENHANCER_MINGW_BUILD_DIR
+        "${CMAKE_BINARY_DIR}/../llvm-mingw-x86_64"
+        CACHE PATH
+        "Build tree of the llvm-mingw Windows cross build (for package-combined)")
+
     set(_combined_stage "${CMAKE_BINARY_DIR}/combined-stage")
-    set(_mingw_tree "${CMAKE_BINARY_DIR}/../llvm-mingw-x86_64")
-    set(_combined_out "${CMAKE_BINARY_DIR}/wemod_enhancer-linux-combined-amd64.tar.xz")
+    set(_combined_out
+        "${CMAKE_BINARY_DIR}/wemod_enhancer-linux-combined-amd64.tar.xz")
 
     add_custom_target(
         package-combined
@@ -75,7 +85,7 @@ if(WEMOD_ENHANCER_BUILD_GUI
         COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}"
                 --config Release --prefix "${_combined_stage}"
         # Windows cross tree (version.dll + gui .exe + python) -> same stage
-        COMMAND "${CMAKE_COMMAND}" --install "${_mingw_tree}"
+        COMMAND "${CMAKE_COMMAND}" --install "${WEMOD_ENHANCER_MINGW_BUILD_DIR}"
                 --config Release --prefix "${_combined_stage}"
         # Pack the merged staging prefix.
         COMMAND "${CMAKE_COMMAND}" -E tar cfJ "${_combined_out}"
