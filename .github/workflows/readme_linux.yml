@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: readme_linux
+
+# Verifies the exact Linux/Steam Deck commands from readme.md keep
+# working: clone wemod-launcher, download + extract the latest release,
+# patch (and restore) a WeMod install. A real WeMod client cannot be
+# downloaded in CI, so a minimal but valid app.asar fixture is built
+# with the patcher's own ASAR writer — its bundle contains exactly the
+# code patterns the patcher rewrites.
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    linux-steam-deck:
+        name: readme linux commands
+        runs-on: ubuntu-latest
+        steps:
+            # ── readme step 1, verbatim ───────────────────────────────
+            - name: install the launcher (readme step 1)
+              run: |
+                  git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
+                  chmod +x "$HOME/wemod-launcher/wemod"
+
+            # ── readme step 2, verbatim ───────────────────────────────
+            - name: get wemod enhancer (readme step 2)
+              run: |
+                  curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
+                  mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz -C wemod_enhancer
+                  cd wemod_enhancer
+
+            # ── ci fixture: fake WeMod install ────────────────────────
+            # Stands in for the real client the readme expects at
+            # $HOME/wemod-launcher/wemod_data/wemod_bin. The bundle below
+            # matches every PATCHES regex exactly once.
+            - name: create fake wemod install (ci fixture)
+              working-directory: wemod_enhancer
+              run: |
+                  python3 - <<'EOF'
+                  import sys
+                  from pathlib import Path
+                  sys.path.insert(0, "bin")
+                  import wemod_enhancer as we
+
+                  bundle = """
+                  class Api {
+                    getUserAccount(){return this.#api.fetch({endpoint:"/v3/account",method:"GET",name:"/v3/account"})}
+                    setAccountLanguage(lang){return this.#api.post("/v3/account/language",{language:lang})}
+                    requestRemoteAuthCode(){return this.#api.post("/v3/auth/remote_code")}
+                    setAccountWandBrandExperience(){return this.#api.post("/v3/account/brand_experience_wand")}
+                  }
+                  registerHandler("ACTION_CHECK_FOR_UPDATE",(e=>expectUpdateFeedUrl(e,(e=>null))));
+                  app.whenReady().then(()=>{});
+                  """
+
+                  install = Path.home() / "wemod-launcher/wemod_data/wemod_bin"
+                  resources = install / "resources"
+                  work = Path("fixture_root")
+                  work.mkdir()
+                  (work / "index.js").write_text(bundle)
+                  resources.mkdir(parents=True)
+                  we.pack_asar(work, resources / "app.asar", {"files": {"index.js": {}}})
+                  print("fixture:", resources / "app.asar")
+                  EOF
+
+            # ── readme step 3, verbatim ───────────────────────────────
+            - name: patch the wemod install (readme step 3)
+              working-directory: wemod_enhancer
+              run: python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+
+            - name: verify patch
+              run: |
+                  install="$HOME/wemod-launcher/wemod_data/wemod_bin"
+                  test -f "$install/version.dll"
+                  test -f "$install/resources/app.asar.backup"
+
+            # ── restore is part of the readme too: full cycle ─────────
+            - name: restore the wemod install (readme)
+              working-directory: wemod_enhancer
+              run: python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+
+            - name: verify restore
+              run: |
+                  install="$HOME/wemod-launcher/wemod_data/wemod_bin"
+                  cmp "$install/resources/app.asar" "$install/resources/app.asar.backup"
+                  test ! -f "$install/version.dll"

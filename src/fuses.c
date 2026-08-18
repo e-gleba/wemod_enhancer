@@ -11,8 +11,6 @@
 
 #include <windows.h>
 
-#include <wemod_enhancer/fuses.h>
-
 #define SENTINEL_LENGTH 32
 #define FUSE_INTEGRITY 4
 #define REMOVED 'r'

@@ -125,10 +125,10 @@ def find_dll(build: Path) -> Path:
     return found[0]
 
 def find_bundled_dll() -> Path | None:
-    """Find a prebuilt version.dll shipped with this package.
+    """Find a prebuilt version.dll shipped next to this file.
 
-    Wheel layout:  site-packages/wemod_enhancer/version.dll (same dir).
-    CMake layout:  <prefix>/bin/version.dll (one level above the package).
+    Wheel layout:  site-packages/wemod_enhancer/version.dll (package dir).
+    CMake layout:  <prefix>/bin/version.dll next to wemod_enhancer.py.
     """
     here = Path(__file__).resolve().parent
     for candidate in (here / "version.dll", here.parent / "version.dll"):

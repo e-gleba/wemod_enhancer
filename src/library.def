@@ -26,7 +26,3 @@ VerLanguageNameA
 VerLanguageNameW
 VerQueryValueA
 VerQueryValueW
-
-; wemod_enhancer public API — not part of the real version.dll.
-; Exported so the installed import library resolves <wemod_enhancer/fuses.h>.
-disable_asar_integrity

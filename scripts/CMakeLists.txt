@@ -1,8 +1,10 @@
-# Install the Python patcher package next to version.dll so the
+# Install the Python patcher CLI next to version.dll so the
 # install tree is self-contained: users need only Python (no CMake)
-# to run `python bin/wemod_enhancer patch --install-dir ...` — the
-# package directory executes directly via its __main__.py.
+# to run `python bin/wemod_enhancer.py patch --install-dir ...`.
+# The package's __init__.py is fully self-contained (no relative
+# imports), so it is installed renamed as a plain single-file
+# script — the install tree stays free of package internals.
 install(
-    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/wemod_enhancer"
+    FILES "${CMAKE_CURRENT_SOURCE_DIR}/wemod_enhancer/__init__.py"
     DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    PATTERN "__pycache__" EXCLUDED)
+    RENAME wemod_enhancer.py)
