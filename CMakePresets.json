@@ -68,10 +68,11 @@
         },
         {
             "name": "gui-base",
-            "description": "Shared settings for the GUI presets. GUI presets are mutually exclusive with the DLL presets: a GUI configure never builds version.dll (the GUI downloads it from the GitHub releases at runtime). GUI builds use RelWithDebInfo so releases stay debuggable",
+            "description": "Shared settings for the GUI presets. GUI presets are mutually exclusive with the DLL presets: a GUI configure never builds version.dll (the GUI downloads it from the GitHub releases at runtime). GUI builds use RelWithDebInfo so releases stay debuggable. CMAKE_MSVC_RUNTIME_LIBRARY is set directory-wide so the CPM-built imgui library gets the same static CRT as the GUI target itself - a target-local property alone links imgui as MD against the GUI's MT and fails with LNK2038",
             "hidden": true,
             "cacheVariables": {
-                "WEMOD_ENHANCER_BUILD_GUI": "ON"
+                "WEMOD_ENHANCER_BUILD_GUI": "ON",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>"
             }
         },
         {
@@ -83,24 +84,6 @@
                 "gui-base"
             ],
             "binaryDir": "${sourceDir}/build/${presetName}"
-        },
-        {
-            "name": "gui-windows-msvc-arm64",
-            "displayName": "GUI Windows ARM64 (MSVC)",
-            "description": "Build wemod_enhancer_gui.exe natively on Windows ARM64 with MSVC (GUI only, no version.dll; needs an ARM64 host, e.g. the windows-11-arm CI runner)",
-            "inherits": [
-                "msvc",
-                "gui-base"
-            ],
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "architecture": {
-                "value": "arm64",
-                "strategy": "set"
-            },
-            "toolset": {
-                "value": "host=arm64",
-                "strategy": "set"
-            }
         },
         {
             "name": "gui-windows-clang-amd64",
@@ -181,15 +164,6 @@
             "name": "gui-windows-msvc-amd64",
             "displayName": "GUI Windows AMD64 (MSVC) RelWithDebInfo",
             "configurePreset": "gui-windows-msvc-amd64",
-            "configuration": "RelWithDebInfo",
-            "targets": [
-                "wemod_enhancer_gui"
-            ]
-        },
-        {
-            "name": "gui-windows-msvc-arm64",
-            "displayName": "GUI Windows ARM64 (MSVC) RelWithDebInfo",
-            "configurePreset": "gui-windows-msvc-arm64",
             "configuration": "RelWithDebInfo",
             "targets": [
                 "wemod_enhancer_gui"
@@ -279,17 +253,6 @@
             "name": "gui-windows-msvc-amd64-package",
             "displayName": "GUI Windows AMD64 (MSVC) Package",
             "configurePreset": "gui-windows-msvc-amd64",
-            "configurations": [
-                "RelWithDebInfo"
-            ],
-            "generators": [
-                "ZIP"
-            ]
-        },
-        {
-            "name": "gui-windows-msvc-arm64-package",
-            "displayName": "GUI Windows ARM64 (MSVC) Package",
-            "configurePreset": "gui-windows-msvc-arm64",
             "configurations": [
                 "RelWithDebInfo"
             ],
@@ -427,25 +390,6 @@
                 {
                     "type": "package",
                     "name": "gui-windows-msvc-amd64-package"
-                }
-            ]
-        },
-        {
-            "name": "gui-windows-msvc-arm64-full",
-            "displayName": "GUI Windows ARM64 (MSVC) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the GUI natively on Windows ARM64 with MSVC",
-            "steps": [
-                {
-                    "type": "configure",
-                    "name": "gui-windows-msvc-arm64"
-                },
-                {
-                    "type": "build",
-                    "name": "gui-windows-msvc-arm64"
-                },
-                {
-                    "type": "package",
-                    "name": "gui-windows-msvc-arm64-package"
                 }
             ]
         },
