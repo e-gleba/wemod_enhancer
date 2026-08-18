@@ -7,6 +7,7 @@ on:
         paths: &paths
             - "src/**"
             - "include/**"
+            - "scripts/**"
             - "cmake/**"
             - "**/*.cmake"
             - "**/*.cpp"
@@ -15,6 +16,8 @@ on:
             - "**/*.h"
             - "**/*.cxx"
             - "**/*.hxx"
+            - "**/*.py"
+            - "**/*.toml"
             - "**/CMakeLists.txt"
             - "CMakePresets.json"
             - ".github/workflows/**"
@@ -151,6 +154,18 @@ jobs:
 
             - name: build
               run: cmake --workflow --preset ${{ matrix.preset }}
+
+            # Metadata smoke build: the wheel builds without version.dll here
+            # (package-data is optional); the release workflow bundles the DLL.
+            - name: setup python
+              uses: actions/setup-python@v7
+              with:
+                  python-version: "3.13"
+
+            - name: build python package
+              run: |
+                  pip install "build>=1.2"
+                  python -m build scripts --outdir dist-python
 
             - name: rename txz artifact
               run: |

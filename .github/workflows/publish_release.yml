@@ -145,10 +145,65 @@ jobs:
           path: build/msvc/*.zip
           if-no-files-found: error
 
+  # ── Python package (patcher CLI + bundled version.dll) ─────────────────────
+  # Reuses the LLVM-MinGW DLL: the proxy is toolchain-independent payload data
+  # inside the wheel, so one Windows x86-64 build is enough.
+  python_package:
+    name: python-wheel
+    needs: [windows_llvm_mingw_amd64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup_python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: download_llvm_mingw_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-llvm-mingw-amd64
+          path: dist-mingw/
+
+      - name: extract_version_dll
+        run: |
+          tar -xf dist-mingw/*.tar.xz -C dist-mingw
+          dll=$(find dist-mingw -name version.dll | head -n1)
+          test -n "$dll"
+          cp "$dll" scripts/wemod_enhancer/version.dll
+
+      # Wheel version must match the release tag; pyproject.toml carries the
+      # in-repo default and is rewritten here (v1.2.3 -> 1.2.3).
+      - name: sync_package_version
+        run: |
+          version="${{ inputs.version }}"
+          version="${version#v}"
+          sed -i "s/^version = \".*\"/version = \"$version\"/" scripts/pyproject.toml
+          grep '^version' scripts/pyproject.toml
+
+      - name: build_wheel_and_sdist
+        run: |
+          pip install "build>=1.2"
+          python -m build scripts --outdir dist-python
+
+      - name: verify_dll_in_wheel
+        run: python -c "import glob,zipfile; w=glob.glob('dist-python/*.whl')[0]; n=zipfile.ZipFile(w).namelist(); assert any(x.endswith('wemod_enhancer/version.dll') for x in n), n; print(w, 'bundles version.dll')"
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-package
+          path: dist-python/*
+          if-no-files-found: error
+
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [windows_llvm_mingw_amd64, windows_clang_amd64, windows_msvc_amd64]
+    needs: [windows_llvm_mingw_amd64, windows_clang_amd64, windows_msvc_amd64, python_package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -184,6 +239,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: windows-msvc-amd64
+          path: artifacts/
+
+      - name: download_python_package_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package
           path: artifacts/
 
       - name: generate_release_notes

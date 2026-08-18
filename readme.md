@@ -47,7 +47,7 @@ mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.x
 cd wemod_enhancer
 
 # 3. Launch your game once through the launcher, then patch the WeMod install
-python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+python3 bin/wemod_enhancer patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
 > No `python3`? It's preinstalled on SteamOS and most distros — otherwise install it with your package manager (3.11+).
@@ -78,7 +78,7 @@ $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
          Where-Object { Test-Path "$_\resources\app.asar" } |
          Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
          Select-Object -First 1
-python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
+python bin\wemod_enhancer patch --install-dir $wemod.FullName
 ```
 
 > `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
@@ -89,10 +89,10 @@ Originals are backed up automatically. One command reverts everything:
 
 ```sh
 # Linux
-python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+python3 bin/wemod_enhancer restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 
 # Windows (PowerShell, same session as above)
-python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
+python bin\wemod_enhancer restore --install-dir $wemod.FullName
 ```
 
 ## Build from source
@@ -100,9 +100,24 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
 
 ```sh
-python3 tools/wemod_enhancer.py build-dll           # just the proxy DLL
+python3 scripts/wemod_enhancer build-dll           # just the proxy DLL
 cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
 cmake --workflow --preset msvc-full                 # Windows (MSVC) package
+```
+
+### Python package (pip / pipx / uv)
+
+The patcher is also a Python package. The release wheel bundles `version.dll`, so no compiler is needed:
+
+```sh
+pip install https://github.com/e-gleba/wemod_enhancer/releases/download/v1.0.2/wemod_enhancer-1.0.2-py3-none-any.whl
+wemod-enhancer patch --install-dir ...
+```
+
+Or install straight from the repo (builds the DLL with CMake on first patch):
+
+```sh
+pipx install "git+https://github.com/e-gleba/wemod_enhancer.git#subdirectory=scripts"
 ```
 
 The install tree is a self-contained package: `bin/version.dll`, the import library in `lib/`, public headers in `include/`, and a CMake package config in `lib/cmake/wemod_enhancer/` — downstream projects can `find_package(wemod_enhancer CONFIG)` and link `wemod_enhancer::version`.
@@ -118,7 +133,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Language** | C + Python (stdlib only) | C# / .NET / WPF |
 | **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
+| **Build from source** | `python3 scripts/wemod_enhancer build-dll` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
 | **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
