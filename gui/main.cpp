@@ -36,6 +36,9 @@
 //     every call site vararg-free (cppcoreguidelines-pro-type-vararg).
 //   - "Report bug" opens a pre-filled GitHub issue (env info + log as
 //     markdown) via SDL_OpenURL - a one-click bug report.
+//   - Explicit-width integer types (std::int32_t and friends) wherever
+//     a width is actually relied on; plain int only at C-API
+//     boundaries that demand it (fgets, pclose, SDL_CreateWindow).
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -67,6 +70,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <vector>
 
 #ifndef _WIN32
@@ -115,8 +119,14 @@ constexpr std::size_t issue_log_budget{3000};
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
 
-constexpr int window_width{860};
-constexpr int window_height{620};
+constexpr std::string_view window_title{"WeMod Enhancer"};
+
+// Steam-sized main window: large, centered, everything reachable
+// without scrolling the chrome away.
+constexpr std::int32_t window_width{1024};
+constexpr std::int32_t window_height{720};
+static_assert(window_width > 0 && window_height > 0,
+              "window size must be positive");
 
 // ImVec4 has a user-provided constructor (not an aggregate), so
 // designated initializers do not apply - brace-init it is.
@@ -129,7 +139,7 @@ constexpr ImVec4 color_warn{0.90F, 0.60F, 0.20F, 1.00F};
 
 struct run_result
 {
-    int exit_code;
+    std::int32_t exit_code;
     std::string output;
 };
 
@@ -137,6 +147,10 @@ struct run_result
 // completion: refresh resolved paths after a download, record the
 // Python probe result, re-check the wemod-launcher clone...
 enum class run_kind : std::uint8_t { patcher, bootstrap, probe, launcher };
+static_assert(std::is_enum_v<run_kind>);
+
+// Python probe tri-state: unknown / failed / works.
+enum class probe_state : std::uint8_t { unknown, failed, works };
 
 struct app_state
 {
@@ -152,10 +166,10 @@ struct app_state
     run_kind kind{run_kind::patcher};
     bool scroll_to_bottom{false};
     bool has_run{false};
-    int last_exit_code{0};
+    std::int32_t last_exit_code{0};
     float copied_flash{0.0F}; // seconds left of "Copied!" feedback
     // --- diagnostics ---
-    int python_ok{-1}; // -1 unknown, 0 did not run, 1 works
+    probe_state python_ok{probe_state::unknown};
     std::string python_version{};  // e.g. "Python 3.13.5"
     std::string python_location{}; // e.g. /usr/bin/python3
     bool launcher_present{false}; // Linux: ~/wemod-launcher exists
@@ -163,7 +177,7 @@ struct app_state
 };
 
 // RAII for SDL_malloc'd strings (SDL_GetBasePath, SDL_GetPrefPath).
-struct sdl_free
+struct sdl_free final
 {
     void operator()(void* ptr) const noexcept { SDL_free(ptr); }
 };
@@ -173,25 +187,25 @@ using sdl_string = std::unique_ptr<char, sdl_free>;
 // ImGui's formatted text API is printf-style varargs; these wrappers
 // keep every call site clean (cppcoreguidelines-pro-type-vararg).
 
-void text_unformatted(std::string_view text)
+void text_unformatted(const std::string_view text)
 {
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
 }
 
-void text_colored(const ImVec4& color, std::string_view text)
+void text_colored(const ImVec4& color, const std::string_view text)
 {
     ImGui::PushStyleColor(ImGuiCol_Text, color);
     text_unformatted(text);
     ImGui::PopStyleColor();
 }
 
-void text_disabled(std::string_view text)
+void text_disabled(const std::string_view text)
 {
     text_colored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), text);
 }
 
 // Same wrapping width ImGui's SetTooltip uses, minus the varargs.
-void tooltip_text(std::string_view text)
+void tooltip_text(const std::string_view text)
 {
     if (ImGui::BeginTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0F);
@@ -216,18 +230,18 @@ void sdl_log_error(const std::string& message)
 // Report a fatal startup error; SDL_ShowSimpleMessageBox may be called
 // before SDL_Init, so this works for every early failure - and GUI
 // users actually see it.
-SDL_AppResult fatal_error(const std::string& what)
+[[nodiscard]] SDL_AppResult fatal_error(const std::string& what)
 {
     const std::string message{what + ": " + SDL_GetError()};
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
-                             "WeMod Enhancer",
+                             window_title.data(),
                              message.c_str(),
                              nullptr);
     return SDL_APP_FAILURE;
 }
 
 // Quote one argument for the platform shell behind popen().
-[[nodiscard]] constexpr std::string shell_quote(std::string_view arg)
+[[nodiscard]] constexpr std::string shell_quote(const std::string_view arg)
 {
     if constexpr (is_windows) {
         return "\"" + std::string(arg) + "\"";
@@ -247,7 +261,7 @@ SDL_AppResult fatal_error(const std::string& what)
 // Run the command, reading its stdout+stderr line by line as they are
 // produced (popen), so the log streams live instead of appearing only
 // after the process exits. Blocking - call from a worker thread.
-run_result run_command(const std::string& command)
+[[nodiscard]] run_result run_command(const std::string& command)
 {
     // 2>&1: child stderr lands in the same live stream as stdout.
     // popen/pclose carry underscore names in the MSVC CRT - the one
@@ -290,19 +304,20 @@ run_result run_command(const std::string& command)
 }
 
 // "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0.
-[[nodiscard]] constexpr std::vector<int> version_parts(std::string name)
+[[nodiscard]] constexpr std::vector<std::int32_t>
+version_parts(std::string name)
 {
     constexpr std::string_view prefix{"app-"};
     if (name.starts_with(prefix)) {
         name.erase(0, prefix.size());
     }
-    std::vector<int> parts{};
+    std::vector<std::int32_t> parts{};
     std::size_t pos{0};
     while (pos < name.size()) {
         const std::size_t dot{name.find('.', pos)};
         const std::string token{
             name.substr(pos, dot == std::string::npos ? dot : dot - pos)};
-        int value{0};
+        std::int32_t value{0};
         std::from_chars(token.data(), token.data() + token.size(), value);
         parts.push_back(value);
         if (dot == std::string::npos) {
@@ -443,7 +458,7 @@ void SDLCALL on_folder_chosen(void* userdata,
 // Launch a background command and stream its output into the log.
 // `shown` is what the user sees as the invoked command line.
 void start_command(app_state& state,
-                   run_kind kind,
+                   const run_kind kind,
                    const std::string& shown,
                    const std::string& command)
 {
@@ -627,7 +642,8 @@ void poll_run(app_state& state)
         }
         break;
     case run_kind::probe:
-        state.python_ok = result.exit_code == 0 ? 1 : 0;
+        state.python_ok = result.exit_code == 0 ? probe_state::works
+                                                : probe_state::failed;
         parse_probe(state, result.output);
         break;
     case run_kind::launcher:
@@ -678,21 +694,24 @@ void poll_run(app_state& state)
 // Bounds-checked nibble -> hex digit. gsl::at keeps the index checked,
 // so no raw array subscript ever appears here
 // (cppcoreguidelines-pro-bounds-constant-array-index).
-[[nodiscard]] constexpr char hex_digit(const std::uint8_t nibble)
+[[nodiscard]] constexpr char hex_digit(const std::uint8_t nibble) noexcept
 {
     constexpr std::string_view digits{"0123456789ABCDEF"};
+    static_assert(digits.size() == 16);
     return gsl::at(digits, nibble);
 }
 
 // RFC 3986 percent-encoding (unreserved characters pass through), for
 // the pre-filled GitHub issue URL behind the Report bug button.
-[[nodiscard]] std::string url_encode(std::string_view text)
+[[nodiscard]] std::string url_encode(const std::string_view text)
 {
     constexpr auto is_unreserved = [](const unsigned char c) constexpr {
         return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
             (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
             c == '~';
     };
+    static_assert(is_unreserved('a') && !is_unreserved(' '),
+                  "RFC 3986 unreserved set");
 
     std::string encoded{};
     encoded.reserve(text.size());
@@ -784,6 +803,14 @@ void help_marker(const char* description, const char* url)
     }
 }
 
+// One labeled row of the Configuration section: label on the left,
+// status + controls to its right. Steam-settings style.
+void config_row(const char* label)
+{
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+}
+
 void draw_ui(app_state& state)
 {
     poll_run(state);
@@ -795,28 +822,31 @@ void draw_ui(app_state& state)
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
-    // Steam-style layout: one compact control block pinned to the top
-    // (title, the single required input, actions), then the log fills
-    // the rest. Fixed-height sections keep every control reachable -
-    // nothing is pushed below the window edge.
+    // Steam-style layout: title bar, then a generous Configuration
+    // section (the only input the user must give), big actions, then
+    // the log filling the rest. Larger window + wider spacing keep
+    // everything readable at a glance.
 
-    ImGui::TextUnformatted("WeMod Enhancer");
+    ImGui::TextUnformatted(window_title.data());
     ImGui::SameLine();
     text_disabled("| close WeMod, pick its install folder, press Patch");
     ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
 
-    // --- The only thing a user must provide: the WeMod folder -------
+    // --- Configuration: the only thing a user must provide ----------
     const bool install_ok{looks_like_wemod_install(state.install_dir)};
     const bool script_ok{!state.script_path.empty() &&
                          fs::is_regular_file(state.script_path)};
 
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("WeMod folder");
+    ImGui::SeparatorText("Configuration");
+    ImGui::Spacing();
+
+    config_row("WeMod folder");
     help_marker(
         "Folder where WeMod is installed - the app-x.y.z directory that "
         "contains resources\\app.asar. Auto-detected when possible.",
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
-    ImGui::SameLine();
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (ImGui::GetStyle().FramePadding.x * 2.0F)};
     ImGui::SetNextItemWidth(-browse_w - ImGui::GetStyle().ItemSpacing.x);
@@ -857,6 +887,7 @@ void draw_ui(app_state& state)
     }
 
     ImGui::Spacing();
+    ImGui::Spacing();
 
     // --- Actions ----------------------------------------------------
     const bool can_run{!state.running && install_ok && script_ok};
@@ -895,19 +926,19 @@ void draw_ui(app_state& state)
                          "issue.");
     }
 
-    ImGui::Separator();
+    ImGui::Spacing();
 
     // --- Setup / diagnostics: what is missing + one-click fixes ------
     if (ImGui::CollapsingHeader("Setup / diagnostics")) {
         ImGui::Indent();
 
-        ImGui::TextUnformatted("Python");
+        config_row("Python");
         help_marker(
             "Python 3.11+ runs the patcher. Preinstalled on SteamOS and "
             "most distros.",
             "https://www.python.org/downloads/");
         ImGui::SameLine();
-        if (state.python_ok == 1) {
+        if (state.python_ok == probe_state::works) {
             text_colored(color_ok,
                          state.python_version.empty()
                              ? std::string_view("works")
@@ -916,7 +947,7 @@ void draw_ui(app_state& state)
                 ImGui::SameLine();
                 text_disabled(state.python_location);
             }
-        } else if (state.python_ok == 0) {
+        } else if (state.python_ok == probe_state::failed) {
             text_colored(color_err,
                          "'" + state.python +
                              "' did not run - install Python 3.11+ or fix "
@@ -925,7 +956,7 @@ void draw_ui(app_state& state)
             text_disabled("checking...");
         }
 
-        ImGui::TextUnformatted("Patcher");
+        config_row("Patcher");
         help_marker(
             "wemod_enhancer.py + version.dll, downloaded from the latest "
             "GitHub release into the app data dir. Download now fetches "
@@ -952,7 +983,7 @@ void draw_ui(app_state& state)
         // the readme tutorial. Offer to fetch it the same way, or let
         // the user confirm it is already installed.
         if (const fs::path launcher{launcher_dir()}; !launcher.empty()) {
-            ImGui::TextUnformatted("wemod-launcher");
+            config_row("wemod-launcher");
             help_marker(
                 "Linux runs WeMod through wemod-launcher (Proton). The "
                 "readme tutorial clones it into the home directory.",
@@ -991,12 +1022,10 @@ void draw_ui(app_state& state)
         ImGui::Unindent();
     }
 
-    ImGui::Separator();
-
     // --- Advanced: for power users / debugging ----------------------
     if (ImGui::CollapsingHeader("Advanced")) {
         ImGui::Indent();
-        ImGui::TextUnformatted("Python command");
+        config_row("Python command");
         help_marker(
             "How Python 3.11+ is started on your system. Usually "
             "'python' on Windows, 'python3' on Linux.",
@@ -1004,10 +1033,10 @@ void draw_ui(app_state& state)
         ImGui::SetNextItemWidth(200.0F);
         constexpr const char* python_hint{is_windows ? "python" : "python3"};
         ImGui::InputTextWithHint("##python", python_hint, &state.python);
-        ImGui::TextUnformatted("Patcher script (wemod_enhancer.py)");
+        config_row("Patcher script (wemod_enhancer.py)");
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##script", &state.script_path);
-        ImGui::TextUnformatted("version.dll (empty = auto-detect)");
+        config_row("version.dll (empty = auto-detect)");
         help_marker(
             "The proxy DLL the patcher drops next to WeMod. Leave empty "
             "to use the copy downloaded next to wemod_enhancer.py.",
@@ -1019,7 +1048,8 @@ void draw_ui(app_state& state)
         ImGui::Unindent();
     }
 
-    ImGui::Separator();
+    ImGui::Spacing();
+    ImGui::SeparatorText("Output");
 
     // --- Output: bounded child, toolbar pinned below it --------------
     const float toolbar_height{ImGui::GetFrameHeightWithSpacing() +
@@ -1103,7 +1133,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
                                            SDL_WINDOW_HIDDEN |
                                            SDL_WINDOW_HIGH_PIXEL_DENSITY};
     SDL_Window* window{
-        SDL_CreateWindow("WeMod Enhancer",
+        SDL_CreateWindow(window_title.data(),
                          static_cast<int>(window_width * main_scale),
                          static_cast<int>(window_height * main_scale),
                          window_flags)};
