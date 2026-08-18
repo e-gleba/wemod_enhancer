@@ -39,6 +39,10 @@
 //   - Explicit-width integer types (std::int32_t and friends) wherever
 //     a width is actually relied on; plain int only at C-API
 //     boundaries that demand it (fgets, pclose, SDL_CreateWindow).
+//   - Structs are `final`: no inheritance, no vtable surprises, and
+//     default-constructible members carry no redundant {} initializer
+//     (readability-redundant-member-init) - only non-empty defaults
+//     are spelled out.
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -137,7 +141,7 @@ constexpr ImVec4 color_ok{0.35F, 0.85F, 0.45F, 1.00F};
 constexpr ImVec4 color_err{0.90F, 0.30F, 0.30F, 1.00F};
 constexpr ImVec4 color_warn{0.90F, 0.60F, 0.20F, 1.00F};
 
-struct run_result
+struct run_result final
 {
     std::int32_t exit_code;
     std::string output;
@@ -152,16 +156,19 @@ static_assert(std::is_enum_v<run_kind>);
 // Python probe tri-state: unknown / failed / works.
 enum class probe_state : std::uint8_t { unknown, failed, works };
 
-struct app_state
+// Default-constructible members (string, future) carry no redundant {}
+// initializer - they default-construct empty on their own. Only
+// non-empty defaults are spelled out.
+struct app_state final
 {
     SDL_Window* window{nullptr};
     SDL_Renderer* renderer{nullptr};
-    std::string install_dir{};
-    std::string script_path{};
-    std::string python{};
-    std::string version_dll{}; // empty = the script auto-detects it
-    std::string log{};
-    std::future<run_result> pending{};
+    std::string install_dir;
+    std::string script_path;
+    std::string python;
+    std::string version_dll; // empty = the script auto-detects it
+    std::string log;
+    std::future<run_result> pending;
     bool running{false};
     run_kind kind{run_kind::patcher};
     bool scroll_to_bottom{false};
@@ -170,8 +177,8 @@ struct app_state
     float copied_flash{0.0F}; // seconds left of "Copied!" feedback
     // --- diagnostics ---
     probe_state python_ok{probe_state::unknown};
-    std::string python_version{};  // e.g. "Python 3.13.5"
-    std::string python_location{}; // e.g. /usr/bin/python3
+    std::string python_version;  // e.g. "Python 3.13.5"
+    std::string python_location; // e.g. /usr/bin/python3
     bool launcher_present{false}; // Linux: ~/wemod-launcher exists
     bool launcher_note{false};    // "I've done it" but still missing
 };
@@ -278,7 +285,7 @@ void sdl_log_error(const std::string& message)
         return result;
     }
 
-    std::string pending_line{};
+    std::string pending_line;
     std::array<char, 512> buffer{};
     while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
            nullptr) {
@@ -311,7 +318,7 @@ version_parts(std::string name)
     if (name.starts_with(prefix)) {
         name.erase(0, prefix.size());
     }
-    std::vector<std::int32_t> parts{};
+    std::vector<std::int32_t> parts;
     std::size_t pos{0};
     while (pos < name.size()) {
         const std::size_t dot{name.find('.', pos)};
@@ -332,11 +339,11 @@ version_parts(std::string name)
 // (the layout the patcher expects as --install-dir).
 [[nodiscard]] fs::path find_app_dir(const fs::path& root)
 {
-    std::error_code ec{};
+    std::error_code ec;
     if (!fs::is_directory(root, ec)) {
         return {};
     }
-    std::vector<fs::path> candidates{};
+    std::vector<fs::path> candidates;
     for (const auto& entry : fs::directory_iterator(root, ec)) {
         if (!entry.is_directory(ec) ||
             !entry.path().filename().string().starts_with("app-") ||
@@ -389,7 +396,7 @@ version_parts(std::string name)
     } else {
         if (const char* home{env_var("HOME")}) {
             const fs::path launcher{fs::path(home) / "wemod-launcher"};
-            std::error_code ec{};
+            std::error_code ec;
             if (fs::is_directory(launcher, ec)) {
                 return launcher.string();
             }
@@ -403,7 +410,7 @@ version_parts(std::string name)
 // inside it (the app-* layout the patcher patches).
 [[nodiscard]] bool looks_like_wemod_install(const std::string& dir) noexcept
 {
-    std::error_code ec{};
+    std::error_code ec;
     return !dir.empty() &&
         fs::is_regular_file(fs::path(dir) / "resources" / "app.asar", ec);
 }
@@ -437,7 +444,7 @@ void SDLCALL on_folder_chosen(void* userdata,
 // so a layout tweak does not silently break the unpack step.
 [[nodiscard]] fs::path find_script_under(const fs::path& root)
 {
-    std::error_code ec{};
+    std::error_code ec;
     for (const auto& entry : fs::recursive_directory_iterator(root, ec)) {
         if (entry.is_regular_file(ec) &&
             entry.path().filename() == "wemod_enhancer.py") {
@@ -499,7 +506,7 @@ void start_run(app_state& state, const char* subcommand)
 void start_bootstrap(app_state& state)
 {
     const fs::path dir{bootstrap_root() / "patcher"};
-    std::string command{};
+    std::string command;
     if constexpr (is_windows) {
         const fs::path archive{bootstrap_root() / "patcher.zip"};
         command =
@@ -580,7 +587,7 @@ void parse_probe(app_state& state, const std::string& output)
 
 [[nodiscard]] bool launcher_installed()
 {
-    std::error_code ec{};
+    std::error_code ec;
     const fs::path dir{launcher_dir()};
     return !dir.empty() && fs::is_directory(dir, ec);
 }
@@ -713,7 +720,7 @@ void poll_run(app_state& state)
     static_assert(is_unreserved('a') && !is_unreserved(' '),
                   "RFC 3986 unreserved set");
 
-    std::string encoded{};
+    std::string encoded;
     encoded.reserve(text.size());
     for (const unsigned char c : text) {
         if (is_unreserved(c)) {
@@ -865,7 +872,7 @@ void draw_ui(app_state& state)
     ImGui::SameLine();
     if (fit_button("Browse...")) {
         const std::string start_dir{[&state] {
-            std::error_code ec{};
+            std::error_code ec;
             if (!state.install_dir.empty() &&
                 fs::is_directory(state.install_dir, ec)) {
                 return state.install_dir;
