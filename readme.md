@@ -1,141 +1,104 @@
 <div align="center">
 
-<img src="docs/logo.svg" alt="WeMod Enhancer" width="180">
+<img src="docs/logo.svg" alt="WeMod Enhancer" width="128">
 
 # WeMod Enhancer
 
-**The original WeMod app — Pro unlocked — on Steam Deck & Linux**
+**The original WeMod app — Pro unlocked — on Steam Deck, Linux & Windows**
 
-One command patches the WeMod client running inside [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher): Pro subscription active, auto-updates disabled, F12 DevTools, no mobile pairing nag. Zero runtime dependencies — standard-library Python plus a 4 KB C proxy DLL. Windows works too.
+One command patches the WeMod client: Pro subscription active, auto-updates disabled, F12 DevTools, no mobile-pairing nag. Zero runtime dependencies — stdlib Python plus a 4 KB C proxy DLL.
 
-[![CI](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml/badge.svg)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](license.md)
-[![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake&logoColor=white)](https://cmake.org/)
-[![C](https://img.shields.io/badge/C-23-00599C?logo=c&logoColor=white)](https://en.cppreference.com/)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/Platform-Steam%20Deck%20%7C%20Linux%20%7C%20Windows-121212?logo=steam&logoColor=white)](#steam-deck--linux)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
+[![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
+[![release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
+[![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake)](https://cmake.org)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#linux--steam-deck)
+
+[![▶ run release](https://img.shields.io/badge/%E2%96%B6_run-release-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml)
+[![▶ run ci](https://img.shields.io/badge/%E2%96%B6_run-ci-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
+[![▶ run renovate](https://img.shields.io/badge/%E2%96%B6_run-renovate-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/renovate.yml)
 
 </div>
 
----
+## What you get
 
-## Steam Deck & Linux
+| Feature | How |
+| :------ | :-- |
+| **Pro activation** | Intercepts `/v3/account` → injects `subscription: { period: "yearly", state: "active" }` |
+| **ASAR integrity bypass** | 4 KB `version.dll` proxy flips Electron's fuse in-process via `VirtualProtect` |
+| **F12 DevTools** | Hotkey hook on `browser-window-created` |
+| **No auto-updates** | `ACTION_CHECK_FOR_UPDATE` → no-op — the patch survives until you say otherwise |
+| **No mobile pairing** | `requestRemoteAuthCode()` → reject |
+| **Fail-safe** | Automatic backup, all-or-nothing patching, one-command restore |
 
-WeMod has no Linux build. [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) fixes that by running the official Windows client through Proton — and WeMod Enhancer is the missing piece that unlocks Pro on top of it.
+## Linux / Steam Deck
+
+WeMod has no Linux build — [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton. WeMod Enhancer unlocks Pro on top of it.
 
 ```sh
-# 1. Install the launcher (runs the original WeMod via Proton)
+# 1. Install the launcher
 git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
 chmod +x "$HOME/wemod-launcher/wemod"
 
-# 2. Launch your game once through the launcher, then patch the WeMod install
-python3 wemod_enhancer.py patch \
-  --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+# 2. Get WeMod Enhancer (prebuilt version.dll included — Python is all you need)
+curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
+tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
+
+# 3. Launch your game once through the launcher, then patch the WeMod install
+python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
-Set your Steam launch options for the game:
+Steam launch options for the game:
 
 ```sh
 WINEDLLOVERRIDES="version=n,b" "$HOME/wemod-launcher/wemod" %command%
 ```
 
-> **Why `version=n,b`?** Wine can satisfy `version.dll` with its builtin implementation even when the proxy exists beside `WeMod.exe`. The `n,b` override forces native-first loading with builtin fallback — without it, Wine loads only its builtin DLL and Electron rejects the modified ASAR.
+> `version=n,b` forces native-first DLL loading — without it Wine uses its builtin `version.dll` and Electron rejects the patched ASAR.
 
-Done. WeMod starts with your game, Pro features active. For diagnostics, log locations, and cleanup, see [Linux launch and debugging](docs/linux.md).
+Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cleanup: [docs/linux.md](docs/linux.md).
 
 ## Windows
 
-Download a release archive (prebuilt `version.dll` included — no CMake needed), extract, and run:
+1. Close WeMod.
+2. Download `wemod_enhancer-windows-msvc-amd64.zip` from [Releases](https://github.com/e-gleba/wemod_enhancer/releases/latest) and extract it.
+3. From the extracted folder run (`--install-dir` = the folder containing `resources\app.asar`):
 
-```sh
-# Stop WeMod, then patch the install directory
-python3 wemod_enhancer.py patch --install-dir "C:/path/to/WeMod"
+```powershell
+python bin\wemod_enhancer.py patch --install-dir "$env:LOCALAPPDATA\WeMod\app-9.0.0"
 ```
 
 ## Restore
 
-Originals are backed up automatically before any modification. One command reverts everything:
+Originals are backed up automatically. One command reverts everything:
 
 ```sh
-python3 wemod_enhancer.py restore --install-dir "/path/to/wemod_bin"
+python3 bin/wemod_enhancer.py restore --install-dir "<same install dir>"
 ```
-
-If a WeMod update changes the minified client code and a required patch no longer matches, the tool **fails closed** — no partial patches, no broken install.
-
-## What you get
-
-| Feature | Details |
-| :-------- | :-------- |
-| **Pro activation** | Intercepts `/v3/account` responses, injects `subscription: { period: "yearly", state: "active" }` |
-| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` — walks memory for a 32-byte sentinel, flips Electron's fuse wire to `removed` |
-| **F12 DevTools** | Hotkey hook on `browser-window-created` |
-| **No auto-updates** | `ACTION_CHECK_FOR_UPDATE` handler → no-op — your patch survives until you say otherwise |
-| **No mobile pairing** | `requestRemoteAuthCode()` → `Promise.reject` |
-| **Backup & restore** | Automatic, one command |
-| **Fail-safe** | All-or-nothing patching — never a half-patched client |
-
-## Requirements
-
-| Tool | Version | Notes |
-| :----- | :-------- | :------ |
-| **Python** | 3.11+ | Runs the patcher CLI — standard library only |
-| **CMake** | 3.31+ | Builds the proxy DLL (not needed with prebuilt releases) |
-| **Ninja** | any | Build system generator |
-| **Windows** | — | MSVC (VS 2022) or Clang targeting MSVC ABI (`x86_64-pc-windows-msvc`) |
-| **Linux** | — | LLVM-MinGW toolchain, auto-downloaded by CMake |
 
 ## Build from source
 
-```sh
-# Build only the proxy DLL (no patching)
-python3 tools/wemod_enhancer.py build-dll
-
-# Or full CMake workflow: build + install both version.dll and wemod_enhancer.py
-cmake --workflow --preset llvm-mingw-x86_64-full
-cmake --install build/llvm-mingw-x86_64 --prefix ./dist
-# dist/bin/ now contains a self-contained patcher — Python is all you need
-```
-
-## Development
+Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
 
 ```sh
-cmake --build build/gcc --target format   # clang-format + cmake-format
-cmake --build build/gcc --target tidy     # clang-tidy
-cmake --build build/gcc --target cpplint  # cppcheck/cpplint
+python3 tools/wemod_enhancer.py build-dll           # just the proxy DLL
+cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
+cmake --workflow --preset msvc-full                 # Windows (MSVC) package
 ```
 
-Pre-commit hooks enforce formatting and linting. Run `pre-commit install` once after cloning.
+## GitHub Actions
 
-The CMake and CI scope is intentionally limited to Windows x86-64. Linux is a host and runtime environment, not a native DLL target.
+| Action | How to run | What it does |
+| :----- | :--------- | :----------- |
+| **Release** | [Actions → publish_release](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml) → *Run workflow* → enter version (e.g. `v1.0.0`) | Builds MSVC + Clang + LLVM-MinGW archives, tags the commit, publishes a GitHub Release with generated notes |
+| **CI** | Automatic on push/PR — manual: [Actions → cmake_multiplatform_workflow](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml) → *Run workflow* | Builds and packages every preset |
+| **Renovate** | Automatic weekly — manual: [Actions → Renovate](https://github.com/e-gleba/wemod_enhancer/actions/workflows/renovate.yml) → *Run workflow* (`dryRun` optional) | Dependency-update PRs |
 
-## Why not Wand-Enhancer?
+---
 
-The original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) is a 13K-star C#/.NET WPF application. It works — but it's a Windows-only GUI that requires .NET Framework 4.8, NuGet packages, Node.js, pnpm, Visual Studio 2022, and a GitHub Actions fork just to build. No prebuilt binaries. No Linux. No Steam Deck.
+Ground-up rewrite of [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) (C#/.NET WPF, Windows-only) — same core job, zero runtime dependencies, fully cross-platform.
 
-WeMod Enhancer is a ground-up rewrite that does the same core job with zero runtime dependencies and full cross-platform support:
-
-| | **WeMod Enhancer** | **Wand-Enhancer** |
-| :-- | :------------------- | :------------------- |
-| **Language** | C + Python (stdlib only) | C# / .NET / WPF |
-| **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
-| **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `python3 tools/wemod_enhancer.py build-dll` | Fork → GitHub Actions → download artifact |
-| **Platform** | Steam Deck, Linux, Windows | Windows only |
-| **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
-| **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
-| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
-| **Pro activation** | Intercepts `/v3/account` responses | Same |
-| **DevTools** | F12 hotkey hook | Not available |
-| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` → no-op | Not available |
-| **Disable mobile pairing** | `requestRemoteAuthCode()` → reject | Not available |
-| **Remote web panel** | Not included | Built-in LAN HTTP/WebSocket server |
-| **Custom script injection** | Not included | Bundled `.js` injection at patch time |
-| **Fail-safe** | Fails closed on mismatched patches | — |
-| **Backup & restore** | Automatic, one-command restore | — |
-| **License** | MIT | Apache-2.0 |
-
-> WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
-
-## License
-
-[MIT](license.md) — © 2026 Evgeniy Gleba
+<div align="center">
+<sub>MIT © 2026 Evgeniy Gleba · Not affiliated with WeMod.</sub>
+</div>
