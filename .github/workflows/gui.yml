@@ -53,6 +53,9 @@ jobs:
                   key: cpm-gui-${{ matrix.name }}-${{ hashFiles('cmake/cpm-config.cmake') }}
                   restore-keys: cpm-gui-${{ matrix.name }}-
 
+            # The toolchain file (cmake/toolchains/llvm-mingw.cmake) only
+            # *points at* llvm-mingw - the compiler itself must exist on
+            # the runner. Same action the base workflow uses, same reason.
             - name: Set up LLVM-MinGW
               if: matrix.mingw
               uses: e-gleba/setup-llvm-mingw@v1
