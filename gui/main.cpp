@@ -603,7 +603,9 @@ void parse_probe(app_state& state, const std::string& output)
 }
 
 // Same steps as the readme tutorial: clone into ~, mark the launcher
-// script executable.
+// script executable. The exact commands from the tutorial:
+//   git clone https://github.com/DaniAsh551/wemod-launcher "$HOME/wemod-launcher"
+//   chmod +x "$HOME/wemod-launcher/wemod"
 void start_launcher_clone(app_state& state)
 {
     const fs::path dir{launcher_dir()};
@@ -611,7 +613,7 @@ void start_launcher_clone(app_state& state)
         state,
         run_kind::launcher,
         "git clone wemod-launcher -> " + dir.string(),
-        "git clone https://github.com/DeckCheatz/wemod-launcher " +
+        "git clone https://github.com/DaniAsh551/wemod-launcher " +
             shell_quote(dir.string()) + " && chmod +x " +
             shell_quote((dir / "wemod").string()));
 }
@@ -1008,7 +1010,7 @@ void draw_ui(app_state& state)
             help_marker(
                 "Linux runs WeMod through wemod-launcher (Proton). The "
                 "readme tutorial clones it into the home directory.",
-                "https://github.com/DeckCheatz/wemod-launcher");
+                "https://github.com/DaniAsh551/wemod-launcher");
             ImGui::SameLine();
             if (state.launcher_present) {
                 text_colored(color_ok, "found");
