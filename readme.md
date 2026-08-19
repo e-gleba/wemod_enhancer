@@ -44,23 +44,7 @@ One binary, no terminal. Grab the artifact for your OS from the [latest release]
 
 It is a pure downloader + executor: on first run it pulls the latest patcher (`wemod_enhancer.py` + `version.dll`) from the releases itself, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
-Build it yourself — GUI presets never compile `version.dll` (the GUI downloads it at runtime) and ship as their own package:
-
-| Preset | Host | Compiler | Binary |
-| :----- | :--- | :------- | :----- |
-| `gui-windows-msvc-amd64-full` | Windows x86-64 | MSVC | `wemod_enhancer_gui.exe` |
-| `gui-windows-clang-amd64-full` | Windows x86-64 | Clang (MSVC ABI, lld-link) | `wemod_enhancer_gui.exe` |
-| `gui-windows-llvm-mingw-amd64-full` | Linux → Windows x86-64 | LLVM-MinGW | `wemod_enhancer_gui.exe` |
-| `gui-linux-gcc-amd64-full` | Linux x86-64 | GCC | `wemod_enhancer_gui.elf` |
-| `gui-linux-clang-amd64-full` | Linux x86-64 | Clang | `wemod_enhancer_gui.elf` |
-| `gui-linux-gcc-arm64-full` | Linux ARM64 | GCC | `wemod_enhancer_gui.elf` |
-
-```sh
-cmake --workflow --preset gui-windows-msvc-amd64-full   # build/gui-windows-msvc-amd64/RelWithDebInfo/wemod_enhancer_gui.exe
-cmake --workflow --preset gui-linux-gcc-amd64-full      # build/gui-linux-gcc-amd64/RelWithDebInfo/wemod_enhancer_gui.elf
-```
-
-Linux host builds need SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+For developers: Linux host builds need SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
 
 ## Linux / Steam Deck
 
