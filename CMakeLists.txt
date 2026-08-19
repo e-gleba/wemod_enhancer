@@ -93,10 +93,10 @@ if(PROJECT_IS_TOP_LEVEL)
     # "Windows-x86_64" vs "Windows-aarch64").
     string(APPEND CPACK_SYSTEM_NAME "-${CMAKE_SYSTEM_PROCESSOR}")
 
-    # Keep debug info in packages: RelWithDebInfo emits PDB (MSVC) or
-    # DWARF (GCC/Clang); stripping them would make release crashes
-    # undebuggable. CPack strips by default on some generators.
-    set(CPACK_STRIP_FILES OFF)
+    # Strip debug info from packaged binaries: smaller artifacts.
+    # The build tree keeps symbols (RelWithDebInfo), so release
+    # crashes stay debuggable from the build dir.
+    set(CPACK_STRIP_FILES ON)
 
     # include(CPack) must come AFTER all CPACK_* variables
     # are set — it reads them at include-time and ignores
