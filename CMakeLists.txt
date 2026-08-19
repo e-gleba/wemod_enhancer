@@ -29,7 +29,7 @@ list(
     "${CMAKE_CURRENT_LIST_DIR}/cmake/code_quality")
 
 # When cross-compiling, CMAKE_FIND_ROOT_PATH_MODE_PACKAGE is
-typically set to ONLY in the toolchain file. That restricts
+# typically set to ONLY in the toolchain file. That restricts
 # find_package() to searching only under CMAKE_FIND_ROOT_PATH
 # and CMAKE_SYSROOT — our local cmake/ dirs wouldn't be found.
 # Adding them to CMAKE_FIND_ROOT_PATH fixes this
