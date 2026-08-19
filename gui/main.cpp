@@ -55,6 +55,9 @@
 //     app-x.y.z directory and the WeMod root above it (resolved to the
 //     newest app-* inside), so the field can never look "ok" while
 //     Patch refuses to run.
+//   - The log shows the REAL command line for every background job
+//     (git clone ..., curl ..., python ...) - no shorthand, no "->",
+//     so the user sees exactly what ran and can reproduce it.
 //
 // NOTE: imgui's default font covers ASCII only - keep every literal in
 // this file plain ASCII (no em-dashes, arrows or ellipsis characters).
@@ -488,7 +491,7 @@ void SDLCALL on_folder_chosen(void* userdata,
 }
 
 // Launch a background command and stream its output into the log.
-// `shown` is what the user sees as the invoked command line.
+// `shown` is the real command line the user sees - no shorthand.
 void start_command(app_state& state,
                    const run_kind kind,
                    const std::string& shown,
@@ -528,6 +531,7 @@ void start_run(app_state& state, const char* subcommand)
 
 // Download + unpack the latest release asset with the tools every base
 // OS install already has: curl + tar on Linux, PowerShell on Windows.
+// The log shows the real command line - no shorthand.
 void start_bootstrap(app_state& state)
 {
     const fs::path dir{bootstrap_root() / "patcher"};
@@ -552,10 +556,7 @@ void start_bootstrap(app_state& state)
             shell_quote(archive.string()) + " -C " +
             shell_quote(dir.string());
     }
-    start_command(state,
-                  run_kind::bootstrap,
-                  "fetch " + std::string(release_asset_url),
-                  command);
+    start_command(state, run_kind::bootstrap, command, command);
 }
 
 // One-shot interpreter check: prints the version (kept as the classic
@@ -618,19 +619,15 @@ void parse_probe(app_state& state, const std::string& output)
 }
 
 // Same steps as the readme tutorial: clone into ~, mark the launcher
-// script executable. The exact commands from the tutorial:
-//   git clone https://github.com/DaniAsh551/wemod-launcher "$HOME/wemod-launcher"
-//   chmod +x "$HOME/wemod-launcher/wemod"
+// script executable. The log shows the real command line - no shorthand.
 void start_launcher_clone(app_state& state)
 {
     const fs::path dir{launcher_dir()};
-    start_command(
-        state,
-        run_kind::launcher,
-        "git clone wemod-launcher -> " + dir.string(),
+    const std::string command{
         "git clone https://github.com/DaniAsh551/wemod-launcher " +
-            shell_quote(dir.string()) + " && chmod +x " +
-            shell_quote((dir / "wemod").string()));
+        shell_quote(dir.string()) + " && chmod +x " +
+        shell_quote((dir / "wemod").string())};
+    start_command(state, run_kind::launcher, command, command);
 }
 
 void poll_run(app_state& state)
