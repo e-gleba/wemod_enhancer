@@ -16,7 +16,7 @@ Follow its setup instructions, run the target game once without WeMod, and confi
 From this repository:
 
 ```sh
-python3 tools/wemod_enhancer.py patch \
+python3 scripts/wemod_enhancer.py patch \
   --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
@@ -101,7 +101,7 @@ Wine RPC errors such as `device_notify_proc failed to get event, error 1726` oft
 Restore the original ASAR and prior DLL state:
 
 ```sh
-python3 tools/wemod_enhancer.py restore \
+python3 scripts/wemod_enhancer.py restore \
   --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
