@@ -35,17 +35,19 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 ## GUI (optional)
 
-Prefer clicking over typing? `wemod_enhancer_gui` is a small Dear ImGui app (SDL3, statically linked) that drives the same patcher — a pure downloader/automator, fully separate from the DLL build:
+One binary, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
 
-- **Only input needed: the WeMod folder** — auto-detected at startup (newest `%LOCALAPPDATA%\WeMod\app-*` on Windows, `~/wemod-launcher/wemod_data/wemod_bin` on Linux). When found, the path is already filled in: just press Patch, no Browse dialog needed.
-- **Nothing else to download, ever** — the GUI pulls the latest release (`wemod_enhancer.py` + `version.dll`) itself: `curl` on Linux, PowerShell on Windows. No local files required; the exe is fully portable (no hardcoded paths), move it between PCs as-is.
-- **Setup / diagnostics** panel shows the detected Python (version + location) and the patcher, and on Linux offers to clone [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) into your home dir — the same step as the tutorial below.
-- Patch / Restore stream output live; **Copy output** grabs the environment info plus the whole log, and **Report bug** opens a pre-filled GitHub issue with the same data attached as markdown — a one-click bug report.
+| OS | Artifact | Binary inside |
+| :- | :------- | :------------ |
+| Windows | `wemod_enhancer_gui-*-Windows-*.zip` | `wemod_enhancer_gui.exe` |
+| Linux | `wemod_enhancer_gui-*-Linux-*.tar.xz` | `wemod_enhancer_gui.elf` |
 
-The GUI presets are mutually exclusive with the plain-DLL ones (a GUI build never compiles `version.dll` — the GUI downloads it at runtime), ship as their own package (`wemod_enhancer_gui-<version>-<os>-<arch>.zip` / `.tar.xz`), and are built **RelWithDebInfo** so crashes stay debuggable (PDB next to the exe on Windows, symbols in the `.elf` on Linux). The GUI has its own CI workflow ([gui.yml](.github/workflows/gui.yml)) with a compiler × arch matrix:
+It is a pure downloader + executor: on first run it pulls the latest patcher (`wemod_enhancer.py` + `version.dll`) from the releases itself, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
-| Preset | Host | Compiler | Artifact |
-| :----- | :--- | :------- | :------- |
+Build it yourself — GUI presets never compile `version.dll` (the GUI downloads it at runtime) and ship as their own package:
+
+| Preset | Host | Compiler | Binary |
+| :----- | :--- | :------- | :----- |
 | `gui-windows-msvc-amd64-full` | Windows x86-64 | MSVC | `wemod_enhancer_gui.exe` |
 | `gui-windows-clang-amd64-full` | Windows x86-64 | Clang (MSVC ABI, lld-link) | `wemod_enhancer_gui.exe` |
 | `gui-windows-llvm-mingw-amd64-full` | Linux → Windows x86-64 | LLVM-MinGW | `wemod_enhancer_gui.exe` |
@@ -58,7 +60,7 @@ cmake --workflow --preset gui-windows-msvc-amd64-full   # build/gui-windows-msvc
 cmake --workflow --preset gui-linux-gcc-amd64-full      # build/gui-linux-gcc-amd64/RelWithDebInfo/wemod_enhancer_gui.elf
 ```
 
-Linux host builds need SDL3 Wayland/X11 dev packages (build-time only), e.g. `sudo apt-get install libx11-dev libwayland-dev libxkbcommon-dev libdbus-1-dev libibus-1.0-dev libdecor-0-dev`; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+Linux host builds need SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
 
 ## Linux / Steam Deck
 
