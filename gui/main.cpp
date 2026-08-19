@@ -834,9 +834,8 @@ void help_marker(const char* description, const char* url)
     }
 }
 
-// One labeled row of the Settings section: label on the left,
-// status + controls to its right. Steam-settings style.
-void settings_row(const char* label)
+// One labeled row: label on the left, content to its right.
+void field_label(const char* label)
 {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted(label);
@@ -853,13 +852,9 @@ void draw_ui(app_state& state)
                  nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
 
-    // Clean single-column layout: title, the one required input, the
-    // two actions, a collapsed Settings section, then the log.
-
-    ImGui::TextUnformatted(window_title);
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
+    // Clean single-column layout: the one required input, the two
+    // actions, a collapsed Settings section, then the log. The window
+    // title bar already says "WeMod Enhancer" - no duplicate title here.
 
     // --- WeMod folder: the only thing a user must provide -----------
     // Validity is an invariant of the current field text, recomputed
@@ -872,7 +867,7 @@ void draw_ui(app_state& state)
     const bool script_ok{!state.script_path.empty() &&
                          fs::is_regular_file(state.script_path)};
 
-    settings_row("WeMod folder");
+    field_label("WeMod folder");
     help_marker(
         "Folder where WeMod is installed - the app-x.y.z directory that "
         "contains resources\\app.asar, or the WeMod root above it (the "
@@ -917,6 +912,19 @@ void draw_ui(app_state& state)
                                  start_dir.empty() ? nullptr
                                                    : start_dir.c_str(),
                                  false);
+    }
+
+    // Validity indicator: what the folder must contain, or what to do.
+    if (install_ok) {
+        text_colored(color_ok, "ready");
+    } else if (!state.install_dir.empty()) {
+        text_colored(color_err,
+                     "must contain resources\\app.asar - download WeMod, "
+                     "run it once, log in, then pick the folder again");
+    } else {
+        text_disabled(
+            "must contain resources\\app.asar - download WeMod, run it "
+            "once, log in, then pick the folder");
     }
 
     ImGui::Spacing();
@@ -967,7 +975,7 @@ void draw_ui(app_state& state)
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent();
 
-        settings_row("Python");
+        field_label("Python");
         help_marker(
             "Python 3.11+ runs the patcher. Preinstalled on SteamOS and "
             "most distros.",
@@ -991,7 +999,7 @@ void draw_ui(app_state& state)
             text_disabled("checking...");
         }
 
-        settings_row("Patcher");
+        field_label("Patcher");
         help_marker(
             "wemod_enhancer.py + version.dll, downloaded from the latest "
             "GitHub release into the app data dir. Download now fetches "
@@ -1018,7 +1026,7 @@ void draw_ui(app_state& state)
         // the readme tutorial. Offer to fetch it the same way, or let
         // the user confirm it is already installed.
         if (const fs::path launcher{launcher_dir()}; !launcher.empty()) {
-            settings_row("wemod-launcher");
+            field_label("wemod-launcher");
             help_marker(
                 "Linux runs WeMod through wemod-launcher (Proton). The "
                 "readme tutorial clones it into the home directory.",
@@ -1058,7 +1066,7 @@ void draw_ui(app_state& state)
         ImGui::Separator();
         ImGui::Spacing();
 
-        settings_row("Python command");
+        field_label("Python command");
         help_marker(
             "How Python 3.11+ is started on your system. Usually "
             "'python' on Windows, 'python3' on Linux.",
@@ -1067,11 +1075,11 @@ void draw_ui(app_state& state)
         constexpr const char* python_hint{is_windows ? "python" : "python3"};
         ImGui::InputTextWithHint("##python", python_hint, &state.python);
 
-        settings_row("Patcher script");
+        field_label("Patcher script");
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##script", &state.script_path);
 
-        settings_row("version.dll");
+        field_label("version.dll");
         help_marker(
             "The proxy DLL the patcher drops next to WeMod. Leave empty "
             "to use the copy downloaded next to wemod_enhancer.py.",
