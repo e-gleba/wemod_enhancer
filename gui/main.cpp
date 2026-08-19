@@ -51,10 +51,10 @@
 //     SDL (main_scale) is the one correct multiplier - it tracks the
 //     monitor's DPI, so the UI looks identical on every display.
 //   - Folder validity is an INVARIANT of the current field text:
-//     resolve_wemod_dir() runs every frame and accepts both the
-//     app-x.y.z directory and the WeMod root above it (resolved to the
-//     newest app-* inside), so the field can never look "ok" while
-//     Patch refuses to run.
+//     resolve_wemod_dir() runs every frame and accepts the app-x.y.z
+//     directory, the WeMod root above it (newest app-* inside), or
+//     the wemod-launcher clone (wemod_data/wemod_bin inside), so the
+//     field can never look "ok" while Patch refuses to run.
 //   - The log shows the REAL command line for every background job
 //     (git clone ..., curl ..., python ...) - no shorthand, no "->",
 //     so the user sees exactly what ran and can reproduce it.
@@ -425,20 +425,32 @@ version_parts(std::string name)
 
 // Resolve whatever the user picked to the directory the patcher needs:
 // the app-x.y.z folder holding resources/app.asar. Accepts that folder
-// directly OR the WeMod root above it (the newest app-* inside wins) -
-// both are what a Browse dialog naturally returns. This is the single
-// validity invariant: it runs every frame on the current field text,
-// so the field can never look valid while Patch refuses to run.
+// directly, the WeMod root above it (newest app-* inside wins), or the
+// wemod-launcher clone (wemod_data/wemod_bin inside). This is the
+// single validity invariant: it runs every frame on the current field
+// text, so the field can never look valid while Patch refuses to run.
 [[nodiscard]] fs::path resolve_wemod_dir(const std::string& dir)
 {
     if (dir.empty()) {
         return {};
     }
     std::error_code ec;
-    if (fs::is_regular_file(fs::path(dir) / "resources" / "app.asar", ec)) {
-        return fs::path(dir);
+    const fs::path picked{dir};
+    // Direct hit: the app-x.y.z folder itself.
+    if (fs::is_regular_file(picked / "resources" / "app.asar", ec)) {
+        return picked;
     }
-    return find_app_dir(dir); // WeMod root -> newest app-*, else {}
+    // WeMod root: newest app-* inside.
+    if (const fs::path app{find_app_dir(picked)}; !app.empty()) {
+        return app;
+    }
+    // wemod-launcher clone: wemod_data/wemod_bin inside (appears after
+    // the first run + login - see the readme tutorial).
+    const fs::path launcher_bin{picked / "wemod_data" / "wemod_bin"};
+    if (fs::is_regular_file(launcher_bin / "resources" / "app.asar", ec)) {
+        return launcher_bin;
+    }
+    return {};
 }
 
 // SDL dialog callback: may run on another thread; it only writes a
@@ -817,8 +829,9 @@ void draw_ui(app_state& state)
 
     // --- WeMod folder: the only thing a user must provide -----------
     // Validity is an invariant of the current field text, recomputed
-    // every frame: the app-x.y.z dir itself OR the WeMod root above it
-    // (resolved to the newest app-* inside). Typing or deleting text
+    // every frame: the app-x.y.z dir itself, the WeMod root above it
+    // (newest app-* inside), or the wemod-launcher clone
+    // (wemod_data/wemod_bin inside). Typing or deleting text
     // re-validates immediately; Patch normalizes the field to the
     // resolved dir so the log always shows the exact folder used.
     const fs::path resolved_dir{resolve_wemod_dir(state.install_dir)};
@@ -829,9 +842,9 @@ void draw_ui(app_state& state)
     field_label("WeMod folder");
     help_marker(
         "Folder where WeMod is installed - the app-x.y.z directory that "
-        "contains resources\\app.asar, or the WeMod root above it (the "
-        "newest app-* inside is used automatically). Auto-detected at "
-        "startup when possible.",
+        "contains resources\\app.asar, the WeMod root above it, or the "
+        "wemod-launcher clone (wemod_data/wemod_bin inside). "
+        "Auto-detected at startup when possible.",
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (ImGui::GetStyle().FramePadding.x * 2.0F)};
@@ -847,7 +860,7 @@ void draw_ui(app_state& state)
     }
     constexpr const char* install_hint{
         is_windows ? R"(C:\Users\<you>\AppData\Local\WeMod\app-10.x.x)"
-                   : "~/wemod-launcher/wemod_data/wemod_bin"};
+                   : "~/wemod-launcher (or wemod_data/wemod_bin inside)"};
     ImGui::InputTextWithHint("##install_dir", install_hint, &state.install_dir);
     if (install_ok) {
         ImGui::PopStyleColor();
@@ -876,6 +889,12 @@ void draw_ui(app_state& state)
     // Validity indicator + download suggestion when invalid.
     if (install_ok) {
         text_colored(color_ok, "ready");
+        // Show what the field resolved to when it differs (e.g. picked
+        // the wemod-launcher clone, resolved to wemod_data/wemod_bin).
+        if (resolved_dir.string() != state.install_dir) {
+            ImGui::SameLine();
+            text_disabled(resolved_dir.string());
+        }
     } else if (!state.install_dir.empty()) {
         text_colored(color_err,
                      "must contain resources\\app.asar");
