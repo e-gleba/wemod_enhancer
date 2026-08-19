@@ -13,6 +13,15 @@
 // The only thing the user provides is the WeMod folder (auto-detected
 // at startup, so usually that is just pressing Patch).
 //
+// When the WeMod folder is missing/invalid, the "Download WeMod"
+// button does the real thing, no dialogs:
+//   - Windows: downloads the official installer (api.wemod.com) into
+//     the user Downloads folder via SDL_GetUserFolder and runs it.
+//   - Linux:   git-clones the wemod-launcher repo into ~/wemod-launcher
+//     and opens the DeckCheatz tutorial in the browser. After the
+//     first launcher run + login, wemod_data/wemod_bin appears and the
+//     folder field resolves to it automatically.
+//
 // Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS is set via
 // target_compile_definitions in gui/CMakeLists.txt, keeping this file
 // macro-free) - SDL_AppInit / SDL_AppIterate / SDL_AppEvent /
@@ -22,8 +31,8 @@
 //     remains where names do not exist cross-platform (popen/pclose).
 //   - SDL3 owns the platform glue: SDL_GetEnvironmentVariable instead
 //     of std::getenv, SDL_GetPrefPath instead of hand-rolled cache-dir
-//     logic, SDL_GetPlatform for diagnostics, RAII for SDL_malloc'd
-//     strings.
+//     logic, SDL_GetUserFolder for Downloads, SDL_GetPlatform for
+//     diagnostics, RAII for SDL_malloc'd strings.
 //   - gsl::not_null for pointers out of C callbacks, gsl::finally for
 //     SDL_Quit, Expects() for preconditions; app state ownership is a
 //     std::unique_ptr (make_unique in SDL_AppInit, re-acquired in
@@ -128,6 +137,14 @@ constexpr std::string_view release_asset_url{
               "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
               "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz")};
 
+// "Download WeMod" endpoints. Windows: the official installer direct
+// link (what https://www.wemod.com/download serves). Linux: the
+// wemod-launcher Proton wrapper repo + its tutorial (same page).
+constexpr std::string_view wemod_setup_url{
+    "https://api.wemod.com/client/download"};
+constexpr std::string_view launcher_repo_url{
+    "https://github.com/DeckCheatz/wemod-launcher"};
+
 // "Report bug" target: a pre-filled GitHub issue. The body rides in
 // the URL query, so the log is capped to keep the URL portable across
 // browsers and proxies.
@@ -168,8 +185,8 @@ struct run_result final
 
 // What the current background command is, so poll_run() can react to
 // completion: refresh resolved paths after a download, record the
-// Python probe result.
-enum class run_kind : std::uint8_t { patcher, bootstrap, probe };
+// Python probe result, narrate the WeMod fetch.
+enum class run_kind : std::uint8_t { patcher, bootstrap, probe, wemod };
 static_assert(std::is_enum_v<run_kind>);
 
 // Python probe tri-state: unknown / failed / works.
@@ -569,6 +586,61 @@ void start_bootstrap(app_state& state)
     start_command(state, run_kind::bootstrap, command, command);
 }
 
+// "Download WeMod" does the real thing, no dialogs:
+//   Windows - fetch the official installer into the user Downloads
+//             folder (SDL_GetUserFolder, no hardcoded paths) and run
+//             it, so the user only clicks through the setup.
+//   Linux   - git clone the wemod-launcher repo into ~/wemod-launcher
+//             (exactly the readme tutorial commands) and open the
+//             tutorial in the browser. After the first run + login,
+//             wemod_data/wemod_bin appears and the field resolves.
+void start_wemod_download(app_state& state)
+{
+    if constexpr (is_windows) {
+        const char* downloads_c{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
+        const fs::path downloads{downloads_c != nullptr
+                                     ? downloads_c
+                                     : bootstrap_root().string()};
+        const fs::path setup{downloads / "WeMod-Setup.exe"};
+        const std::string command{
+            "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+            "$ProgressPreference='SilentlyContinue'; "
+            "Invoke-WebRequest -Uri '" + std::string(wemod_setup_url) +
+            "' -OutFile '" + setup.string() + "'; "
+            "Start-Process '" + setup.string() + "'\""};
+        start_command(state, run_kind::wemod, command, command);
+    } else {
+        const char* home{env_var("HOME")};
+        if (home == nullptr) {
+            state.log += "error: HOME is not set - cannot clone "
+                         "wemod-launcher.\n\n";
+            return;
+        }
+        const fs::path dir{fs::path(home) / "wemod-launcher"};
+        std::error_code ec;
+        if (fs::is_directory(dir, ec)) {
+            // Already cloned: just aim the field at it - the resolver
+            // picks up wemod_data/wemod_bin once login happened.
+            state.install_dir = dir.string();
+            state.log += "wemod-launcher already cloned: " + dir.string() +
+                "\n  run it once and log in - wemod_data/wemod_bin "
+                "appears after login, this field resolves to it.\n\n";
+            state.scroll_to_bottom = true;
+            return;
+        }
+        // Tutorial opens alongside the clone, per the readme flow.
+        if (!SDL_OpenURL(launcher_repo_url.data())) {
+            sdl_log_error(std::string("SDL_OpenURL(tutorial): ") +
+                          SDL_GetError());
+        }
+        const std::string command{
+            "git clone " + std::string(launcher_repo_url) + " " +
+            shell_quote(dir.string()) + " && chmod +x " +
+            shell_quote((dir / "wemod").string())};
+        start_command(state, run_kind::wemod, command, command);
+    }
+}
+
 // One-shot interpreter check: prints the version (kept as the classic
 // `$ python --version` line in the log) and where the binary lives;
 // the Settings section shows both.
@@ -651,6 +723,35 @@ void poll_run(app_state& state)
                          "was not inside.\n"
                          "  fix: press Report bug below - this should not "
                          "happen.\n\n";
+        }
+        break;
+    case run_kind::wemod:
+        if (result.exit_code != 0) {
+            state.log += is_windows
+                ? "error: could not download the WeMod installer.\n"
+                  "  fix: check the network connection, then retry - or "
+                  "grab it from https://www.wemod.com/download\n\n"
+                : "error: could not clone wemod-launcher.\n"
+                  "  fix: check the network connection and that git is "
+                  "installed, then retry.\n\n";
+            break;
+        }
+        if constexpr (is_windows) {
+            state.log += "WeMod installer downloaded and started.\n"
+                         "  next: install, run WeMod once, log in - then "
+                         "this app auto-detects the folder.\n\n";
+        } else {
+            // Aim the field at the fresh clone: after the first run +
+            // login the resolver picks wemod_data/wemod_bin inside it.
+            if (const char* home{env_var("HOME")}) {
+                state.install_dir =
+                    (fs::path(home) / "wemod-launcher").string();
+            }
+            state.log += "wemod-launcher cloned (tutorial opened in your "
+                         "browser).\n"
+                         "  next: run it once and log in - "
+                         "wemod_data/wemod_bin appears after login, the "
+                         "folder field resolves to it.\n\n";
         }
         break;
     case run_kind::probe:
@@ -783,6 +884,9 @@ bool fit_button(const char* label)
         return "Downloading the latest patcher release...";
     case run_kind::probe:
         return "Checking Python...";
+    case run_kind::wemod:
+        return is_windows ? std::string_view("Downloading WeMod...")
+                          : std::string_view("Cloning wemod-launcher...");
     case run_kind::patcher:
         break;
     }
@@ -886,7 +990,7 @@ void draw_ui(app_state& state)
                                  false);
     }
 
-    // Validity indicator + download suggestion when invalid.
+    // Validity indicator + real download action when invalid.
     if (install_ok) {
         text_colored(color_ok, "ready");
         // Show what the field resolved to when it differs (e.g. picked
@@ -899,30 +1003,20 @@ void draw_ui(app_state& state)
         text_colored(color_err,
                      "must contain resources\\app.asar");
         ImGui::SameLine();
+        ImGui::BeginDisabled(state.running);
         if (fit_button("Download WeMod")) {
-            if constexpr (is_windows) {
-                if (!SDL_OpenURL("https://www.wemod.com/download")) {
-                    sdl_log_error(
-                        std::string("SDL_OpenURL(wemod): ") +
-                        SDL_GetError());
-                }
-            } else {
-                // Linux: wemod-launcher is the Proton wrapper.
-                if (!SDL_OpenURL(
-                        "https://github.com/DaniAsh551/wemod-launcher")) {
-                    sdl_log_error(
-                        std::string("SDL_OpenURL(wemod-launcher): ") +
-                        SDL_GetError());
-                }
-            }
+            start_wemod_download(state);
         }
-        if (ImGui::IsItemHovered()) {
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             tooltip_text(
                 is_windows
-                    ? "Open the official WeMod download page - install, "
-                      "run once, log in, then pick the folder again"
-                    : "Open the wemod-launcher repo - clone it, run once, "
-                      "log in, then pick the folder again");
+                    ? "Download the official WeMod installer into your "
+                      "Downloads folder and run it - install, log in, "
+                      "then this app auto-detects the folder"
+                    : "Clone wemod-launcher into ~/wemod-launcher and "
+                      "open the tutorial - run it once, log in, then "
+                      "this field resolves to wemod_data/wemod_bin");
         }
     } else {
         text_disabled(
