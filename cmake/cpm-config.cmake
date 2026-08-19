@@ -35,5 +35,11 @@ if(WEMOD_ENHANCER_BUILD_GUI)
     # imgui-config.cmake creates the imgui::sdl3_renderer backend target
     # only when SDL3::SDL3 already exists, so resolve SDL3 first.
     find_package(sdl3 CONFIG REQUIRED)
+    # FreeType before imgui: imgui-config.cmake compiles
+    # misc/freetype/imgui_freetype.cpp only when a freetype target
+    # already exists. Resolved via CPM (cmake/cpm/freetype-config.cmake),
+    # so the hinted rasterizer builds from the same pinned source on
+    # every platform - no system package needed on CI.
+    find_package(freetype CONFIG REQUIRED)
     find_package(imgui CONFIG REQUIRED)
 endif()

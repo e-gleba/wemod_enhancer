@@ -159,6 +159,12 @@ constexpr std::string_view default_python{
 // it directly - no string_view::data() that may not be null-terminated.
 constexpr const char* window_title{"WeMod Enhancer"};
 
+// Build version injected via target_compile_definitions (see
+// gui/CMakeLists.txt - same pattern as SDL_MAIN_USE_CALLBACKS): always
+// the CMake project version, so the GUI can never show a version that
+// differs from the package it was built from.
+constexpr std::string_view gui_version{WEMOD_ENHANCER_GUI_VERSION};
+
 // Base window size, multiplied by the display DPI scale at startup.
 constexpr std::int32_t window_width{1024};
 constexpr std::int32_t window_height{640};
@@ -509,7 +515,7 @@ void SDLCALL on_folder_chosen(void* userdata,
     return {};
 }
 
-// The patcher always comes from the GitHub releases: downloaded once
+// The patcher always comes from the releases: downloaded once
 // into the pref dir, then reused on every launch. Settings has a
 // button to re-download the newest release.
 [[nodiscard]] std::string cached_script()
@@ -774,9 +780,13 @@ void poll_run(app_state& state)
 // needed to reproduce it.
 [[nodiscard]] std::string env_info(const app_state& state)
 {
-    std::string info{"wemod_enhancer gui\n"};
+    std::string info{"wemod_enhancer gui "};
+    info += std::string(gui_version) + "\n";
     info += "platform: " + std::string(SDL_GetPlatform()) + " " +
         std::string(target_arch) + "\n";
+    // The exact URL the patcher is fetched from - a bug report must
+    // show which release artifact was actually downloaded.
+    info += "patcher url: " + std::string(release_asset_url) + "\n";
     info += "wemod folder: " +
         (state.install_dir.empty() ? std::string("<not set>")
                                    : state.install_dir) +
@@ -1207,6 +1217,15 @@ void draw_ui(app_state& state)
         ImGui::SameLine();
         text_colored(color_ok, "Copied!");
     }
+
+    // Build version pinned to the right end of the bottom toolbar row:
+    // the CMake project version, injected at compile time - the GUI
+    // can never show a version that differs from its package.
+    const std::string version_label{"v" + std::string(gui_version)};
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x -
+                         ImGui::CalcTextSize(version_label.c_str()).x);
+    text_disabled(version_label);
 
     ImGui::End();
 }
