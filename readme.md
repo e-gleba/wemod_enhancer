@@ -111,15 +111,6 @@ python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_
 python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 ```
 
-## Build from source
-
-Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
-
-```sh
-cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
-cmake --workflow --preset msvc-full                 # Windows (MSVC) package
-```
-
 ## vs Wand-Enhancer
 
 Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) — same core job, zero runtime dependencies, fully cross-platform:
@@ -143,6 +134,15 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Fail-safe** | Fails closed on mismatched patches | — |
 | **Backup & restore** | Automatic, one-command restore | — |
 | **License** | MIT | Apache-2.0 |
+
+## Build from source
+
+Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
+
+```sh
+cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
+cmake --workflow --preset msvc-full                 # Windows (MSVC) package
+```
 
 > WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
 
