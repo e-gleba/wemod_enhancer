@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.31)
 
 project(
     wemod_enhancer
-    VERSION 1.0.3
+    VERSION 1.0.4
     DESCRIPTION
         "Cross-platform Wand/WeMod Electron patcher and Windows ASAR fuse proxy"
     HOMEPAGE_URL "https://github.com/e-gleba/wemod_enhancer"
@@ -29,7 +29,7 @@ list(
     "${CMAKE_CURRENT_LIST_DIR}/cmake/code_quality")
 
 # When cross-compiling, CMAKE_FIND_ROOT_PATH_MODE_PACKAGE is
-# typically set to ONLY in the toolchain file. That restricts
+typically set to ONLY in the toolchain file. That restricts
 # find_package() to searching only under CMAKE_FIND_ROOT_PATH
 # and CMAKE_SYSROOT — our local cmake/ dirs wouldn't be found.
 # Adding them to CMAKE_FIND_ROOT_PATH fixes this

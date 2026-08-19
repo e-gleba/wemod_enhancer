@@ -12,6 +12,10 @@ on:
         required: false
         type: string
         default: ''
+      next_version:
+        description: 'Next CMake project version, no v prefix (e.g. 1.0.5) - bot commits it to main after the release'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -372,3 +376,41 @@ jobs:
             --title "${{ inputs.version }}" \
             --notes-file release_notes.md \
             artifacts/*
+
+  # ── Post-release: bump CMake project version on main ───────────────────────
+  # Runs only after the release is published, so the tag and the
+  # just-built artifacts stay untouched. This prepares main for the NEXT
+  # release: packages always ship the project() version of their own tag.
+  bump_cmake_version:
+    name: Bump CMake version on main
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: validate_next_version
+        run: |
+          if [[ ! "${{ inputs.next_version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '${{ inputs.next_version }}'"
+            exit 1
+          fi
+
+      - name: bump_project_version
+        run: |
+          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\1${{ inputs.next_version }}/" CMakeLists.txt
+          grep -E "^[[:space:]]*VERSION[[:space:]]+${{ inputs.next_version }}[[:space:]]*$" CMakeLists.txt
+
+      - name: commit_and_push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CMakeLists.txt
+          git commit -m "chore: bump CMake project version to ${{ inputs.next_version }}"
+          git pull --rebase origin main
+          git push origin HEAD:main
