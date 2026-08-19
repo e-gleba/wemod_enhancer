@@ -50,7 +50,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install \"cmake>=3.31\"
+          pip install "cmake>=3.31"
 
       - name: build_and_package
         run: cmake --workflow --preset llvm-mingw-x86_64-full
@@ -59,7 +59,7 @@ jobs:
         run: |
           cd build/llvm-mingw-x86_64
           for f in *.tar.xz; do
-            mv \"$f\" \"wemod_enhancer-windows-llvm-mingw-amd64.tar.xz\"
+            mv "$f" "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz"
           done
 
       - name: upload_artifact
@@ -94,7 +94,7 @@ jobs:
       - name: install_dependencies
         run: |
           choco install ninja --yes
-          pip install \"cmake>=3.31\"
+          pip install "cmake>=3.31"
 
       - name: build_and_package
         run: cmake --workflow --preset clang-windows-amd64-full
@@ -103,7 +103,7 @@ jobs:
         shell: pwsh
         run: |
           cd build/clang-windows-amd64
-          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer-windows-clang-amd64.zip\"
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-clang-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
@@ -136,7 +136,7 @@ jobs:
         shell: pwsh
         run: |
           cd build/msvc
-          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer-windows-msvc-amd64.zip\"
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-msvc-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
@@ -172,7 +172,7 @@ jobs:
         shell: pwsh
         run: |
           cd build/gui-windows-msvc-amd64
-          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer_gui-windows-amd64.zip\"
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer_gui-windows-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
@@ -225,7 +225,7 @@ jobs:
         run: |
           cd build/gui-linux-gcc-amd64
           for f in *.tar.xz; do
-            mv \"$f\" \"wemod_enhancer_gui-linux-amd64.tar.xz\"
+            mv "$f" "wemod_enhancer_gui-linux-amd64.tar.xz"
           done
 
       - name: upload_artifact
@@ -275,7 +275,7 @@ jobs:
         run: |
           cd build/gui-linux-gcc-arm64
           for f in *.tar.xz; do
-            mv \"$f\" \"wemod_enhancer_gui-linux-arm64.tar.xz\"
+            mv "$f" "wemod_enhancer_gui-linux-arm64.tar.xz"
           done
 
       - name: upload_artifact
@@ -306,12 +306,12 @@ jobs:
 
       - name: configure_git
         run: |
-          git config user.name \"github-actions[bot]\"
-          git config user.email \"github-actions[bot]@users.noreply.github.com\"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: create_and_push_tag
         run: |
-          git tag -a ${{ inputs.version }} -m \"release ${{ inputs.version }}\"
+          git tag -a ${{ inputs.version }} -m "release ${{ inputs.version }}"
           git push origin ${{ inputs.version }}
 
       - name: download_llvm_mingw_artifact
@@ -355,20 +355,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          args=(-f tag_name=\"${{ inputs.version }}\" -f target_commitish=\"main\")
-          if [ -n \"${{ inputs.previous_tag }}\" ]; then
-            args+=(-f previous_tag_name=\"${{ inputs.previous_tag }}\")
+          args=(-f tag_name="${{ inputs.version }}" -f target_commitish="main")
+          if [ -n "${{ inputs.previous_tag }}" ]; then
+            args+=(-f previous_tag_name="${{ inputs.previous_tag }}")
           fi
           gh api repos/${{ github.repository }}/releases/generate-notes \
-            \"${args[@]}\" --jq '.body' > release_notes.md
-          echo \"notes_file=release_notes.md\" >> \"$GITHUB_OUTPUT\"
+            "${args[@]}" --jq '.body' > release_notes.md
+          echo "notes_file=release_notes.md" >> "$GITHUB_OUTPUT"
 
       - name: create_github_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create \
-            \"${{ inputs.version }}\" \
-            --title \"${{ inputs.version }}\" \
+            "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
             --notes-file release_notes.md \
             artifacts/*
