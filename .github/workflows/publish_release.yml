@@ -50,7 +50,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install "cmake>=3.31"
+          pip install \"cmake>=3.31\"
 
       - name: build_and_package
         run: cmake --workflow --preset llvm-mingw-x86_64-full
@@ -59,7 +59,7 @@ jobs:
         run: |
           cd build/llvm-mingw-x86_64
           for f in *.tar.xz; do
-            mv "$f" "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz"
+            mv \"$f\" \"wemod_enhancer-windows-llvm-mingw-amd64.tar.xz\"
           done
 
       - name: upload_artifact
@@ -94,7 +94,7 @@ jobs:
       - name: install_dependencies
         run: |
           choco install ninja --yes
-          pip install "cmake>=3.31"
+          pip install \"cmake>=3.31\"
 
       - name: build_and_package
         run: cmake --workflow --preset clang-windows-amd64-full
@@ -103,7 +103,7 @@ jobs:
         shell: pwsh
         run: |
           cd build/clang-windows-amd64
-          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-clang-amd64.zip"
+          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer-windows-clang-amd64.zip\"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
@@ -136,7 +136,7 @@ jobs:
         shell: pwsh
         run: |
           cd build/msvc
-          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-msvc-amd64.zip"
+          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer-windows-msvc-amd64.zip\"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
@@ -145,10 +145,156 @@ jobs:
           path: build/msvc/*.zip
           if-no-files-found: error
 
+  # ── GUI: MSVC Windows AMD64 ────────────────────────────────────────────────
+  # The GUI is a pure downloader/automator (exe only, no DLL inside).
+  # One artifact per end-user platform; the GUI pulls the patcher
+  # (wemod_enhancer.py + version.dll) from the releases at runtime.
+  gui_windows_msvc_amd64:
+    name: gui-windows-msvc-amd64
+    runs-on: windows-2022
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: build_and_package
+        run: cmake --workflow --preset gui-windows-msvc-amd64-full
+
+      - name: rename_artifact
+        shell: pwsh
+        run: |
+          cd build/gui-windows-msvc-amd64
+          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer_gui-windows-amd64.zip\"
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gui-windows-amd64
+          path: build/gui-windows-msvc-amd64/*.zip
+          if-no-files-found: error
+
+  # ── GUI: GCC Linux AMD64 ───────────────────────────────────────────────────
+  gui_linux_gcc_amd64:
+    name: gui-linux-gcc-amd64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      # SDL3 needs the X11/Wayland development headers to create
+      # desktop windows at all (its CMake aborts without them).
+      # Package list straight from the official SDL3 docs:
+      # https://wiki.libsdl.org/SDL3/README-linux (Ubuntu 22.04+).
+      - name: install_sdl3_dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+              build-essential git make pkg-config \
+              libasound2-dev libpulse-dev libaudio-dev \
+              libfribidi-dev libjack-dev libsndio-dev \
+              libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+              libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+              libxkbcommon-dev libdrm-dev libgbm-dev \
+              libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+              libdbus-1-dev libibus-1.0-dev libudev-dev \
+              libthai-dev libusb-1.0-0-dev \
+              libpipewire-0.3-dev libwayland-dev libdecor-0-dev \
+              liburing-dev
+
+      - name: build_and_package
+        run: cmake --workflow --preset gui-linux-gcc-amd64-full
+
+      - name: rename_artifact
+        run: |
+          cd build/gui-linux-gcc-amd64
+          for f in *.tar.xz; do
+            mv \"$f\" \"wemod_enhancer_gui-linux-amd64.tar.xz\"
+          done
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gui-linux-amd64
+          path: build/gui-linux-gcc-amd64/*.tar.xz
+          if-no-files-found: error
+
+  # ── GUI: GCC Linux ARM64 (Steam Deck / ARM handhelds) ──────────────────────
+  gui_linux_gcc_arm64:
+    name: gui-linux-gcc-arm64
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: install_sdl3_dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+              build-essential git make pkg-config \
+              libasound2-dev libpulse-dev libaudio-dev \
+              libfribidi-dev libjack-dev libsndio-dev \
+              libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+              libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+              libxkbcommon-dev libdrm-dev libgbm-dev \
+              libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+              libdbus-1-dev libibus-1.0-dev libudev-dev \
+              libthai-dev libusb-1.0-0-dev \
+              libpipewire-0.3-dev libwayland-dev libdecor-0-dev \
+              liburing-dev
+
+      - name: build_and_package
+        run: cmake --workflow --preset gui-linux-gcc-arm64-full
+
+      - name: rename_artifact
+        run: |
+          cd build/gui-linux-gcc-arm64
+          for f in *.tar.xz; do
+            mv \"$f\" \"wemod_enhancer_gui-linux-arm64.tar.xz\"
+          done
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gui-linux-arm64
+          path: build/gui-linux-gcc-arm64/*.tar.xz
+          if-no-files-found: error
+
   # ── Create GitHub Release ──────────────────────────────────────────────────
   release:
     name: Create Release
-    needs: [windows_llvm_mingw_amd64, windows_clang_amd64, windows_msvc_amd64]
+    needs:
+      - windows_llvm_mingw_amd64
+      - windows_clang_amd64
+      - windows_msvc_amd64
+      - gui_windows_msvc_amd64
+      - gui_linux_gcc_amd64
+      - gui_linux_gcc_arm64
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -160,12 +306,12 @@ jobs:
 
       - name: configure_git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name \"github-actions[bot]\"
+          git config user.email \"github-actions[bot]@users.noreply.github.com\"
 
       - name: create_and_push_tag
         run: |
-          git tag -a ${{ inputs.version }} -m "release ${{ inputs.version }}"
+          git tag -a ${{ inputs.version }} -m \"release ${{ inputs.version }}\"
           git push origin ${{ inputs.version }}
 
       - name: download_llvm_mingw_artifact
@@ -186,25 +332,43 @@ jobs:
           name: windows-msvc-amd64
           path: artifacts/
 
+      - name: download_gui_windows_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: gui-windows-amd64
+          path: artifacts/
+
+      - name: download_gui_linux_amd64_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: gui-linux-amd64
+          path: artifacts/
+
+      - name: download_gui_linux_arm64_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: gui-linux-arm64
+          path: artifacts/
+
       - name: generate_release_notes
         id: notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          args=(-f tag_name="${{ inputs.version }}" -f target_commitish="main")
-          if [ -n "${{ inputs.previous_tag }}" ]; then
-            args+=(-f previous_tag_name="${{ inputs.previous_tag }}")
+          args=(-f tag_name=\"${{ inputs.version }}\" -f target_commitish=\"main\")
+          if [ -n \"${{ inputs.previous_tag }}\" ]; then
+            args+=(-f previous_tag_name=\"${{ inputs.previous_tag }}\")
           fi
           gh api repos/${{ github.repository }}/releases/generate-notes \
-            "${args[@]}" --jq '.body' > release_notes.md
-          echo "notes_file=release_notes.md" >> "$GITHUB_OUTPUT"
+            \"${args[@]}\" --jq '.body' > release_notes.md
+          echo \"notes_file=release_notes.md\" >> \"$GITHUB_OUTPUT\"
 
       - name: create_github_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create \
-            "${{ inputs.version }}" \
-            --title "${{ inputs.version }}" \
+            \"${{ inputs.version }}\" \
+            --title \"${{ inputs.version }}\" \
             --notes-file release_notes.md \
             artifacts/*
