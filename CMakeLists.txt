@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.31)
 
 project(
     wemod_enhancer
-    VERSION 1.0.4
+    VERSION 1.0.5
     DESCRIPTION
         "Cross-platform Wand/WeMod Electron patcher and Windows ASAR fuse proxy"
     HOMEPAGE_URL "https://github.com/e-gleba/wemod_enhancer"
