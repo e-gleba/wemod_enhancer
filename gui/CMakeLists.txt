@@ -19,9 +19,14 @@ target_compile_features(wemod_enhancer_gui PRIVATE cxx_std_23)
 # SDL3 app callbacks (SDL_AppInit/Iterate/Event/Quit) instead of a
 # hand-written main loop. Defined here - not as a #define in the
 # source - so the translation unit stays macro-free
-# (cppcoreguidelines-macro-usage).
-target_compile_definitions(wemod_enhancer_gui
-                           PRIVATE SDL_MAIN_USE_CALLBACKS=1)
+# (cppcoreguidelines-macro-usage). WEMOD_ENHANCER_GUI_VERSION rides
+# along: the GUI shows the CMake project version it was built from, so
+# a packaged binary can never report a version that differs from its
+# package.
+target_compile_definitions(
+    wemod_enhancer_gui
+    PRIVATE SDL_MAIN_USE_CALLBACKS=1
+            WEMOD_ENHANCER_GUI_VERSION="${PROJECT_VERSION}")
 
 # No console window on Windows (GUI subsystem), .app bundle on macOS.
 set_target_properties(wemod_enhancer_gui PROPERTIES WIN32_EXECUTABLE TRUE

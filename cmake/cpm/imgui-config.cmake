@@ -35,20 +35,22 @@ target_compile_features(imgui PUBLIC cxx_std_23)
 # -fmodule-mapper flags that the clang-tidy co-compilation rejects.
 set_target_properties(imgui PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 
-if(Freetype_FOUND)
-    if(NOT TARGET Freetype::Freetype)
-        message(
-            FATAL_ERROR
-                "find_package(Freetype) succeeded but the imported target "
-                "Freetype::Freetype is missing. Your FreeType install may be "
-                "too old or its CMake config is incomplete.")
-    endif()
+# FreeType is resolved before imgui (see cmake/cpm-config.cmake). A CPM
+# build tree exports the plain `freetype` target; an installed FreeType
+# (CMake's FindFreetype module or freetype's exported config) provides
+# Freetype::Freetype. Accept either, preferring the canonical name.
+if(TARGET Freetype::Freetype)
+    set(imgui_freetype_target Freetype::Freetype)
+elseif(TARGET freetype)
+    set(imgui_freetype_target freetype)
+endif()
 
+if(imgui_freetype_target)
     target_sources(imgui
                    PRIVATE ${imgui_SOURCE_DIR}/misc/freetype/imgui_freetype.cpp)
 
     # PUBLIC because imgui_freetype.h exposes FreeType types to consumers.
-    target_link_libraries(imgui PUBLIC Freetype::Freetype)
+    target_link_libraries(imgui PUBLIC ${imgui_freetype_target})
     target_include_directories(
         imgui SYSTEM
         PUBLIC $<BUILD_INTERFACE:${imgui_SOURCE_DIR}/misc/freetype>)
