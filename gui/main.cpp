@@ -37,7 +37,7 @@
 //   - SDL3 owns the platform glue: SDL_GetEnvironmentVariable instead
 //     of std::getenv, SDL_GetBasePath for the exe dir the patcher is
 //     unpacked next to, SDL_GetUserFolder for Downloads,
-//     SDL_GetPlatform for diagnostics, RAII for SDL_malloc'd strings.
+//     SDL_GetPlatform for diagnostics.
 //   - gsl::not_null for pointers out of C callbacks, gsl::finally for
 //     SDL_Quit, Expects() for preconditions; app state ownership is a
 //     std::unique_ptr (make_unique in SDL_AppInit, re-acquired in
@@ -235,13 +235,6 @@ struct app_state final
     std::string python_version;  // e.g. "Python 3.13.5"
     std::string python_location; // e.g. /usr/bin/python3
 };
-
-// RAII for SDL_malloc'd strings (SDL_GetBasePath, SDL_GetPrefPath).
-struct sdl_free final
-{
-    void operator()(void* ptr) const noexcept { SDL_free(ptr); }
-};
-using sdl_string = std::unique_ptr<char, sdl_free>;
 
 // --- Vararg-free ImGui helpers --------------------------------------
 // ImGui's formatted text API is printf-style varargs; these wrappers
@@ -508,11 +501,13 @@ void SDLCALL on_folder_chosen(void* userdata,
 
 // Dir the running exe sits in. SDL_GetBasePath picks it on every OS;
 // the patcher is unpacked next to the exe (patcher/<tag>/) so the
-// whole install stays one self-contained, movable folder.
+// whole install stays one self-contained, movable folder. The result
+// is SDL-owned internal memory (const char*, cached internally) -
+// unlike SDL_GetPrefPath it must NOT be freed, so plain pointer it is.
 [[nodiscard]] fs::path exe_dir()
 {
-    if (const sdl_string base{SDL_GetBasePath()}) {
-        return {base.get()};
+    if (const char* base{SDL_GetBasePath()}) {
+        return {base};
     }
     return fs::temp_directory_path() / "wemod_enhancer";
 }
