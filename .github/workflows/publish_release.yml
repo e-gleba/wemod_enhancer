@@ -387,6 +387,15 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Two release runs must never rebase-race the version commit:
+    # queue the bump jobs, never cancel them mid-push.
+    concurrency:
+      group: post-release-cmake-version-bump
+      cancel-in-progress: false
+    env:
+      # Bound once via env - never expand a workflow input into shell
+      # source (zizmor template-injection).
+      NEXT_VERSION: ${{ inputs.next_version }}
     steps:
       - name: checkout
         uses: actions/checkout@v7
@@ -396,21 +405,33 @@ jobs:
 
       - name: validate_next_version
         run: |
-          if [[ ! "${{ inputs.next_version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '${{ inputs.next_version }}'"
+          if [[ ! "$NEXT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf "::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '%s'\n" "$NEXT_VERSION"
+            exit 1
+          fi
+          current=$(grep -E '^[[:space:]]*VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          if [[ -z "$current" ]]; then
+            echo "::error::could not read the current project version from CMakeLists.txt"
+            exit 1
+          fi
+          # sort -V ordering: the smaller of the two sorts first, so an
+          # equal or lower next_version sorts first - reject both.
+          lowest=$(printf '%s\n%s\n' "$current" "$NEXT_VERSION" | sort -V | head -n1)
+          if [[ "$lowest" == "$NEXT_VERSION" ]]; then
+            printf "::error::next_version (%s) must be greater than the current project version (%s)\n" "$NEXT_VERSION" "$current"
             exit 1
           fi
 
       - name: bump_project_version
         run: |
-          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\1${{ inputs.next_version }}/" CMakeLists.txt
-          grep -E "^[[:space:]]*VERSION[[:space:]]+${{ inputs.next_version }}[[:space:]]*$" CMakeLists.txt
+          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\1$NEXT_VERSION/" CMakeLists.txt
+          grep -E "^[[:space:]]*VERSION[[:space:]]+$NEXT_VERSION[[:space:]]*$" CMakeLists.txt
 
       - name: commit_and_push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CMakeLists.txt
-          git commit -m "chore: bump CMake project version to ${{ inputs.next_version }}"
+          git commit -m "chore: bump CMake project version to $NEXT_VERSION"
           git pull --rebase origin main
           git push origin HEAD:main
