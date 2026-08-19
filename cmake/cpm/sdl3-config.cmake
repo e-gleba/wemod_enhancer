@@ -32,7 +32,7 @@ endif()
 endblock()
 
 # -------------------------------------------------------------------
-# Fetch SDL3: windowing, events, OpenGL context creation only
+# Fetch SDL3: windowing, events, rendering only
 # -------------------------------------------------------------------
 cpmaddpackage(
     NAME
@@ -55,14 +55,17 @@ cpmaddpackage(
     # ---- build tooling ----
     "SDL_PRECOMPILED_HEADERS OFF"
     "SDL_CCACHE ON"
-    # ---- library type: shared only ----
-    "SDL_STATIC OFF"
-    "SDL_SHARED ON"
+    # ---- library type: static only ----
+    # Static so the GUI executable is self-contained: no SDL3.dll /
+    # libSDL3.so to ship or install. X11/Wayland are still dlopen'd
+    # at runtime, so the binary runs on a bare OS install.
+    "SDL_STATIC ON"
+    "SDL_SHARED OFF"
     # ---- core subsystems ----
     "SDL_AUDIO OFF"
     "SDL_VIDEO ON"
     "SDL_GPU OFF"
-    "SDL_RENDER OFF"
+    "SDL_RENDER ON"
     "SDL_CAMERA OFF"
     "SDL_JOYSTICK OFF"
     "SDL_HAPTIC OFF"
