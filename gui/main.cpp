@@ -6,10 +6,15 @@
 // scrolling log.
 //
 // The patcher itself always comes from the GitHub releases: on first
-// run the app downloads the latest asset (curl on Linux, PowerShell on
-// Windows), unpacks wemod_enhancer.py + version.dll into the SDL pref
-// dir and reuses that copy from then on. No local files, no build-
-// machine paths baked in - the exe can be moved between PCs as-is.
+// run the app resolves the newest release tag, downloads that asset
+// (curl on Linux, PowerShell on Windows) and unpacks
+// wemod_enhancer.py + version.dll into patcher/<tag>/ next to the
+// exe. The newest tag dir wins at startup, so the install stays one
+// self-contained movable folder - no app-data dirs, no build-machine
+// paths baked in. A background check on every launch compares the
+// patcher in use against the newest release: a newer one raises an
+// "update available" hint with an Update button in the toolbar, and
+// the downloaded tag is used right away and on every later launch.
 // The only thing the user provides is the WeMod folder (auto-detected
 // at startup, so usually that is just pressing Patch).
 //
@@ -30,9 +35,9 @@
 //     #ifdef wherever both branches compile; the preprocessor only
 //     remains where names do not exist cross-platform (popen/pclose).
 //   - SDL3 owns the platform glue: SDL_GetEnvironmentVariable instead
-//     of std::getenv, SDL_GetPrefPath instead of hand-rolled cache-dir
-//     logic, SDL_GetUserFolder for Downloads, SDL_GetPlatform for
-//     diagnostics, RAII for SDL_malloc'd strings.
+//     of std::getenv, SDL_GetBasePath for the exe dir the patcher is
+//     unpacked next to, SDL_GetUserFolder for Downloads,
+//     SDL_GetPlatform for diagnostics.
 //   - gsl::not_null for pointers out of C callbacks, gsl::finally for
 //     SDL_Quit, Expects() for preconditions; app state ownership is a
 //     std::unique_ptr (make_unique in SDL_AppInit, re-acquired in
@@ -125,17 +130,20 @@ constexpr std::string_view target_arch{"arm64"};
 constexpr std::string_view target_arch{"unknown"};
 #endif
 
-// Latest GitHub release asset carrying the patcher (wemod_enhancer.py
-// + version.dll under bin/). Downloaded on first run - the only remote
-// endpoint the app knows; everything local is derived at runtime.
-constexpr std::string_view release_asset_url{
+// GitHub release asset carrying the patcher (wemod_enhancer.py +
+// version.dll under bin/). Downloaded on first run and on Update -
+// the only remote endpoint the app knows; everything local is derived
+// at runtime.
+constexpr std::string_view release_asset_name{
     is_windows
-        ? std::string_view(
-              "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
-              "wemod_enhancer-windows-msvc-amd64.zip")
+        ? std::string_view("wemod_enhancer-windows-msvc-amd64.zip")
         : std::string_view(
-              "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/"
               "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz")};
+
+// Newest-release lookup for the update check: the JSON carries the
+// tag the download URL and the patcher/<tag>/ dir are built from.
+constexpr std::string_view release_api_url{
+    "https://api.github.com/repos/e-gleba/wemod_enhancer/releases/latest"};
 
 // "Download WeMod" endpoints. Windows: the official installer direct
 // link (what https://www.wemod.com/download serves). Linux: the
@@ -191,8 +199,9 @@ struct run_result final
 
 // What the current background command is, so poll_run() can react to
 // completion: refresh resolved paths after a download, record the
-// Python probe result, narrate the WeMod fetch.
-enum class run_kind : std::uint8_t { patcher, bootstrap, probe, wemod };
+// Python probe result, narrate the WeMod fetch, apply the update
+// check.
+enum class run_kind : std::uint8_t { patcher, bootstrap, probe, wemod, check };
 static_assert(std::is_enum_v<run_kind>);
 
 // Python probe tri-state: unknown / failed / works.
@@ -207,6 +216,7 @@ struct app_state final
     SDL_Renderer* renderer{nullptr};
     std::string install_dir;
     std::string script_path;
+    std::string patcher_version; // tag of the patcher in use, e.g. "v1.0.4"
     std::string python;
     std::string version_dll; // empty = the script auto-detects it
     std::string log;
@@ -217,18 +227,14 @@ struct app_state final
     bool has_run{false};
     std::int32_t last_exit_code{0};
     float copied_flash{0.0F}; // seconds left of "Copied!" feedback
+    // --- update check ---
+    std::string latest_tag;       // newest release tag, empty until checked
+    bool update_requested{false}; // a finished check downloads right away
     // --- diagnostics ---
     probe_state python_ok{probe_state::unknown};
     std::string python_version;  // e.g. "Python 3.13.5"
     std::string python_location; // e.g. /usr/bin/python3
 };
-
-// RAII for SDL_malloc'd strings (SDL_GetBasePath, SDL_GetPrefPath).
-struct sdl_free final
-{
-    void operator()(void* ptr) const noexcept { SDL_free(ptr); }
-};
-using sdl_string = std::unique_ptr<char, sdl_free>;
 
 // --- Vararg-free ImGui helpers --------------------------------------
 // ImGui's formatted text API is printf-style varargs; these wrappers
@@ -350,13 +356,16 @@ void sdl_log_error(const std::string& message)
     return result;
 }
 
-// "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0.
+// "app-10.2.3" or "v1.2.3" -> {10, 2, 3}; non-numeric tokens become 0.
 [[nodiscard]] constexpr std::vector<std::int32_t>
 version_parts(std::string name)
 {
     constexpr std::string_view prefix{"app-"};
     if (name.starts_with(prefix)) {
         name.erase(0, prefix.size());
+    }
+    if (name.starts_with('v')) { // release tags
+        name.erase(0, 1);
     }
     std::vector<std::int32_t> parts;
     std::size_t pos{0};
@@ -490,15 +499,23 @@ void SDLCALL on_folder_chosen(void* userdata,
     }
 }
 
-// Per-user writable dir for the downloaded patcher. SDL_GetPrefPath
-// picks the right place on every OS (%APPDATA%\org\app on Windows,
-// XDG data home on Linux) and creates the directory for us.
-[[nodiscard]] fs::path bootstrap_root()
+// Dir the running exe sits in. SDL_GetBasePath picks it on every OS;
+// the patcher is unpacked next to the exe (patcher/<tag>/) so the
+// whole install stays one self-contained, movable folder. The result
+// is SDL-owned internal memory (const char*, cached internally) -
+// unlike SDL_GetPrefPath it must NOT be freed, so plain pointer it is.
+[[nodiscard]] fs::path exe_dir()
 {
-    if (const sdl_string pref{SDL_GetPrefPath("e-gleba", "wemod_enhancer")}) {
-        return {pref.get()};
+    if (const char* base{SDL_GetBasePath()}) {
+        return {base};
     }
     return fs::temp_directory_path() / "wemod_enhancer";
+}
+
+// Root of the unpacked patcher releases: patcher/<tag>/ per version.
+[[nodiscard]] fs::path patcher_root()
+{
+    return exe_dir() / "patcher";
 }
 
 // The release archive carries the CLI under bin/; search recursively
@@ -515,12 +532,47 @@ void SDLCALL on_folder_chosen(void* userdata,
     return {};
 }
 
-// The patcher always comes from the releases: downloaded once
-// into the pref dir, then reused on every launch. Settings has a
-// button to re-download the newest release.
+// The <tag> in patcher/<tag>/... that holds this script - the version
+// of the patcher in use. Empty when the script lives elsewhere.
+[[nodiscard]] std::string patcher_tag_of(const fs::path& script)
+{
+    if (script.empty()) {
+        return {};
+    }
+    std::error_code ec;
+    const fs::path rel{fs::relative(script, patcher_root(), ec)};
+    if (ec || rel.empty() || rel.begin() == rel.end()) {
+        return {};
+    }
+    return rel.begin()->string();
+}
+
+// The patcher always comes from the releases: every downloaded tag
+// sits in its own patcher/<tag>/ dir next to the exe and the newest
+// one wins, so an Update download is used on this launch and every
+// later one. Settings has a button to fetch the newest release.
 [[nodiscard]] std::string cached_script()
 {
-    return find_script_under(bootstrap_root() / "patcher").string();
+    std::error_code ec;
+    const fs::path root{patcher_root()};
+    if (!fs::is_directory(root, ec)) {
+        return {};
+    }
+    std::vector<fs::path> scripts;
+    for (const auto& entry : fs::directory_iterator(root, ec)) {
+        if (!entry.is_directory(ec)) {
+            continue;
+        }
+        if (const fs::path script{find_script_under(entry.path())};
+            !script.empty()) {
+            scripts.push_back(script);
+        }
+    }
+    const auto newest{
+        std::ranges::max_element(scripts, {}, [](const fs::path& path) {
+            return version_parts(patcher_tag_of(path));
+        })};
+    return newest == scripts.end() ? std::string{} : newest->string();
 }
 
 // Launch a background command and stream its output into the log.
@@ -562,34 +614,75 @@ void start_run(app_state& state, const char* subcommand)
     start_command(state, run_kind::patcher, shown, command);
 }
 
-// Download + unpack the latest release asset with the tools every base
-// OS install already has: curl + tar on Linux, PowerShell on Windows.
-// The log shows the real command line - no shorthand.
-void start_bootstrap(app_state& state)
+// Download URL for one release tag; an empty tag means the latest
+// release (used only for diagnostics - downloads always name a tag).
+[[nodiscard]] std::string asset_url_for(const std::string_view tag)
 {
-    const fs::path dir{bootstrap_root() / "patcher"};
+    const std::string base{
+        "https://github.com/e-gleba/wemod_enhancer/releases/"};
+    if (tag.empty()) {
+        return base + "latest/download/" + std::string(release_asset_name);
+    }
+    return base + "download/" + std::string(tag) + "/" +
+        std::string(release_asset_name);
+}
+
+// Download + unpack one release tag into patcher/<tag>/ next to the
+// exe, with the tools every base OS install already has: curl + tar
+// on Linux, PowerShell on Windows. The log shows the real command
+// line - no shorthand.
+void start_bootstrap(app_state& state, const std::string& tag)
+{
+    Expects(!tag.empty());
+    const fs::path dir{patcher_root() / tag};
+    const std::string url{asset_url_for(tag)};
     std::string command;
     if constexpr (is_windows) {
-        const fs::path archive{bootstrap_root() / "patcher.zip"};
+        const fs::path archive{patcher_root() / (tag + ".zip")};
         command =
             "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
             "$ProgressPreference='SilentlyContinue'; "
             "New-Item -ItemType Directory -Force -Path '" + dir.string() +
             "' | Out-Null; "
-            "Invoke-WebRequest -Uri '" + std::string(release_asset_url) +
+            "Invoke-WebRequest -Uri '" + url +
             "' -OutFile '" + archive.string() + "'; "
             "Expand-Archive -Force -Path '" + archive.string() +
             "' -DestinationPath '" + dir.string() + "'\"";
     } else {
-        const fs::path archive{bootstrap_root() / "patcher.tar.xz"};
+        const fs::path archive{patcher_root() / (tag + ".tar.xz")};
         command =
             "mkdir -p " + shell_quote(dir.string()) + " && curl -fL " +
-            shell_quote(release_asset_url) + " -o " +
+            shell_quote(url) + " -o " +
             shell_quote(archive.string()) + " && tar -xf " +
             shell_quote(archive.string()) + " -C " +
             shell_quote(dir.string());
     }
     start_command(state, run_kind::bootstrap, command, command);
+}
+
+// Resolve the newest release tag in the background. With
+// download_after (first run without a patcher, Update / Download now)
+// the download of that tag starts right away; otherwise a newer tag
+// only raises the Update hint in the toolbar.
+void start_check(app_state& state, const bool download_after)
+{
+    if (download_after) {
+        state.update_requested = true;
+    }
+    std::string command;
+    if constexpr (is_windows) {
+        command =
+            "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+            "(Invoke-RestMethod -Uri '" + std::string(release_api_url) +
+            "').tag_name\"";
+    } else {
+        // [ -n "$out" ]: a failed curl still exits 0 through the pipe,
+        // so the empty result is what makes the check fail loudly.
+        command = "out=$(curl -fsSL " + shell_quote(release_api_url) +
+            " | grep -m1 '\"tag_name\"' | cut -d'\"' -f4) && "
+            "[ -n \"$out\" ] && echo \"$out\"";
+    }
+    start_command(state, run_kind::check, command, command);
 }
 
 // "Download WeMod" does the real thing, no dialogs:
@@ -606,7 +699,7 @@ void start_wemod_download(app_state& state)
         const char* downloads_c{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
         const fs::path downloads{downloads_c != nullptr
                                      ? downloads_c
-                                     : bootstrap_root().string()};
+                                     : exe_dir().string()};
         const fs::path setup{downloads / "WeMod-Setup.exe"};
         const std::string command{
             "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
@@ -689,6 +782,28 @@ void parse_probe(app_state& state, const std::string& output)
     }
 }
 
+// First line of the update-check output, trimmed and validated:
+// "v1.0.4" stays, anything else (error text, empty) means no tag.
+[[nodiscard]] std::string parse_release_tag(const std::string& output)
+{
+    const std::size_t eol{output.find('\n')};
+    std::string_view line{output.data(),
+                          eol == std::string::npos ? output.size() : eol};
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
+        line.remove_suffix(1);
+    }
+    if (line.size() < 2 || line.front() != 'v') {
+        return {};
+    }
+    const std::string_view digits{line.substr(1)};
+    const bool valid{
+        std::ranges::all_of(digits, [](const char c) {
+            return (c >= '0' && c <= '9') || c == '.';
+        }) &&
+        digits.find_first_of("0123456789") != std::string_view::npos};
+    return valid ? std::string(line) : std::string{};
+}
+
 void poll_run(app_state& state)
 {
     if (!state.running ||
@@ -722,6 +837,7 @@ void poll_run(app_state& state)
             break;
         }
         if (state.script_path = cached_script(); !state.script_path.empty()) {
+            state.patcher_version = patcher_tag_of(state.script_path);
             state.log += "patcher ready: " + state.script_path + "\n\n";
             start_probe(state); // chain: confirm Python works too
         } else {
@@ -764,6 +880,41 @@ void poll_run(app_state& state)
         state.python_ok = result.exit_code == 0 ? probe_state::works
                                                 : probe_state::failed;
         parse_probe(state, result.output);
+        // Startup chain continues: with a patcher already in place the
+        // probe ran first, so the background update check starts now.
+        // (First run checked before downloading - latest_tag is set.)
+        if (state.latest_tag.empty()) {
+            start_check(state, false);
+        }
+        break;
+    case run_kind::check:
+        if (result.exit_code != 0) {
+            state.update_requested = false;
+            state.log +=
+                "error: could not check for updates - the network or "
+                "GitHub is unreachable.\n"
+                "  the current patcher keeps working; the next launch "
+                "retries the check.\n\n";
+            break;
+        }
+        state.latest_tag = parse_release_tag(result.output);
+        if (state.latest_tag.empty()) {
+            state.update_requested = false;
+            state.log +=
+                "error: the update check returned no release tag.\n"
+                "  fix: press Report bug below - this should not happen.\n\n";
+            break;
+        }
+        if (state.update_requested || state.script_path.empty()) {
+            // First run without a patcher, or Update / Download now:
+            // fetch the tag the check just resolved.
+            state.update_requested = false;
+            start_bootstrap(state, state.latest_tag);
+        } else if (state.latest_tag != state.patcher_version) {
+            state.log += "patcher update available: " + state.latest_tag +
+                " (in use: " + state.patcher_version + ").\n"
+                "  press Update below to download it next to the exe.\n\n";
+        }
         break;
     case run_kind::patcher:
         if (result.exit_code != 0) {
@@ -784,9 +935,9 @@ void poll_run(app_state& state)
     info += std::string(gui_version) + "\n";
     info += "platform: " + std::string(SDL_GetPlatform()) + " " +
         std::string(target_arch) + "\n";
-    // The exact URL the patcher is fetched from - a bug report must
+    // The exact URL the patcher was fetched from - a bug report must
     // show which release artifact was actually downloaded.
-    info += "patcher url: " + std::string(release_asset_url) + "\n";
+    info += "patcher url: " + asset_url_for(state.patcher_version) + "\n";
     info += "wemod folder: " +
         (state.install_dir.empty() ? std::string("<not set>")
                                    : state.install_dir) +
@@ -892,6 +1043,8 @@ bool fit_button(const char* label)
     switch (kind) {
     case run_kind::bootstrap:
         return "Downloading the latest patcher release...";
+    case run_kind::check:
+        return "Checking for updates...";
     case run_kind::probe:
         return "Checking Python...";
     case run_kind::wemod:
@@ -1108,13 +1261,17 @@ void draw_ui(app_state& state)
 
         field_label("Patcher");
         help_marker(
-            "wemod_enhancer.py + version.dll, downloaded from the latest "
-            "GitHub release into the app data dir. Download now fetches "
-            "the newest release again.",
+            "wemod_enhancer.py + version.dll, downloaded from the GitHub "
+            "releases into patcher/<tag>/ next to the exe - the newest "
+            "tag wins. Download now fetches the newest release again.",
             "https://github.com/e-gleba/wemod_enhancer/releases/latest");
         ImGui::SameLine();
         if (script_ok) {
-            text_colored(color_ok, "ready");
+            text_colored(color_ok,
+                         "ready" +
+                             (state.patcher_version.empty()
+                                  ? std::string{}
+                                  : " " + state.patcher_version));
             ImGui::SameLine();
             text_disabled(state.script_path);
         } else if (state.running && state.kind == run_kind::bootstrap) {
@@ -1124,7 +1281,7 @@ void draw_ui(app_state& state)
             ImGui::SameLine();
             ImGui::BeginDisabled(state.running);
             if (fit_button("Download now")) {
-                start_bootstrap(state);
+                start_check(state, true);
             }
             ImGui::EndDisabled();
         }
@@ -1218,6 +1375,28 @@ void draw_ui(app_state& state)
         text_colored(color_ok, "Copied!");
     }
 
+    // Update hint in the toolbar: only when the background check found
+    // a release newer than the patcher in use. Update re-checks (the
+    // hint may be stale) and downloads the newest tag right away.
+    const bool update_available{!state.latest_tag.empty() &&
+                                !state.script_path.empty() &&
+                                state.latest_tag != state.patcher_version};
+    if (update_available) {
+        ImGui::SameLine();
+        text_colored(color_warn, "update available: " + state.latest_tag);
+        ImGui::SameLine();
+        ImGui::BeginDisabled(state.running);
+        if (fit_button("Update")) {
+            start_check(state, true);
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            tooltip_text("Download patcher " + state.latest_tag +
+                         " into patcher/" + state.latest_tag +
+                         "/ next to the exe and use it from now on");
+        }
+    }
+
     // Build version pinned to the right end of the bottom toolbar row:
     // the CMake project version, injected at compile time - the GUI
     // can never show a version that differs from its package.
@@ -1301,6 +1480,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     state.renderer = renderer;
     state.install_dir = default_install_dir();
     state.script_path = cached_script();
+    state.patcher_version = patcher_tag_of(state.script_path);
     state.python = std::string(default_python);
 
     // Say what was auto-detected up front - the log doubles as the
@@ -1313,10 +1493,12 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
             "auto-detected WeMod install: " + state.install_dir + "\n\n";
     }
 
-    // The patcher always comes from the releases: reuse the unpacked
-    // copy when present, otherwise download + unpack the latest asset.
+    // The patcher always comes from the releases: reuse the newest
+    // unpacked tag when present, otherwise resolve the newest release
+    // tag and download it. The update check rides along either way -
+    // chained after the Python probe when a patcher already exists.
     if (state.script_path.empty()) {
-        start_bootstrap(state);
+        start_check(state, true);
     } else {
         state.log += "using downloaded patcher: " + state.script_path + "\n\n";
         start_probe(state);

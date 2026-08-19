@@ -12,6 +12,10 @@ on:
         required: false
         type: string
         default: ''
+      next_version:
+        description: 'Next CMake project version, no v prefix (e.g. 1.0.5) - bot commits it to main after the release'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -372,3 +376,62 @@ jobs:
             --title "${{ inputs.version }}" \
             --notes-file release_notes.md \
             artifacts/*
+
+  # ── Post-release: bump CMake project version on main ───────────────────────
+  # Runs only after the release is published, so the tag and the
+  # just-built artifacts stay untouched. This prepares main for the NEXT
+  # release: packages always ship the project() version of their own tag.
+  bump_cmake_version:
+    name: Bump CMake version on main
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Two release runs must never rebase-race the version commit:
+    # queue the bump jobs, never cancel them mid-push.
+    concurrency:
+      group: post-release-cmake-version-bump
+      cancel-in-progress: false
+    env:
+      # Bound once via env - never expand a workflow input into shell
+      # source (zizmor template-injection).
+      NEXT_VERSION: ${{ inputs.next_version }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: validate_next_version
+        run: |
+          if [[ ! "$NEXT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf "::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '%s'\n" "$NEXT_VERSION"
+            exit 1
+          fi
+          current=$(grep -E '^[[:space:]]*VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          if [[ -z "$current" ]]; then
+            echo "::error::could not read the current project version from CMakeLists.txt"
+            exit 1
+          fi
+          # sort -V ordering: the smaller of the two sorts first, so an
+          # equal or lower next_version sorts first - reject both.
+          lowest=$(printf '%s\n%s\n' "$current" "$NEXT_VERSION" | sort -V | head -n1)
+          if [[ "$lowest" == "$NEXT_VERSION" ]]; then
+            printf "::error::next_version (%s) must be greater than the current project version (%s)\n" "$NEXT_VERSION" "$current"
+            exit 1
+          fi
+
+      - name: bump_project_version
+        run: |
+          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\1$NEXT_VERSION/" CMakeLists.txt
+          grep -E "^[[:space:]]*VERSION[[:space:]]+$NEXT_VERSION[[:space:]]*$" CMakeLists.txt
+
+      - name: commit_and_push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CMakeLists.txt
+          git commit -m "chore: bump CMake project version to $NEXT_VERSION"
+          git pull --rebase origin main
+          git push origin HEAD:main
