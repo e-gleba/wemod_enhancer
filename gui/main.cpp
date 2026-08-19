@@ -168,8 +168,8 @@ struct run_result final
 
 // What the current background command is, so poll_run() can react to
 // completion: refresh resolved paths after a download, record the
-// Python probe result, re-check the wemod-launcher clone...
-enum class run_kind : std::uint8_t { patcher, bootstrap, probe, launcher };
+// Python probe result.
+enum class run_kind : std::uint8_t { patcher, bootstrap, probe };
 static_assert(std::is_enum_v<run_kind>);
 
 // Python probe tri-state: unknown / failed / works.
@@ -198,8 +198,6 @@ struct app_state final
     probe_state python_ok{probe_state::unknown};
     std::string python_version;  // e.g. "Python 3.13.5"
     std::string python_location; // e.g. /usr/bin/python3
-    bool launcher_present{false}; // Linux: ~/wemod-launcher exists
-    bool launcher_note{false};    // "I've done it" but still missing
 };
 
 // RAII for SDL_malloc'd strings (SDL_GetBasePath, SDL_GetPrefPath).
@@ -601,35 +599,6 @@ void parse_probe(app_state& state, const std::string& output)
     }
 }
 
-// wemod-launcher clone location used by the readme tutorial. Linux-only
-// in practice (HOME is unset on Windows, so the row stays hidden).
-[[nodiscard]] fs::path launcher_dir()
-{
-    if (const char* home{env_var("HOME")}) {
-        return fs::path(home) / "wemod-launcher";
-    }
-    return {};
-}
-
-[[nodiscard]] bool launcher_installed()
-{
-    std::error_code ec;
-    const fs::path dir{launcher_dir()};
-    return !dir.empty() && fs::is_directory(dir, ec);
-}
-
-// Same steps as the readme tutorial: clone into ~, mark the launcher
-// script executable. The log shows the real command line - no shorthand.
-void start_launcher_clone(app_state& state)
-{
-    const fs::path dir{launcher_dir()};
-    const std::string command{
-        "git clone https://github.com/DaniAsh551/wemod-launcher " +
-        shell_quote(dir.string()) + " && chmod +x " +
-        shell_quote((dir / "wemod").string())};
-    start_command(state, run_kind::launcher, command, command);
-}
-
 void poll_run(app_state& state)
 {
     if (!state.running ||
@@ -676,14 +645,6 @@ void poll_run(app_state& state)
         state.python_ok = result.exit_code == 0 ? probe_state::works
                                                 : probe_state::failed;
         parse_probe(state, result.output);
-        break;
-    case run_kind::launcher:
-        state.launcher_present = launcher_installed();
-        if (!state.launcher_present && result.exit_code != 0) {
-            state.log += "error: could not clone wemod-launcher.\n"
-                         "  fix: make sure git is installed (preinstalled "
-                         "on SteamOS), then retry.\n\n";
-        }
         break;
     case run_kind::patcher:
         if (result.exit_code != 0) {
@@ -810,8 +771,6 @@ bool fit_button(const char* label)
         return "Downloading the latest patcher release...";
     case run_kind::probe:
         return "Checking Python...";
-    case run_kind::launcher:
-        return "Downloading wemod-launcher...";
     case run_kind::patcher:
         break;
     }
@@ -914,13 +873,38 @@ void draw_ui(app_state& state)
                                  false);
     }
 
-    // Validity indicator: what the folder must contain, or what to do.
+    // Validity indicator + download suggestion when invalid.
     if (install_ok) {
         text_colored(color_ok, "ready");
     } else if (!state.install_dir.empty()) {
         text_colored(color_err,
-                     "must contain resources\\app.asar - download WeMod, "
-                     "run it once, log in, then pick the folder again");
+                     "must contain resources\\app.asar");
+        ImGui::SameLine();
+        if (fit_button("Download WeMod")) {
+            if constexpr (is_windows) {
+                if (!SDL_OpenURL("https://www.wemod.com/download")) {
+                    sdl_log_error(
+                        std::string("SDL_OpenURL(wemod): ") +
+                        SDL_GetError());
+                }
+            } else {
+                // Linux: wemod-launcher is the Proton wrapper.
+                if (!SDL_OpenURL(
+                        "https://github.com/DaniAsh551/wemod-launcher")) {
+                    sdl_log_error(
+                        std::string("SDL_OpenURL(wemod-launcher): ") +
+                        SDL_GetError());
+                }
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            tooltip_text(
+                is_windows
+                    ? "Open the official WeMod download page - install, "
+                      "run once, log in, then pick the folder again"
+                    : "Open the wemod-launcher repo - clone it, run once, "
+                      "log in, then pick the folder again");
+        }
     } else {
         text_disabled(
             "must contain resources\\app.asar - download WeMod, run it "
@@ -1020,46 +1004,6 @@ void draw_ui(app_state& state)
                 start_bootstrap(state);
             }
             ImGui::EndDisabled();
-        }
-
-        // wemod-launcher (Linux / Steam Deck): the Proton wrapper from
-        // the readme tutorial. Offer to fetch it the same way, or let
-        // the user confirm it is already installed.
-        if (const fs::path launcher{launcher_dir()}; !launcher.empty()) {
-            field_label("wemod-launcher");
-            help_marker(
-                "Linux runs WeMod through wemod-launcher (Proton). The "
-                "readme tutorial clones it into the home directory.",
-                "https://github.com/DaniAsh551/wemod-launcher");
-            ImGui::SameLine();
-            if (state.launcher_present) {
-                text_colored(color_ok, "found");
-                ImGui::SameLine();
-                text_disabled(launcher.string());
-            } else {
-                text_colored(color_warn, "not found in the home dir");
-                ImGui::SameLine();
-                ImGui::TextUnformatted(
-                    "- download it like in the tutorial?");
-                ImGui::SameLine();
-                ImGui::BeginDisabled(state.running);
-                if (fit_button("Yes, download")) {
-                    start_launcher_clone(state);
-                }
-                ImGui::EndDisabled();
-                ImGui::SameLine();
-                if (fit_button("I've done it")) {
-                    state.launcher_present = launcher_installed();
-                    state.launcher_note = !state.launcher_present;
-                }
-                if (state.launcher_note) {
-                    text_colored(
-                        color_warn,
-                        "still not found at " + launcher.string() +
-                            " - if it lives elsewhere, point the WeMod "
-                            "folder above at it");
-                }
-            }
         }
 
         ImGui::Spacing();
@@ -1226,7 +1170,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     state.install_dir = default_install_dir();
     state.script_path = cached_script();
     state.python = std::string(default_python);
-    state.launcher_present = launcher_installed();
 
     // Say what was auto-detected up front - the log doubles as the
     // "what is happening" narration that bug reports share. The field
