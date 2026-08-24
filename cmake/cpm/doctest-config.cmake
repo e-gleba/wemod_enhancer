@@ -4,7 +4,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     doctest/doctest
     VERSION
-    2.5.2
+    2.5.3
     GIT_TAG
     v2.5.2
     GIT_SHALLOW
