@@ -4,7 +4,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     lua/lua
     VERSION
-    5.5.0
+    5.5.1
     EXCLUDE_FROM_ALL
     ON
     DOWNLOAD_ONLY
