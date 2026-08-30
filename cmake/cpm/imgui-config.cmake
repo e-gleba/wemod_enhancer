@@ -92,7 +92,7 @@ endif()
 # Needs no OpenGL development files — SDL3 loads the platform graphics
 # APIs (Direct3D/Vulkan/OpenGL/software) dynamically at runtime, so the
 # executable stays self-contained. Works for native and cross builds.
-if(TARGET SDL3::SDL3)
+if(TARGET SDL3::SDL3 AND ct_sdl_render)
     add_library(imgui_sdl3_renderer STATIC EXCLUDE_FROM_ALL )
     add_library(imgui::sdl3_renderer ALIAS imgui_sdl3_renderer)
 
