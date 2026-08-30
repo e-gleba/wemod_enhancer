@@ -22,7 +22,7 @@ endif()
 
 # --- tunables ----------------------------------------------------------------
 set(LLVM_MINGW_VERSION
-    "20260616"
+    "20260826"
     CACHE STRING "llvm-mingw release tag")
 set(LLVM_MINGW_HOST_OS
     "ubuntu-22.04"
@@ -62,8 +62,16 @@ endif()
 # Anchor to the project root (two levels up from cmake/toolchains/).
 # CMAKE_SOURCE_DIR is NOT used here: it breaks in try_compile() sub-projects
 # and FetchContent calls, where CMAKE_SOURCE_DIR points at the sub-project.
-cmake_path(GET CMAKE_CURRENT_LIST_DIR PARENT_PATH llvm_mingw_cmake_dir)
-cmake_path(GET llvm_mingw_cmake_dir PARENT_PATH llvm_mingw_project_root)
+cmake_path(
+    GET
+    CMAKE_CURRENT_LIST_DIR
+    PARENT_PATH
+    llvm_mingw_cmake_dir)
+cmake_path(
+    GET
+    llvm_mingw_cmake_dir
+    PARENT_PATH
+    llvm_mingw_project_root)
 
 set(llvm_mingw_install_dir "${llvm_mingw_project_root}/llvm_mingw")
 set(llvm_mingw_pkg
@@ -88,26 +96,48 @@ if(NOT EXISTS "${llvm_mingw_install_dir}/bin/${llvm_mingw_triple}-clang")
     endif()
 
     message(STATUS "llvm-mingw: fetching '${llvm_mingw_pkg}'")
-    set(llvm_mingw_download_args TLS_VERIFY ON SHOW_PROGRESS STATUS
-                                 llvm_mingw_dl_status)
+    set(llvm_mingw_download_args
+        TLS_VERIFY
+        ON
+        SHOW_PROGRESS
+        STATUS
+        llvm_mingw_dl_status)
     if(LLVM_MINGW_TARBALL_SHA256)
-        list(APPEND llvm_mingw_download_args EXPECTED_HASH
-             "SHA256=${LLVM_MINGW_TARBALL_SHA256}")
+        list(
+            APPEND
+            llvm_mingw_download_args
+            EXPECTED_HASH
+            "SHA256=${LLVM_MINGW_TARBALL_SHA256}")
     endif()
     file(DOWNLOAD "${llvm_mingw_url}" "${llvm_mingw_archive}"
          ${llvm_mingw_download_args})
 
-    list(GET llvm_mingw_dl_status 0 llvm_mingw_dl_code)
-    if(NOT llvm_mingw_dl_code EQUAL 0)
-        list(GET llvm_mingw_dl_status 1 llvm_mingw_dl_msg)
+    list(
+        GET
+        llvm_mingw_dl_status
+        0
+        llvm_mingw_dl_code)
+    if(NOT
+       llvm_mingw_dl_code
+       EQUAL
+       0)
+        list(
+            GET
+            llvm_mingw_dl_status
+            1
+            llvm_mingw_dl_msg)
         file(REMOVE "${llvm_mingw_archive}")
         message(
             FATAL_ERROR "llvm-mingw: download failed => ${llvm_mingw_dl_msg}")
     endif()
 
     message(STATUS "llvm-mingw: extracting '${llvm_mingw_pkg}.tar.xz'")
-    file(ARCHIVE_EXTRACT INPUT "${llvm_mingw_archive}" DESTINATION
-         "${llvm_mingw_project_root}")
+    file(
+        ARCHIVE_EXTRACT
+        INPUT
+        "${llvm_mingw_archive}"
+        DESTINATION
+        "${llvm_mingw_project_root}")
     file(REMOVE_RECURSE "${llvm_mingw_install_dir}")
     file(RENAME "${llvm_mingw_project_root}/${llvm_mingw_pkg}"
          "${llvm_mingw_install_dir}")
