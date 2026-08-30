@@ -1,5 +1,5 @@
 {
-    "$schema": "https://cmake.org/cmake/help/latest/_downloads/3e2d73bff478d88a7de0de736ba5e361/schema.json",
+    "$schema": "https://json.schemastore.org/cmake-presets.json",
     "version": 10,
     "cmakeMinimumRequired": {
         "major": 3,
@@ -8,9 +8,17 @@
     },
     "configurePresets": [
         {
+            "name": "base",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
             "name": "llvm-mingw-x86_64",
             "displayName": "LLVM-MinGW Windows x86-64",
             "description": "Cross-compile version.dll for Windows x86-64 from Linux (DLL only, no GUI)",
+            "inherits": "base",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/toolchains/llvm_mingw.cmake",
@@ -27,6 +35,7 @@
             "name": "msvc",
             "displayName": "Microsoft Visual C++ x86-64",
             "description": "Build version.dll natively on Windows with MSVC (DLL only, no GUI)",
+            "inherits": "base",
             "generator": "Visual Studio 17 2022",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "architecture": {
@@ -47,6 +56,7 @@
             "name": "clang-windows-amd64",
             "displayName": "Clang Windows AMD64 (MSVC ABI)",
             "description": "Native Windows 64-bit version.dll using pure Clang (GNU driver, MSVC ABI) with Ninja (DLL only, no GUI)",
+            "inherits": "base",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -109,7 +119,10 @@
             "name": "gui-linux-gcc-amd64",
             "displayName": "GUI Linux AMD64 (GCC)",
             "description": "Build wemod_enhancer_gui.elf natively on Linux x86-64 with GCC (GUI only, no version.dll)",
-            "inherits": "gui-base",
+            "inherits": [
+                "base",
+                "gui-base"
+            ],
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {

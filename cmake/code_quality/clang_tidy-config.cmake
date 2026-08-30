@@ -4,8 +4,8 @@
 #   2. Standalone      — run-clang-tidy wrapper target (any generator)
 #
 # Both use compile_commands.json so clang-tidy sees the *real*
-# compiler flags, not a hardcoded -std=c++20.
-# Settings live in .clang-tidy (YAML), not on the command line.
+# compiler flags. Settings live in .clang-tidy (YAML), not on the
+# command line.
 
 find_program(
     clang_tidy_exe
@@ -13,38 +13,22 @@ find_program(
     DOC "clang-tidy static analyzer" OPTIONAL)
 
 if(clang_tidy_exe)
-    # ── compile_commands.json ──────────────────────────────────────
     # Negligible cost, enables all clang-based tools.
     set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
-    # ── Co-compilation (per-file, during build) ────────────────────
-    # -p ${CMAKE_BINARY_DIR}: since CMake 3.25 this changes how
-    # CMake constructs the clang-tidy invocation, avoiding a bug
-    # where clang-tidy finds wrong toolchain headers.
-    # Ref: Professional CMake §32.1.1
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.25")
-        set(CMAKE_CXX_CLANG_TIDY
-            "${clang_tidy_exe}" -p "${CMAKE_BINARY_DIR}"
-            CACHE STRING "clang-tidy co-compilation command")
-    else()
-        set(CMAKE_CXX_CLANG_TIDY
-            "${clang_tidy_exe}"
-            CACHE STRING "clang-tidy co-compilation command")
-    endif()
+    # -p ${CMAKE_BINARY_DIR}: point clang-tidy at the compilation
+    # database so it resolves the correct toolchain headers.
+    set(CMAKE_CXX_CLANG_TIDY
+        "${clang_tidy_exe}" -p "${CMAKE_BINARY_DIR}"
+        CACHE STRING "clang-tidy co-compilation command")
 
-    # ── Copy .clang-tidy into build tree ───────────────────────────
-    # Generated sources live in the build dir.  Without a
-    # .clang-tidy there, they get no settings (or wrong defaults)
-    # when the build dir is outside the source tree.
-    # configure_file works correctly even under FetchContent.
+    # Generated sources live in the build tree; without a .clang-tidy
+    # there they get wrong defaults when the build dir is out-of-source.
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy")
         configure_file(.clang-tidy .clang-tidy COPYONLY)
     endif()
 
-    # ── Standalone target (whole-project, parallel) ────────────────
-    # run-clang-tidy uses the compilation database and runs
-    # clang-tidy in parallel across all TUs — far faster than
-    # a serial custom target, and works with any generator.
+    # run-clang-tidy parallelizes across all TUs via the database.
     find_program(
         run_clang_tidy_exe
         NAMES run-clang-tidy run-clang-tidy.py

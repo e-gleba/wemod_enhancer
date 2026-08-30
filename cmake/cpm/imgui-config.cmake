@@ -31,10 +31,6 @@ target_include_directories(
 
 target_compile_features(imgui PUBLIC cxx_std_23)
 
-# No C++ modules anywhere: CMP0155 scanning would make GCC/Clang emit
-# -fmodule-mapper flags that the clang-tidy co-compilation rejects.
-set_target_properties(imgui PROPERTIES CXX_SCAN_FOR_MODULES OFF)
-
 # FreeType is resolved before imgui (see cmake/cpm-config.cmake). A CPM
 # build tree exports the plain `freetype` target; an installed FreeType
 # (CMake's FindFreetype module or freetype's exported config) provides
@@ -84,8 +80,6 @@ if(TARGET SDL3::SDL3)
                                                      SDL3::SDL3)
 
     target_compile_features(imgui_sdl3_renderer PUBLIC cxx_std_23)
-    set_target_properties(imgui_sdl3_renderer
-                          PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 else()
     message(
         STATUS
@@ -120,8 +114,6 @@ if(TARGET SDL3::SDL3 AND TARGET OpenGL::GL)
                                                     OpenGL::GL)
 
     target_compile_features(imgui_sdl3_opengl3 PUBLIC cxx_std_23)
-    set_target_properties(imgui_sdl3_opengl3
-                          PROPERTIES CXX_SCAN_FOR_MODULES OFF)
 else()
     if(NOT TARGET SDL3::SDL3)
         message(
