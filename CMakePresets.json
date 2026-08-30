@@ -9,9 +9,13 @@
     "configurePresets": [
         {
             "name": "base",
+            "displayName": "Base Configuration",
+            "description": "compile_commands.json, color diagnostics, verbose dependency fetch",
             "hidden": true,
             "cacheVariables": {
-                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_COLOR_DIAGNOSTICS": "ON",
+                "FETCHCONTENT_QUIET": "OFF"
             }
         },
         {

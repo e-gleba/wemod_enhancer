@@ -106,3 +106,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             COMPONENT runtime)
     endif()
 endif()
+
+# ─── Package file naming: <os>_<compiler>_<arch> ───────────────────
+# CPACK_SYSTEM_NAME feeds CPack's default file name
+# (<name>-<version>-<system>). The compiler tag keeps native packages
+# from different toolchains apart (Linux_GNU vs Linux_Clang produced
+# identical names before); the arch tag keeps cross builds apart
+# (Windows_x86_64 vs Windows_arm64). CMake's own spellings are used
+# as-is — no case folding, no renaming (GNU stays GNU).
+set(CPACK_SYSTEM_NAME
+    "${CMAKE_SYSTEM_NAME}_${CMAKE_CXX_COMPILER_ID}_${CMAKE_SYSTEM_PROCESSOR}")

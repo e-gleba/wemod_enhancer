@@ -1,6 +1,11 @@
-# Dear ImGui frontend for the Python patcher CLI (opt-in via
-# WEMOD_ENHANCER_BUILD_GUI). Fully relocatable: the patcher script is
-# downloaded from the GitHub releases at runtime, never looked up on disk.
+# gui/CMakeLists.txt
+#
+# Dear ImGui frontend for the Python patcher CLI. Opt-in via
+# WEMOD_ENHANCER_BUILD_GUI (see the top-level CMakeLists.txt).
+#
+# The executable is fully relocatable: nothing in here bakes a build-
+# machine path into the binary - the patcher script is downloaded from
+# the GitHub releases at runtime, never looked up in the source tree.
 
 add_executable(wemod_enhancer_gui main.cpp)
 
@@ -11,9 +16,13 @@ target_link_libraries(
 
 target_compile_features(wemod_enhancer_gui PRIVATE cxx_std_23)
 
-# SDL_MAIN_USE_CALLBACKS is defined here, not in the source, to keep the TU
-# macro-free (cppcoreguidelines-macro-usage). The version definition makes a
-# packaged binary report exactly the project() version it was built from.
+# SDL3 app callbacks (SDL_AppInit/Iterate/Event/Quit) instead of a
+# hand-written main loop. Defined here - not as a #define in the
+# source - so the translation unit stays macro-free
+# (cppcoreguidelines-macro-usage). WEMOD_ENHANCER_GUI_VERSION rides
+# along: the GUI shows the CMake project version it was built from, so
+# a packaged binary can never report a version that differs from its
+# package.
 target_compile_definitions(
     wemod_enhancer_gui
     PRIVATE SDL_MAIN_USE_CALLBACKS=1
@@ -23,26 +32,31 @@ target_compile_definitions(
 set_target_properties(wemod_enhancer_gui PROPERTIES WIN32_EXECUTABLE TRUE
                                                     MACOSX_BUNDLE TRUE)
 
-# cpplint enforces Google style, which contradicts this project's
-# .clang-format; clang-tidy is the configured gate.
+# cpplint enforces Google style (same-line braces, no non-const refs),
+# which contradicts this project's .clang-format; clang-tidy is the
+# configured gate, so disable the cpplint co-compile for this target.
 set_target_properties(wemod_enhancer_gui PROPERTIES CXX_CPPLINT "")
 
-# Self-contained binaries: statically link the C++ runtime (and CRT) so the
-# executable runs on a bare OS install. SDL3 is already built static
-# (cmake/cpm/sdl3-config.cmake).
+# Self-contained binaries: statically link the C++ runtime (and CRT) so
+# the executable runs on a bare OS install. SDL3 is already built static
+# (see cmake/cpm/sdl3-config.cmake).
 if(MSVC)
     set_target_properties(
         wemod_enhancer_gui
         PROPERTIES MSVC_RUNTIME_LIBRARY
                    "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 elseif(MINGW)
-    # Mirrors src/CMakeLists.txt: static libc++/libgcc for llvm-mingw.
+    # Mirrors src/CMakeLists.txt: static libc++/libgcc for the
+    # llvm-mingw cross build.
     target_link_options(wemod_enhancer_gui PRIVATE -static)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    # Name the artifact .elf so it is unmistakable next to the Windows .exe.
+    # Name the artifact wemod_enhancer_gui.elf so the Linux binary is
+    # unmistakable next to the Windows wemod_enhancer_gui.exe.
     set_target_properties(wemod_enhancer_gui PROPERTIES SUFFIX ".elf")
     # Static libstdc++/libgcc only when the toolchain ships the static
-    # archives (debian: libstdc++-*-dev, fedora: libstdc++-static).
+    # archives (Debian: libstdc++-*-dev, Fedora: libstdc++-static).
+    # Otherwise fall back to the system libstdc++, which every base
+    # install has - SDL3 stays static either way.
     include(CheckCXXCompilerFlag)
     check_cxx_compiler_flag("-static-libstdc++ -static-libgcc"
                             have_static_cxx_runtime)
@@ -58,4 +72,7 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endif()
 endif()
 
+# Standalone install rule (the GUI presets are mutually exclusive with
+# the version.dll ones - see the top-level CMakeLists.txt). Explicit
+# GNUInstallDirs destination: bin/ on every platform.
 install(TARGETS wemod_enhancer_gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

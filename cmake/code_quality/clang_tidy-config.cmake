@@ -1,11 +1,11 @@
 # ─── clang-tidy: static analysis ──────────────────────────────────
 # Two integration modes:
-#   1. Co-compilation  — CMAKE_CXX_CLANG_TIDY (Makefiles/Ninja only)
+#   1. Co-compilation  — CMAKE_<LANG>_CLANG_TIDY (Makefiles/Ninja only)
 #   2. Standalone      — run-clang-tidy wrapper target (any generator)
 #
 # Both use compile_commands.json so clang-tidy sees the *real*
-# compiler flags. Settings live in .clang-tidy (YAML), not on the
-# command line.
+# compiler flags, not a hardcoded -std=c++20.
+# Settings live in .clang-tidy (YAML), not on the command line.
 
 find_program(
     clang_tidy_exe
@@ -13,22 +13,35 @@ find_program(
     DOC "clang-tidy static analyzer" OPTIONAL)
 
 if(clang_tidy_exe)
+    # ── compile_commands.json ──────────────────────────────────────
     # Negligible cost, enables all clang-based tools.
     set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 
-    # -p ${CMAKE_BINARY_DIR}: point clang-tidy at the compilation
-    # database so it resolves the correct toolchain headers.
-    set(CMAKE_CXX_CLANG_TIDY
-        "${clang_tidy_exe}" -p "${CMAKE_BINARY_DIR}"
-        CACHE STRING "clang-tidy co-compilation command")
+    # ── Co-compilation (per-file, during build) ────────────────────
+    # -p ${CMAKE_BINARY_DIR}: the generator runs clang-tidy without
+    # appending `-- <compile flags>` - the tool resolves the real
+    # flags from the compilation database itself.
+    # Ref: Professional CMake §32.1.1
+    # The project enables both C and CXX - lint both.
+    foreach(lang IN ITEMS C CXX)
+        set(CMAKE_${lang}_CLANG_TIDY
+            "${clang_tidy_exe}" -p "${CMAKE_BINARY_DIR}"
+            CACHE STRING "clang-tidy co-compilation command")
+    endforeach()
 
-    # Generated sources live in the build tree; without a .clang-tidy
-    # there they get wrong defaults when the build dir is out-of-source.
+    # ── Copy .clang-tidy into build tree ───────────────────────────
+    # Generated sources live in the build dir.  Without a
+    # .clang-tidy there, they get no settings (or wrong defaults)
+    # when the build dir is outside the source tree.
+    # configure_file works correctly even under FetchContent.
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy")
         configure_file(.clang-tidy .clang-tidy COPYONLY)
     endif()
 
-    # run-clang-tidy parallelizes across all TUs via the database.
+    # ── Standalone target (whole-project, parallel) ────────────────
+    # run-clang-tidy uses the compilation database and runs
+    # clang-tidy in parallel across all TUs — far faster than
+    # a serial custom target, and works with any generator.
     find_program(
         run_clang_tidy_exe
         NAMES run-clang-tidy run-clang-tidy.py
@@ -49,7 +62,7 @@ if(clang_tidy_exe)
             NOTICE
             "run-clang-tidy not found -- "
             "'${PROJECT_NAME}-clang-tidy' target unavailable\n"
-            "co-compilation via CMAKE_CXX_CLANG_TIDY still active")
+            "co-compilation via CMAKE_<LANG>_CLANG_TIDY still active")
     endif()
 else()
     message(

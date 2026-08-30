@@ -8,30 +8,40 @@ project(
     HOMEPAGE_URL "https://github.com/e-gleba/wemod_enhancer"
     LANGUAGES C CXX)
 
-# No C++ modules in use: skip the CMP0155 source scan on every target.
+# No C++20 modules in use — do not pay for the module dependency scan.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-# Opt-in Dear ImGui frontend for the Python patcher CLI.
-# OFF: the plain version.dll build never touches SDL3/imgui.
+# Opt-in Dear ImGui desktop frontend for the Python patcher CLI.
+# OFF by default: the plain version.dll build never touches SDL3/imgui.
 option(WEMOD_ENHANCER_BUILD_GUI "Build the ImGui desktop app (opt-in)" OFF)
 
-include(GNUInstallDirs)
-
-# CMAKE_CURRENT_LIST_DIR, not CMAKE_SOURCE_DIR: keeps working when the
-# project is consumed via add_subdirectory()/FetchContent.
-set(wemod_cmake_dirs
+# CMAKE_CURRENT_LIST_DIR is used instead of CMAKE_SOURCE_DIR so
+# that this file works correctly if the project is ever consumed
+# as a subdirectory of a larger build.
+# Ref: Professional CMake §8.3 "Project-relative Variables"
+list(
+    APPEND
+    CMAKE_PREFIX_PATH
     "${CMAKE_CURRENT_LIST_DIR}/cmake"
     "${CMAKE_CURRENT_LIST_DIR}/cmake/description"
     "${CMAKE_CURRENT_LIST_DIR}/cmake/code_quality")
-list(APPEND CMAKE_PREFIX_PATH ${wemod_cmake_dirs})
 
-# Cross toolchain files may set CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY,
-# which hides the local *-config.cmake packages from find_package().
+# When cross-compiling, CMAKE_FIND_ROOT_PATH_MODE_PACKAGE is
+# typically set to ONLY in the toolchain file. That restricts
+# find_package() to searching only under CMAKE_FIND_ROOT_PATH
+# and CMAKE_SYSROOT — our local cmake/ dirs wouldn't be found.
+# Adding them to CMAKE_FIND_ROOT_PATH fixes this
 if(CMAKE_CROSSCOMPILING)
-    list(APPEND CMAKE_FIND_ROOT_PATH ${wemod_cmake_dirs})
+    list(
+        APPEND
+        CMAKE_FIND_ROOT_PATH
+        "${CMAKE_CURRENT_LIST_DIR}/cmake"
+        "${CMAKE_CURRENT_LIST_DIR}/cmake/description"
+        "${CMAKE_CURRENT_LIST_DIR}/cmake/code_quality")
 endif()
 
 find_package(cpm CONFIG REQUIRED)
+
 find_package(warnings CONFIG REQUIRED)
 
 if(PROJECT_IS_TOP_LEVEL)
@@ -41,39 +51,50 @@ if(PROJECT_IS_TOP_LEVEL)
     find_package(ct_doxygen CONFIG REQUIRED)
 endif()
 
-# version.dll and the GUI are mutually exclusive:
-#   - src/ includes <windows.h> unconditionally: Windows targets only
-#     (native or cross);
-#   - a GUI configure never builds the DLL - the GUI downloads it from
-#     the GitHub releases at runtime.
+include(GNUInstallDirs)
+
+# version.dll and the GUI are mutually exclusive on purpose:
+#   - src/ includes <windows.h> unconditionally, so only a Windows
+#     target (native or cross) can compile it;
+#   - a GUI configure never builds the DLL - the GUI downloads
+#     version.dll from the GitHub releases at runtime, so a GUI
+#     package carrying a stale DLL would only cause conflicts.
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND NOT WEMOD_ENHANCER_BUILD_GUI)
     add_subdirectory(src)
 endif()
 
-# Install rules, packaging, and the end-user GUI belong to the top-level
-# build only: a parent project keeps control of testing and packaging.
+# CTest, CPack, and install rules for top-level metadata files
+# should only run when this project owns the build. If another
+# project pulls us in via add_subdirectory() or FetchContent,
+# it controls testing and packaging — we should not interfere.
+# Ref: Professional CMake §8.3, §39 "FetchContent"
 if(PROJECT_IS_TOP_LEVEL)
     find_package(package_description CONFIG REQUIRED)
 
-    # The Python patcher CLI ships inside the version.dll package; the GUI
-    # downloads it at runtime, so a GUI package must not carry it.
+    # The Python patcher CLI (wemod_enhancer.py) is part of the
+    # version.dll package - the GUI downloads it from the releases
+    # at runtime, so a GUI package must not carry it.
     if(NOT WEMOD_ENHANCER_BUILD_GUI)
         add_subdirectory(scripts)
     endif()
 
+    # The GUI is an end-user artifact: build/install it only for
+    # top-level builds. It is a standalone downloader/automator,
+    # packaged apart from the DLL:
+    # wemod_enhancer_gui-<version>-<os>-<arch>.zip / .tar.xz
     if(WEMOD_ENHANCER_BUILD_GUI)
         add_subdirectory(gui)
         set(CPACK_PACKAGE_NAME "wemod_enhancer_gui")
     endif()
 
-    # e.g. "Windows-x86_64" vs "Windows-aarch64": per-arch packages must
-    # not collide. Must be set before include(CPack) - it is read once.
-    set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
-
-    # Strip packaged binaries; the build tree keeps RelWithDebInfo symbols.
+    # Strip debug info from packaged binaries: smaller artifacts.
+    # The build tree keeps symbols (RelWithDebInfo), so release
+    # crashes stay debuggable from the build dir.
     set(CPACK_STRIP_FILES ON)
 
-    # include(CPack) reads the CPACK_* variables at include-time and
-    # ignores later changes - keep it last.
+    # include(CPack) must come AFTER all CPACK_* variables
+    # are set — it reads them at include-time and ignores
+    # any changes made afterward.
+    # Ref: Professional CMake §36.1 "Packaging Basics"
     include(CPack)
 endif()

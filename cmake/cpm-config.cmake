@@ -18,8 +18,8 @@ include("${get_cpm_SOURCE_DIR}/CPM.cmake")
 # Ref: https://github.com/cpm-cmake/CPM.cmake#find_package-integration
 set(CPM_USE_LOCAL_PACKAGES ON)
 
-# Keep fetched dependency sources out of clang-tidy's reach.
-# CPM_SOURCE_CACHE is optional: without it there is no shared dir to mark.
+# Keep clang-tidy out of the dependency source cache. Guarded: the cache
+# dir only exists when CPM_SOURCE_CACHE is set (CI always sets it).
 if(CPM_SOURCE_CACHE)
     file(WRITE "${CPM_SOURCE_CACHE}/.clang-tidy" "Checks: '-*'\n")
 endif()
@@ -28,6 +28,8 @@ set(cpm_deps_dir "${CMAKE_CURRENT_LIST_DIR}/cpm")
 
 list(APPEND CMAKE_PREFIX_PATH "${cpm_deps_dir}")
 if(CMAKE_CROSSCOMPILING)
+    # Toolchains may scope find_package() to CMAKE_FIND_ROOT_PATH
+    # (CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY) — keep our configs reachable.
     list(APPEND CMAKE_FIND_ROOT_PATH "${cpm_deps_dir}")
 endif()
 
