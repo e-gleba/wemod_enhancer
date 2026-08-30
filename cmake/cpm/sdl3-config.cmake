@@ -1,48 +1,48 @@
-block(
-    PROPAGATE
-    sdl_sensor
-    sdl_wayland
-    sdl_dbus
-    sdl_ibus
-    sdl_libdecor
-    sdl_opengles)
-# Only mobile builds need the sensor subsystem
-set(sdl_sensor OFF)
+# SDL3 package config — find_package(sdl3 CONFIG) lands here via
+# CMAKE_PREFIX_PATH (cmake/cpm.cmake). Exposes SDL's own targets:
+#   SDL3::SDL3, SDL3::SDL3-shared, SDL3::SDL3-static
+# Aliases are created by SDL's CMakeLists — nothing to re-name here.
+
+# find_package re-includes this file per calling scope; run once.
+include_guard(GLOBAL)
+
+# --- platform-conditional subsystems: defaults, then overrides ------------
+set(sdl_sensor OFF) # mobile-only subsystem
+set(sdl_wayland OFF) # Linux desktop integration:
+set(sdl_dbus OFF) #   Wayland, D-Bus, IBus, libdecor
+set(sdl_ibus OFF)
+set(sdl_libdecor OFF)
+set(sdl_opengles ON) # Apple uses desktop GL, not ES
+set(sdl_shared OFF) # Emscripten has no dynamic linking: static-only
+set(sdl_static ON)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(sdl_sensor ON)
 endif()
-
-# Wayland + desktop integration are Linux-only
-set(sdl_wayland OFF)
-set(sdl_dbus OFF)
-set(sdl_ibus OFF)
-set(sdl_libdecor OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(sdl_wayland ON)
     set(sdl_dbus ON)
     set(sdl_ibus ON)
     set(sdl_libdecor ON)
 endif()
-
-# Disable OpenGL ES on Apple platforms (desktop GL is used instead)
-set(sdl_opengles ON)
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin|iOS")
     set(sdl_opengles OFF)
 endif()
-endblock()
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    set(sdl_shared OFF)
+    set(sdl_static ON)
+endif()
 
-# -------------------------------------------------------------------
-# Fetch SDL3: windowing, events, rendering only
-# -------------------------------------------------------------------
+# --- fetch SDL3: windowing, events, OpenGL context creation only ----------
 cpmaddpackage(
     NAME
     SDL3
     GITHUB_REPOSITORY
     libsdl-org/SDL
     VERSION
-    3.4.4
+    3.4.14
     GIT_TAG
-    release-3.4.4
+    release-3.4.14
     GIT_SHALLOW
     ON
     GIT_PROGRESS
@@ -53,14 +53,12 @@ cpmaddpackage(
     TRUE
     OPTIONS
     # ---- build tooling ----
-    "SDL_PRECOMPILED_HEADERS OFF"
     "SDL_CCACHE ON"
-    # ---- library type: static only ----
-    # Static so the GUI executable is self-contained: no SDL3.dll /
-    # libSDL3.so to ship or install. X11/Wayland are still dlopen'd
-    # at runtime, so the binary runs on a bare OS install.
-    "SDL_STATIC ON"
-    "SDL_SHARED OFF"
+    "SDL_WERROR OFF" # dep warnings must never become errors in our build
+    "SDL_PCH OFF" # goes stale on incremental Android Studio builds
+    # ---- library type ----
+    "SDL_STATIC ${sdl_static}"
+    "SDL_SHARED ${sdl_shared}"
     # ---- core subsystems ----
     "SDL_AUDIO OFF"
     "SDL_VIDEO ON"
@@ -88,7 +86,7 @@ cpmaddpackage(
     # ---- Linux desktop integration ----
     "SDL_DBUS ${sdl_dbus}"
     "SDL_IBUS ${sdl_ibus}"
-    "SDL_LIBDECOR ${sdl_libdecor}"
+    "SDL_WAYLAND_LIBDECOR ${sdl_libdecor}"
     # ---- input / misc ----
     "SDL_LIBUDEV OFF"
     "SDL_HIDAPI_LIBUSB OFF"
@@ -102,18 +100,29 @@ cpmaddpackage(
     "SDL_INSTALL_TESTS OFF"
     "SDL_DISABLE_INSTALL_DOCS ON")
 
-# -------------------------------------------------------------------
-# Normalise to the standard imported target name expected by downstreams
-# -------------------------------------------------------------------
-if(NOT TARGET SDL3::SDL3)
-    if(TARGET SDL3-shared)
-        add_library(SDL3::SDL3 ALIAS SDL3-shared)
-    elseif(TARGET SDL3-static)
-        add_library(SDL3::SDL3 ALIAS SDL3-static)
-    else()
-        message(
-            FATAL_ERROR "SDL3 was fetched but no linkable target exists. "
-                        "Expected one of: SDL3::SDL3, SDL3-shared, SDL3-static."
-        )
-    endif()
+# --- Android: ship SDL's Java bindings + base manifest/proguard -----------
+# Configure-time copy from the fetched tree — a build-time target raced
+# AGP's compile*JavaWithJavac. file(COPY/COPY_FILE) without RESULT fail
+# fatally on missing input: no manual existence checks needed.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(sdl3_gen "${CMAKE_SOURCE_DIR}/android_project/app/build/generated/sdl3")
+
+    file(
+        COPY "${SDL3_SOURCE_DIR}/android-project/app/src/main/java/org/"
+        DESTINATION "${sdl3_gen}/java/org"
+        FILES_MATCHING
+        PATTERN "*.java")
+
+    # ONLY_IF_DIFFERENT keeps the timestamp when unchanged: no pointless
+    # Gradle manifest merge on re-configure.
+    file(
+        COPY_FILE
+        "${SDL3_SOURCE_DIR}/android-project/app/src/main/AndroidManifest.xml"
+        "${sdl3_gen}/AndroidManifest.xml"
+        ONLY_IF_DIFFERENT)
+    file(
+        COPY_FILE
+        "${SDL3_SOURCE_DIR}/android-project/app/proguard-rules.pro"
+        "${sdl3_gen}/proguard-rules.pro"
+        ONLY_IF_DIFFERENT)
 endif()
