@@ -20,7 +20,7 @@ include("${get_cpm_SOURCE_DIR}/CPM.cmake")
 
 # Enable local package reuse (vcpkg, system, etc.)
 # Ref: https://github.com/cpm-cmake/CPM.cmake#find_package-integration
-set(CPM_USE_LOCAL_PACKAGES ON)
+set(CPM_USE_LOCAL_PACKAGES OFF)
 
 # Keep clang-tidy out of the dependency source cache. Guarded: the cache
 # dir only exists when CPM_SOURCE_CACHE is set (CI always sets it).
