@@ -1,38 +1,31 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 #
-# The single CI workflow. Every configure builds the full self-contained
-# package (GUI + version.dll + wemod_enhancer.py) - there is no build
-# option, so one matrix covers the whole platform/compiler set:
-# MSVC + pure Clang on windows-2022, LLVM-MinGW cross on ubuntu-24.04,
-# GCC + Clang on ubuntu-24.04, GCC on ubuntu-24.04-arm.
-#
-# No bespoke setup beyond SDL3's Linux headers: the runner images ship
-# MSVC / Clang / GCC / Ninja, and the llvm-mingw toolchain file
-# (cmake/toolchains/llvm_mingw.cmake) auto-downloads the cross compiler
-# on first configure.
+# Single CI pipeline: one matrix, one preset per platform/compiler.
+# Every preset builds the full package (GUI + version.dll + patcher).
+# Runner images ship MSVC / Clang / GCC / Ninja; the llvm-mingw
+# toolchain file auto-downloads the cross compiler on first configure.
 
 name: cmake_multiplatform_workflow
 
 on:
     push:
-        branches: [main]
-        paths: &paths
-            - "src/**"
-            - "include/**"
-            - "cmake/**"
-            - "**/*.cmake"
-            - "**/*.cpp"
-            - "**/*.hpp"
-            - "**/*.c"
-            - "**/*.h"
-            - "**/*.cxx"
-            - "**/*.hxx"
-            - "**/CMakeLists.txt"
-            - "CMakePresets.json"
-            - ".github/workflows/**"
+        branches:
+            - main
+        paths:
+            - 'src/**'
+            - 'cmake/**'
+            - 'scripts/**'
+            - 'CMakeLists.txt'
+            - 'CMakePresets.json'
+            - '.github/workflows/**'
     pull_request:
-        branches: [main]
-        paths: *paths
+        paths:
+            - 'src/**'
+            - 'cmake/**'
+            - 'scripts/**'
+            - 'CMakeLists.txt'
+            - 'CMakePresets.json'
+            - '.github/workflows/**'
     release:
         types: [published]
     workflow_dispatch:
@@ -40,9 +33,6 @@ on:
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
     cancel-in-progress: true
-
-permissions:
-    contents: read
 
 env:
     CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache

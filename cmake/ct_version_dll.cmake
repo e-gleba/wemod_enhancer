@@ -1,28 +1,12 @@
-# Nested Windows PE build of version.dll for a Linux-hosted GUI configure.
-#
-# One CMake process = one toolchain. A Linux GUI configure cannot
-# add_subdirectory() a PE DLL. ExternalProject starts a second CMake
-# with llvm-mingw. Recursion stops: SOURCE_DIR is src/version_dll.
-#
-# Windows GUI configures do not include this file; they
-# add_subdirectory(version_dll) and share MSVC or Clang (GNU driver).
-#
-# CMAKE_INSTALL_PREFIX / CMAKE_INSTALL_BINDIR are passed into the child
-# so it does not invent its own layout. The parent already called
-# include(GNUInstallDirs); this module only copies the nested artifact
-# into the parent's bindir at install time - the GUI package ships the
-# DLL next to the executable, and the GUI finds it there at runtime.
-#
-# CMAKE_CURRENT_LIST_DIR (this file lives in cmake/) not PROJECT_SOURCE_DIR:
-# the latter is wrong if a super-project add_subdirectory's us.
-# Ref: Professional CMake §8.3, §27
+# Nested llvm-mingw build of version.dll for Linux-hosted configures
+# (one CMake process = one toolchain). Windows configures never include
+# this file - they add_subdirectory(version_dll) instead.
 include_guard(GLOBAL)
 
 include(ExternalProject)
 
 find_program(version_dll_ninja NAMES ninja ninja-build REQUIRED)
 
-# Child is Ninja single-config. GUI package presets use RelWithDebInfo.
 if(CMAKE_CONFIGURATION_TYPES)
     set(version_dll_build_type RelWithDebInfo)
 elseif(CMAKE_BUILD_TYPE)
@@ -32,20 +16,16 @@ else()
 endif()
 
 cmake_path(GET CMAKE_CURRENT_LIST_DIR PARENT_PATH version_dll_root)
-
-set(version_dll_toolchain
-    "${CMAKE_CURRENT_LIST_DIR}/toolchains/llvm_mingw.cmake")
-set(version_dll_source "${version_dll_root}/src/version_dll")
 set(version_dll_install "${CMAKE_BINARY_DIR}/_ep/version_dll-install")
 
 ExternalProject_Add(
     wemod_version_dll
-    SOURCE_DIR "${version_dll_source}"
+    SOURCE_DIR "${version_dll_root}/src/version_dll"
     BINARY_DIR "${CMAKE_BINARY_DIR}/_ep/version_dll"
     INSTALL_DIR "${version_dll_install}"
     CMAKE_GENERATOR "Ninja"
     CMAKE_ARGS "-DCMAKE_MAKE_PROGRAM=${version_dll_ninja}"
-               "-DCMAKE_TOOLCHAIN_FILE=${version_dll_toolchain}"
+               "-DCMAKE_TOOLCHAIN_FILE=${CMAKE_CURRENT_LIST_DIR}/toolchains/llvm_mingw.cmake"
                "-DCMAKE_SYSTEM_PROCESSOR=x86_64"
                "-DCMAKE_BUILD_TYPE=${version_dll_build_type}"
                "-DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>"

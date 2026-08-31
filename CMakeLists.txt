@@ -11,23 +11,9 @@ project(
 # No C++20 modules in use — do not pay for the module dependency scan.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-# RelWithDebInfo is the default build type everywhere: releases stay
-# debuggable. CMAKE_DEFAULT_BUILD_TYPE covers multi-config generators
-# (bare `cmake --build` on Ninja Multi-Config builds Debug otherwise);
-# the cache default covers a bare single-config configure without
-# -DCMAKE_BUILD_TYPE (which would build without any optimization).
-# An explicit -DCMAKE_BUILD_TYPE=... always wins.
-set(CMAKE_DEFAULT_BUILD_TYPE RelWithDebInfo)
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
-endif()
-
-# Static CRT for every target, directory-wide. No-op outside MSVC, but
-# with MSVC the CPM-built imgui library must link the same CRT as the
-# GUI target itself - a target-local property alone links imgui as MD
-# against the GUI's MT and fails with LNK2038. Set BEFORE
-# include(ct_cpm): the dependency targets are created there and read
-# this variable at creation time.
+# Static CRT for all targets. Must precede include(ct_cpm): the CPM-built
+# imgui reads this at creation time and must match the GUI (LNK2038).
+# No-op outside MSVC.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Project modules, loaded by name via include(). CMAKE_CURRENT_LIST_DIR

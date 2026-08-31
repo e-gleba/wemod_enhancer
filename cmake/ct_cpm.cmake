@@ -37,9 +37,7 @@ if(CMAKE_CROSSCOMPILING)
     list(APPEND CMAKE_FIND_ROOT_PATH "${cpm_deps_dir}")
 endif()
 
-# Every configure builds the full self-contained package (GUI +
-# version.dll + patcher script) - the desktop dependencies are
-# unconditional.
+# Desktop deps are unconditional - every configure builds the GUI.
 find_package(gsl CONFIG REQUIRED)
 find_package(freetype CONFIG REQUIRED)
 find_package(sdl3 CONFIG REQUIRED)

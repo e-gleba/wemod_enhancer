@@ -1,5 +1,4 @@
 {
-    "$schema": "https://cmake.org/cmake/help/latest/_downloads/3e2d73bff478d88a7de0de736ba5e361/schema.json",
     "version": 10,
     "cmakeMinimumRequired": {
         "major": 3,
@@ -10,7 +9,7 @@
         {
             "name": "windows_llvm_mingw_amd64",
             "displayName": "Windows AMD64 (LLVM-MinGW cross)",
-            "description": "Cross-build the self-contained package for Windows x86-64 from Linux with LLVM-MinGW (wemod_enhancer_gui.exe + version.dll + wemod_enhancer.py)",
+            "description": "Cross-build the Windows x86-64 package from Linux with LLVM-MinGW",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/toolchains/llvm_mingw.cmake",
@@ -26,16 +25,16 @@
         {
             "name": "windows_msvc_amd64",
             "displayName": "Windows AMD64 (MSVC)",
-            "description": "Build the self-contained package natively on Windows x86-64 with MSVC (wemod_enhancer_gui.exe + version.dll + wemod_enhancer.py)",
+            "description": "Build the Windows x86-64 package natively with MSVC",
             "generator": "Visual Studio 17 2022",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "architecture": {
                 "value": "x64",
-                "strategy": "set"
+                "strategy": "external"
             },
             "toolset": {
                 "value": "host=x64",
-                "strategy": "set"
+                "strategy": "external"
             },
             "condition": {
                 "type": "equals",
@@ -46,19 +45,22 @@
         {
             "name": "windows_clang_amd64",
             "displayName": "Windows AMD64 (Clang, MSVC ABI)",
-            "description": "Build the self-contained package natively on Windows x86-64 with pure Clang (GNU driver, MSVC ABI) + lld-link (wemod_enhancer_gui.exe + version.dll + wemod_enhancer.py)",
+            "description": "Build the Windows x86-64 package natively with Clang (GNU driver) + lld-link",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
-                "CMAKE_SYSTEM_PROCESSOR": "x86_64",
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "CMAKE_C_COMPILER_TARGET": "x86_64-pc-windows-msvc",
-                "CMAKE_CXX_COMPILER_TARGET": "x86_64-pc-windows-msvc",
-                "CMAKE_RC_COMPILER": "llvm-rc",
-                "CMAKE_EXE_LINKER_FLAGS_INIT": "-fuse-ld=lld-link -Xlinker /machine:x64",
-                "CMAKE_SHARED_LINKER_FLAGS_INIT": "-fuse-ld=lld-link -Xlinker /machine:x64",
-                "CMAKE_MODULE_LINKER_FLAGS_INIT": "-fuse-ld=lld-link -Xlinker /machine:x64"
+                "CMAKE_EXE_LINKER_FLAGS": "-fuse-ld=lld",
+                "CMAKE_SHARED_LINKER_FLAGS": "-fuse-ld=lld",
+                "CMAKE_MODULE_LINKER_FLAGS": "-fuse-ld=lld"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/2.0": {
+                    "intelliSenseOptions": {
+                        "useCompilerDefaults": true
+                    }
+                }
             },
             "condition": {
                 "type": "equals",
@@ -69,7 +71,7 @@
         {
             "name": "linux_gcc_amd64",
             "displayName": "Linux AMD64 (GCC)",
-            "description": "Build the self-contained package natively on Linux x86-64 with GCC (wemod_enhancer_gui.elf + Windows version.dll via nested llvm-mingw + wemod_enhancer.py)",
+            "description": "Build the Linux x86-64 package natively with GCC (version.dll via nested llvm-mingw)",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -85,7 +87,7 @@
         {
             "name": "linux_clang_amd64",
             "displayName": "Linux AMD64 (Clang)",
-            "description": "Build the self-contained package natively on Linux x86-64 with Clang (wemod_enhancer_gui.elf + Windows version.dll via nested llvm-mingw + wemod_enhancer.py)",
+            "description": "Build the Linux x86-64 package natively with Clang (version.dll via nested llvm-mingw)",
             "inherits": "linux_gcc_amd64",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -96,7 +98,7 @@
         {
             "name": "linux_gcc_arm64",
             "displayName": "Linux ARM64 (GCC)",
-            "description": "Build the self-contained package natively on Linux ARM64 with GCC (wemod_enhancer_gui.elf + Windows version.dll via nested llvm-mingw + wemod_enhancer.py)",
+            "description": "Build the Linux ARM64 package natively with GCC (version.dll via nested llvm-mingw)",
             "inherits": "linux_gcc_amd64",
             "binaryDir": "${sourceDir}/build/${presetName}"
         }
@@ -211,7 +213,7 @@
         {
             "name": "windows_llvm_mingw_amd64_full",
             "displayName": "Windows AMD64 (LLVM-MinGW) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the self-contained package (gui + version.dll + patcher script) for Windows x86-64 on Linux",
+            "description": "Configure, build (RelWithDebInfo) and package for Windows x86-64 on Linux",
             "steps": [
                 {
                     "type": "configure",
@@ -230,7 +232,7 @@
         {
             "name": "windows_msvc_amd64_full",
             "displayName": "Windows AMD64 (MSVC) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the self-contained package (gui + version.dll + patcher script) natively on Windows x86-64 with MSVC",
+            "description": "Configure, build (RelWithDebInfo) and package natively on Windows x86-64 with MSVC",
             "steps": [
                 {
                     "type": "configure",
@@ -249,7 +251,7 @@
         {
             "name": "windows_clang_amd64_full",
             "displayName": "Windows AMD64 (Clang) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the self-contained package (gui + version.dll + patcher script) natively on Windows x86-64 with Clang",
+            "description": "Configure, build (RelWithDebInfo) and package natively on Windows x86-64 with Clang",
             "steps": [
                 {
                     "type": "configure",
@@ -268,7 +270,7 @@
         {
             "name": "linux_gcc_amd64_full",
             "displayName": "Linux AMD64 (GCC) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the self-contained package (gui + nested Windows version.dll + patcher script) natively on Linux x86-64 with GCC",
+            "description": "Configure, build (RelWithDebInfo) and package natively on Linux x86-64 with GCC",
             "steps": [
                 {
                     "type": "configure",
@@ -287,7 +289,7 @@
         {
             "name": "linux_clang_amd64_full",
             "displayName": "Linux AMD64 (Clang) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the self-contained package (gui + nested Windows version.dll + patcher script) natively on Linux x86-64 with Clang",
+            "description": "Configure, build (RelWithDebInfo) and package natively on Linux x86-64 with Clang",
             "steps": [
                 {
                     "type": "configure",
@@ -306,7 +308,7 @@
         {
             "name": "linux_gcc_arm64_full",
             "displayName": "Linux ARM64 (GCC) Pipeline",
-            "description": "Configure, build (RelWithDebInfo), and package the self-contained package (gui + nested Windows version.dll + patcher script) natively on Linux ARM64 with GCC",
+            "description": "Configure, build (RelWithDebInfo) and package natively on Linux ARM64 with GCC",
             "steps": [
                 {
                     "type": "configure",
