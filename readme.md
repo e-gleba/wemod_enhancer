@@ -35,14 +35,15 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 ## GUI (optional)
 
-One binary, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
+One self-contained folder, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
 
-| OS | Artifact | Binary inside |
-| :- | :------- | :------------ |
-| Windows | `wemod_enhancer_gui-*-Windows-*.zip` | `wemod_enhancer_gui.exe` |
-| Linux | `wemod_enhancer_gui-*-Linux-*.tar.xz` | `wemod_enhancer_gui.elf` |
+| OS | Artifact | Inside |
+| :- | :------- | :----- |
+| Windows x64 | `wemod_enhancer_gui-windows-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Linux x64 | `wemod_enhancer_gui-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Linux ARM64 | `wemod_enhancer_gui-linux-arm64.tar.xz` | same layout, ARM build |
 
-It is a pure downloader + executor: on first run it pulls the latest patcher (`wemod_enhancer.py` + `version.dll`) from the releases itself, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
+Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
 ## Linux / Steam Deck
 
