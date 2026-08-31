@@ -4,7 +4,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     wolfpld/tracy
     GIT_TAG
-    v0.13.1
+    0.14.1
     GIT_SHALLOW
     ON
     EXCLUDE_FROM_ALL
