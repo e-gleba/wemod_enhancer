@@ -24,7 +24,7 @@
 //     the user Downloads folder via SDL_GetUserFolder and runs it.
 //   - Linux:   git-clones the wemod-launcher repo into ~/wemod-launcher
 //     and opens the DeckCheatz tutorial in the browser. After the
-//     first launcher run + login, wemod_data/wemod_bin appears and the
+//     first run + login, wemod_data/wemod_bin appears and the
 //     folder field resolves to it automatically.
 //
 // Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS is set via
@@ -467,7 +467,7 @@ version_parts(std::string name)
         return {};
     }
     std::error_code ec;
-    const fs::path picked{dir};
+    fs::path picked{dir};
     // Direct hit: the app-x.y.z folder itself.
     if (fs::is_regular_file(picked / "resources" / "app.asar", ec)) {
         return picked;
@@ -478,7 +478,7 @@ version_parts(std::string name)
     }
     // wemod-launcher clone: wemod_data/wemod_bin inside (appears after
     // the first run + login - see the readme tutorial).
-    const fs::path launcher_bin{picked / "wemod_data" / "wemod_bin"};
+    fs::path launcher_bin{picked / "wemod_data" / "wemod_bin"};
     if (fs::is_regular_file(launcher_bin / "resources" / "app.asar", ec)) {
         return launcher_bin;
     }
@@ -728,7 +728,7 @@ void start_wemod_download(app_state& state)
             return;
         }
         // Tutorial opens alongside the clone, per the readme flow.
-        if (!SDL_OpenURL(launcher_repo_url.data())) {
+        if (!SDL_OpenURL(std::string(launcher_repo_url).c_str())) {
             sdl_log_error(std::string("SDL_OpenURL(tutorial): ") +
                           SDL_GetError());
         }
