@@ -57,11 +57,11 @@ jobs:
           pip install "cmake>=3.31"
 
       - name: build_and_package
-        run: cmake --workflow --preset llvm-mingw-x86_64-full
+        run: cmake --workflow --preset windows_llvm_mingw_amd64_full
 
       - name: rename_artifact
         run: |
-          cd build/llvm-mingw-x86_64
+          cd build/windows_llvm_mingw_amd64
           for f in *.tar.xz; do
             mv "$f" "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz"
           done
@@ -70,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-llvm-mingw-amd64
-          path: build/llvm-mingw-x86_64/*.tar.xz
+          path: build/windows_llvm_mingw_amd64/*.tar.xz
           if-no-files-found: error
 
   # ── Clang Windows AMD64 (MSVC ABI) ─────────────────────────────────────────
@@ -101,19 +101,19 @@ jobs:
           pip install "cmake>=3.31"
 
       - name: build_and_package
-        run: cmake --workflow --preset clang-windows-amd64-full
+        run: cmake --workflow --preset windows_clang_amd64_full
 
       - name: rename_artifact
         shell: pwsh
         run: |
-          cd build/clang-windows-amd64
+          cd build/windows_clang_amd64
           Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-clang-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: windows-clang-amd64
-          path: build/clang-windows-amd64/*.zip
+          path: build/windows_clang_amd64/*.zip
           if-no-files-found: error
 
   # ── MSVC Windows AMD64 ─────────────────────────────────────────────────────
@@ -134,60 +134,24 @@ jobs:
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
       - name: build_and_package
-        run: cmake --workflow --preset msvc-full
+        run: cmake --workflow --preset windows_msvc_amd64_full
 
       - name: rename_artifact
         shell: pwsh
         run: |
-          cd build/msvc
+          cd build/windows_msvc_amd64
           Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-msvc-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: windows-msvc-amd64
-          path: build/msvc/*.zip
+          path: build/windows_msvc_amd64/*.zip
           if-no-files-found: error
 
-  # ── GUI: MSVC Windows AMD64 ────────────────────────────────────────────────
-  # The GUI is a pure downloader/automator (exe only, no DLL inside).
-  # One artifact per end-user platform; the GUI pulls the patcher
-  # (wemod_enhancer.py + version.dll) from the releases at runtime.
-  gui_windows_msvc_amd64:
-    name: gui-windows-msvc-amd64
-    runs-on: windows-2022
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - name: checkout
-        uses: actions/checkout@v7
-
-      - name: cache_dependencies
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
-
-      - name: build_and_package
-        run: cmake --workflow --preset gui-windows-msvc-amd64-full
-
-      - name: rename_artifact
-        shell: pwsh
-        run: |
-          cd build/gui-windows-msvc-amd64
-          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer_gui-windows-amd64.zip"
-
-      - name: upload_artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: gui-windows-amd64
-          path: build/gui-windows-msvc-amd64/*.zip
-          if-no-files-found: error
-
-  # ── GUI: GCC Linux AMD64 ───────────────────────────────────────────────────
-  gui_linux_gcc_amd64:
-    name: gui-linux-gcc-amd64
+  # ── GCC Linux AMD64 ────────────────────────────────────────────────────────
+  linux_gcc_amd64:
+    name: linux-gcc-amd64
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -200,7 +164,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
       # SDL3 needs the X11/Wayland development headers to create
       # desktop windows at all (its CMake aborts without them).
@@ -223,25 +187,25 @@ jobs:
               liburing-dev
 
       - name: build_and_package
-        run: cmake --workflow --preset gui-linux-gcc-amd64-full
+        run: cmake --workflow --preset linux_gcc_amd64_full
 
       - name: rename_artifact
         run: |
-          cd build/gui-linux-gcc-amd64
+          cd build/linux_gcc_amd64
           for f in *.tar.xz; do
-            mv "$f" "wemod_enhancer_gui-linux-amd64.tar.xz"
+            mv "$f" "wemod_enhancer-linux-amd64.tar.xz"
           done
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
-          name: gui-linux-amd64
-          path: build/gui-linux-gcc-amd64/*.tar.xz
+          name: linux-amd64
+          path: build/linux_gcc_amd64/*.tar.xz
           if-no-files-found: error
 
-  # ── GUI: GCC Linux ARM64 (Steam Deck / ARM handhelds) ──────────────────────
-  gui_linux_gcc_arm64:
-    name: gui-linux-gcc-arm64
+  # ── GCC Linux ARM64 (Steam Deck / ARM handhelds) ───────────────────────────
+  linux_gcc_arm64:
+    name: linux-gcc-arm64
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -254,7 +218,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
       - name: install_sdl3_dependencies
         run: |
@@ -273,20 +237,20 @@ jobs:
               liburing-dev
 
       - name: build_and_package
-        run: cmake --workflow --preset gui-linux-gcc-arm64-full
+        run: cmake --workflow --preset linux_gcc_arm64_full
 
       - name: rename_artifact
         run: |
-          cd build/gui-linux-gcc-arm64
+          cd build/linux_gcc_arm64
           for f in *.tar.xz; do
-            mv "$f" "wemod_enhancer_gui-linux-arm64.tar.xz"
+            mv "$f" "wemod_enhancer-linux-arm64.tar.xz"
           done
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
-          name: gui-linux-arm64
-          path: build/gui-linux-gcc-arm64/*.tar.xz
+          name: linux-arm64
+          path: build/linux_gcc_arm64/*.tar.xz
           if-no-files-found: error
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
@@ -296,9 +260,8 @@ jobs:
       - windows_llvm_mingw_amd64
       - windows_clang_amd64
       - windows_msvc_amd64
-      - gui_windows_msvc_amd64
-      - gui_linux_gcc_amd64
-      - gui_linux_gcc_arm64
+      - linux_gcc_amd64
+      - linux_gcc_arm64
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -336,22 +299,16 @@ jobs:
           name: windows-msvc-amd64
           path: artifacts/
 
-      - name: download_gui_windows_artifact
+      - name: download_linux_amd64_artifact
         uses: actions/download-artifact@v8
         with:
-          name: gui-windows-amd64
+          name: linux-amd64
           path: artifacts/
 
-      - name: download_gui_linux_amd64_artifact
+      - name: download_linux_arm64_artifact
         uses: actions/download-artifact@v8
         with:
-          name: gui-linux-amd64
-          path: artifacts/
-
-      - name: download_gui_linux_arm64_artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: gui-linux-arm64
+          name: linux-arm64
           path: artifacts/
 
       - name: generate_release_notes

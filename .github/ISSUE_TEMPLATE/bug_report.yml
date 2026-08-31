@@ -13,7 +13,7 @@ body:
     attributes:
       label: Preset used
       description: Exact preset name from `cmake --list-presets`
-      placeholder: "e.g. gcc-full, android-arm64-full, llvm-mingw-x86_64-full"
+      placeholder: "e.g. linux_gcc_amd64_full, windows_msvc_amd64_full, windows_llvm_mingw_amd64_full"
     validations:
       required: true
   - type: input
@@ -38,8 +38,8 @@ body:
       description: Minimal commands from clean clone to failure
       placeholder: |
         1. git clone ...
-        2. cmake --preset=gcc
-        3. cmake --build --preset=gcc-release
+        2. cmake --preset=linux_gcc_amd64
+        3. cmake --build --preset=linux_gcc_amd64
         4. Error occurs
     validations:
       required: true

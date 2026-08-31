@@ -8,10 +8,13 @@ project(
     HOMEPAGE_URL "https://github.com/e-gleba/wemod_enhancer"
     LANGUAGES C CXX)
 
-option(WEMOD_ENHANCER_BUILD_GUI "Build the ImGui desktop app (opt-in)" OFF)
-
 # No C++20 modules in use — do not pay for the module dependency scan.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+# Static CRT for all targets. Must precede include(ct_cpm): the CPM-built
+# imgui reads this at creation time and must match the GUI (LNK2038).
+# No-op outside MSVC.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Project modules, loaded by name via include(). CMAKE_CURRENT_LIST_DIR
 # (not CMAKE_SOURCE_DIR) keeps this correct when the project is consumed
@@ -46,10 +49,6 @@ add_subdirectory(scripts)
 # Ref: Professional CMake §8.3, §39 "FetchContent"
 if(PROJECT_IS_TOP_LEVEL)
     include(ct_cpack)
-
-    if(WEMOD_ENHANCER_BUILD_GUI)
-        set(CPACK_PACKAGE_NAME "wemod_enhancer_gui")
-    endif()
 
     # include(CPack) reads all CPACK_* variables at include-time and
     # ignores later changes — keep it last.

@@ -37,10 +37,8 @@ if(CMAKE_CROSSCOMPILING)
     list(APPEND CMAKE_FIND_ROOT_PATH "${cpm_deps_dir}")
 endif()
 
+# Desktop deps are unconditional - every configure builds the GUI.
 find_package(gsl CONFIG REQUIRED)
-
-if(WEMOD_ENHANCER_BUILD_GUI)
-    find_package(freetype CONFIG REQUIRED)
-    find_package(sdl3 CONFIG REQUIRED)
-    find_package(imgui CONFIG REQUIRED)
-endif()
+find_package(freetype CONFIG REQUIRED)
+find_package(sdl3 CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)

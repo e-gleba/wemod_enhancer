@@ -10,7 +10,6 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
 [![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
-[![gui ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/gui.yml?branch=main&label=gui%20ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/gui.yml)
 [![release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
 [![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake)](https://cmake.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
@@ -35,14 +34,15 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 ## GUI (optional)
 
-One binary, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
+One self-contained folder, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
 
-| OS | Artifact | Binary inside |
-| :- | :------- | :------------ |
-| Windows | `wemod_enhancer_gui-*-Windows-*.zip` | `wemod_enhancer_gui.exe` |
-| Linux | `wemod_enhancer_gui-*-Linux-*.tar.xz` | `wemod_enhancer_gui.elf` |
+| OS | Artifact | Inside |
+| :- | :------- | :----- |
+| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` | same layout, ARM build |
 
-It is a pure downloader + executor: on first run it pulls the latest patcher (`wemod_enhancer.py` + `version.dll`) from the releases itself, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
+Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
 ## Linux / Steam Deck
 
@@ -118,7 +118,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Language** | C + Python (stdlib only) | C# / .NET / WPF |
 | **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `cmake --workflow --preset llvm-mingw-x86_64-full` | Fork → GitHub Actions → download artifact |
+| **Build from source** | `cmake --workflow --preset windows_llvm_mingw_amd64_full` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
 | **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
@@ -142,11 +142,11 @@ For builders, maintainers, and contributors — users should grab a prebuilt pac
 Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
 
 ```sh
-cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
-cmake --workflow --preset msvc-full                 # Windows (MSVC) package
+cmake --workflow --preset windows_llvm_mingw_amd64_full   # Linux → Windows package
+cmake --workflow --preset windows_msvc_amd64_full         # Windows (MSVC) package
 ```
 
-GUI builds on Linux hosts need SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+GUI builds on Linux hosts need SDL3 Wayland/X11 dev packages (build-time only) — see [cmake_multi_platform.yml](.github/workflows/cmake_multi_platform.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
 
 <div align="center">
 <sub>MIT © 2026 Evgeniy Gleba · Not affiliated with WeMod.</sub>
