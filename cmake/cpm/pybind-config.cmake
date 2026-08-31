@@ -5,7 +5,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     pybind/pybind11
     GIT_TAG
-    v3.0.4
+    3.1.0
     SYSTEM
     ON
     EXCLUDE_FROM_ALL
