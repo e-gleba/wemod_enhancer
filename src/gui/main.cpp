@@ -64,10 +64,15 @@
 //     SDL (main_scale) is the one correct multiplier - it tracks the
 //     monitor's DPI, so the UI looks identical on every display.
 //   - Folder validity is an INVARIANT of the current field text:
-//     resolve_wemod_dir() runs every frame and accepts the app-x.y.z
-//     directory, the WeMod root above it (newest app-* inside), or
-//     the wemod-launcher clone (wemod_data/wemod_bin inside), so the
-//     field can never look "ok" while Patch refuses to run.
+//     resolve_wemod_dir() re-runs on every edit and on a 500 ms timer
+//     (never every frame - it walks directories) and accepts the
+//     app-x.y.z directory, the WeMod root above it (newest app-*
+//     inside), or the wemod-launcher clone (wemod_data/wemod_bin
+//     inside), so the field can never look "ok" while Patch refuses
+//     to run.
+//   - The log is capped: past the budget the oldest lines are dropped
+//     at a newline boundary. ImGui re-renders the whole string every
+//     frame, so an unbounded log would tax every frame.
 //   - The log shows the REAL command line for every background job
 //     (git clone ..., python ...) - no shorthand, no "->", so the
 //     user sees exactly what ran and can reproduce it.
@@ -151,6 +156,19 @@ constexpr std::string_view issue_new_url{
     "https://github.com/e-gleba/wemod_enhancer/issues/new"};
 constexpr std::size_t issue_log_budget{3000};
 
+// stat() is not free: resolving the folder walks the WeMod root and
+// probing the script hits the disk - at 60 fps that is measurable on
+// AV-scanned Windows drives. Text edits re-probe immediately;
+// otherwise this timer drives it, so a WeMod install appearing on
+// disk (the "Download WeMod" flow) is still noticed within half a
+// second.
+constexpr auto reprobe_interval{std::chrono::milliseconds(500)};
+
+// The log doubles as the bug report, so recent output stays complete -
+// but ImGui re-renders the whole string every frame, so past this
+// budget the oldest lines are dropped at a newline boundary.
+constexpr std::size_t log_budget{512 * 1024};
+
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
 
@@ -215,6 +233,12 @@ struct app_state final
     bool has_run{false};
     std::int32_t last_exit_code{0};
     float copied_flash{0.0F}; // seconds left of "Copied!" feedback
+    // --- filesystem probe cache (see probe_filesystem) ---
+    std::string probed_install_dir; // field text the last resolve ran on
+    std::string probed_script_path; // ditto, for the script probe
+    fs::path resolved_install_dir;  // cached resolve_wemod_dir result
+    bool script_present{false};     // the bundled script exists on disk
+    std::chrono::steady_clock::time_point last_probe; // last stat() round
     // --- diagnostics ---
     probe_state python_ok{probe_state::unknown};
     std::string python_version;  // e.g. "Python 3.13.5"
@@ -257,6 +281,19 @@ void tooltip_text(const std::string_view text)
 void sdl_log_error(const std::string& message)
 {
     SDL_Log("%s", message.c_str()); // NOLINT(cppcoreguidelines-pro-type-vararg)
+}
+
+// Append to the log and cap it: past the budget the oldest lines are
+// dropped at a newline boundary. ImGui re-renders the whole string
+// every frame - an unbounded log would tax every frame.
+void append_log(app_state& state, const std::string_view text)
+{
+    state.log += text;
+    if (state.log.size() > log_budget) {
+        const std::size_t over{state.log.size() - log_budget};
+        const std::size_t nl{state.log.find('\n', over)};
+        state.log.erase(0, nl == std::string::npos ? over : nl + 1);
+    }
 }
 
 // Process environment via SDL3 (no std::getenv, no CRT quirks).
@@ -441,8 +478,9 @@ version_parts(std::string name)
 // the app-x.y.z folder holding resources/app.asar. Accepts that folder
 // directly, the WeMod root above it (newest app-* inside wins), or the
 // wemod-launcher clone (wemod_data/wemod_bin inside). This is the
-// single validity invariant: it runs every frame on the current field
-// text, so the field can never look valid while Patch refuses to run.
+// single validity invariant: it re-runs on every edit and on the
+// reprobe timer, so the field can never look valid while Patch refuses
+// to run.
 [[nodiscard]] fs::path resolve_wemod_dir(const std::string& dir)
 {
     if (dir.empty()) {
@@ -465,6 +503,28 @@ version_parts(std::string name)
         return launcher_bin;
     }
     return {};
+}
+
+// The probes behind the field validity invariant, throttled: text
+// edits re-probe immediately, otherwise reprobe_interval drives it.
+// draw_ui reads the cached results every frame for free.
+void probe_filesystem(app_state& state)
+{
+    const auto now{std::chrono::steady_clock::now()};
+    if (state.probed_install_dir == state.install_dir &&
+        state.probed_script_path == state.script_path &&
+        (now - state.last_probe) < reprobe_interval) {
+        return;
+    }
+    state.probed_install_dir = state.install_dir;
+    state.probed_script_path = state.script_path;
+    state.last_probe = now;
+    state.resolved_install_dir = resolve_wemod_dir(state.install_dir);
+    // error_code overload: a malformed path in the editable field must
+    // not throw.
+    std::error_code ec;
+    state.script_present = !state.script_path.empty() &&
+        fs::is_regular_file(state.script_path, ec);
 }
 
 // SDL dialog callback: may run on another thread; it only writes a
@@ -527,7 +587,7 @@ void start_command(app_state& state,
     if (state.running) {
         return;
     }
-    state.log += "$ " + shown + "\n";
+    append_log(state, "$ " + shown + "\n");
     state.kind = kind;
     state.running = true;
     if (kind == run_kind::patcher) {
@@ -588,8 +648,9 @@ void start_wemod_download(app_state& state)
     } else {
         const char* home{env_var("HOME")};
         if (home == nullptr) {
-            state.log += "error: HOME is not set - cannot clone "
-                         "wemod-launcher.\n\n";
+            append_log(state,
+                       "error: HOME is not set - cannot clone "
+                       "wemod-launcher.\n\n");
             return;
         }
         const fs::path dir{fs::path(home) / "wemod-launcher"};
@@ -598,9 +659,11 @@ void start_wemod_download(app_state& state)
             // Already cloned: just aim the field at it - the resolver
             // picks up wemod_data/wemod_bin once login happened.
             state.install_dir = dir.string();
-            state.log += "wemod-launcher already cloned: " + dir.string() +
-                "\n  run it once and log in - wemod_data/wemod_bin "
-                "appears after login, this field resolves to it.\n\n";
+            append_log(state,
+                       "wemod-launcher already cloned: " + dir.string() +
+                           "\n  run it once and log in - wemod_data/wemod_bin "
+                           "appears after login, this field resolves to "
+                           "it.\n\n");
             state.scroll_to_bottom = true;
             return;
         }
@@ -667,12 +730,12 @@ void poll_run(app_state& state)
         return;
     }
     const run_result result{state.pending.get()};
-    state.log += result.output;
+    append_log(state, result.output);
     if (!result.output.empty() && !result.output.ends_with('\n')) {
-        state.log += '\n';
+        append_log(state, "\n");
     }
-    state.log += "[exit code: " + std::to_string(result.exit_code) +
-        "]\n\n";
+    append_log(state,
+               "[exit code: " + std::to_string(result.exit_code) + "]\n\n");
     state.last_exit_code = result.exit_code;
     state.running = false;
     state.scroll_to_bottom = true;
@@ -682,19 +745,22 @@ void poll_run(app_state& state)
     switch (state.kind) {
     case run_kind::wemod:
         if (result.exit_code != 0) {
-            state.log += is_windows
-                ? "error: could not download the WeMod installer.\n"
-                  "  fix: check the network connection, then retry - or "
-                  "grab it from https://www.wemod.com/download\n\n"
-                : "error: could not clone wemod-launcher.\n"
-                  "  fix: check the network connection and that git is "
-                  "installed, then retry.\n\n";
+            append_log(
+                state,
+                is_windows
+                    ? "error: could not download the WeMod installer.\n"
+                      "  fix: check the network connection, then retry - or "
+                      "grab it from https://www.wemod.com/download\n\n"
+                    : "error: could not clone wemod-launcher.\n"
+                      "  fix: check the network connection and that git is "
+                      "installed, then retry.\n\n");
             break;
         }
         if constexpr (is_windows) {
-            state.log += "WeMod installer downloaded and started.\n"
-                         "  next: install, run WeMod once, log in - then "
-                         "this app auto-detects the folder.\n\n";
+            append_log(state,
+                       "WeMod installer downloaded and started.\n"
+                       "  next: install, run WeMod once, log in - then "
+                       "this app auto-detects the folder.\n\n");
         } else {
             // Aim the field at the fresh clone: after the first run +
             // login the resolver picks wemod_data/wemod_bin inside it.
@@ -702,11 +768,12 @@ void poll_run(app_state& state)
                 state.install_dir =
                     (fs::path(home) / "wemod-launcher").string();
             }
-            state.log += "wemod-launcher cloned (tutorial opened in your "
-                         "browser).\n"
-                         "  next: run it once and log in - "
-                         "wemod_data/wemod_bin appears after login, the "
-                         "folder field resolves to it.\n\n";
+            append_log(state,
+                       "wemod-launcher cloned (tutorial opened in your "
+                       "browser).\n"
+                       "  next: run it once and log in - "
+                       "wemod_data/wemod_bin appears after login, the "
+                       "folder field resolves to it.\n\n");
         }
         break;
     case run_kind::probe:
@@ -716,9 +783,10 @@ void poll_run(app_state& state)
         break;
     case run_kind::patcher:
         if (result.exit_code != 0) {
-            state.log += "hint: close WeMod fully, then retry. If it still "
-                         "fails, press Report bug below - the issue opens "
-                         "pre-filled with this log.\n\n";
+            append_log(state,
+                       "hint: close WeMod fully, then retry. If it still "
+                       "fails, press Report bug below - the issue opens "
+                       "pre-filled with this log.\n\n");
         }
         break;
     }
@@ -889,16 +957,17 @@ void draw_ui(app_state& state)
     // title bar already says "WeMod Enhancer" - no duplicate title here.
 
     // --- WeMod folder: the only thing a user must provide -----------
-    // Validity is an invariant of the current field text, recomputed
-    // every frame: the app-x.y.z dir itself, the WeMod root above it
-    // (newest app-* inside), or the wemod-launcher clone
+    // Validity is an invariant of the current field text, re-probed on
+    // every edit and on the reprobe timer (never every frame - the
+    // resolve walks directories): the app-x.y.z dir itself, the WeMod
+    // root above it (newest app-* inside), or the wemod-launcher clone
     // (wemod_data/wemod_bin inside). Typing or deleting text
     // re-validates immediately; Patch normalizes the field to the
     // resolved dir so the log always shows the exact folder used.
-    const fs::path resolved_dir{resolve_wemod_dir(state.install_dir)};
+    probe_filesystem(state);
+    const fs::path& resolved_dir{state.resolved_install_dir};
     const bool install_ok{!resolved_dir.empty()};
-    const bool script_ok{!state.script_path.empty() &&
-                         fs::is_regular_file(state.script_path)};
+    const bool script_ok{state.script_present};
 
     field_label("WeMod folder");
     help_marker(
@@ -1248,21 +1317,25 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     if (const fs::path app{resolve_wemod_dir(state.install_dir)};
         !app.empty()) {
         state.install_dir = app.string();
-        state.log =
-            "auto-detected WeMod install: " + state.install_dir + "\n\n";
+        append_log(state,
+                   "auto-detected WeMod install: " + state.install_dir +
+                       "\n\n");
     }
 
     // The patcher ships inside the package (py + dll next to the exe):
     // state the fact, good or bad, then probe Python - nothing else
     // runs before Patch anymore.
     if (fs::is_regular_file(state.script_path)) {
-        state.log += "using bundled patcher: " + state.script_path + "\n\n";
+        append_log(state,
+                   "using bundled patcher: " + state.script_path + "\n\n");
     } else {
-        state.log += "error: wemod_enhancer.py is missing next to the "
-                     "exe:\n  " +
-            state.script_path +
-            "\n  fix: re-download the GUI package from the GitHub releases "
-            "and unpack the whole folder - it is self-contained.\n\n";
+        append_log(state,
+                   "error: wemod_enhancer.py is missing next to the "
+                   "exe:\n  " +
+                       state.script_path +
+                       "\n  fix: re-download the GUI package from the GitHub "
+                       "releases and unpack the whole folder - it is "
+                       "self-contained.\n\n");
     }
     start_probe(state);
 

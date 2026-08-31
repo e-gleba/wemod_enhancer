@@ -33,17 +33,17 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 | **No mobile pairing** | `requestRemoteAuthCode()` → reject |
 | **Fail-safe** | Automatic backup, all-or-nothing patching, one-command restore |
 
-## GUI (optional)
+## GUI
 
 One self-contained folder, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
 
 | OS | Artifact | Inside |
 | :- | :------- | :----- |
-| Windows x64 | `wemod_enhancer_gui-windows-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` + `bin/version.dll` |
-| Linux x64 | `wemod_enhancer_gui-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` + `bin/version.dll` |
-| Linux ARM64 | `wemod_enhancer_gui-linux-arm64.tar.xz` | same layout, ARM build |
+| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` | same layout, ARM build |
 
-Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
+Every package ships the same trio — GUI and CLI side by side, nothing downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
 ## Linux / Steam Deck
 
@@ -140,14 +140,15 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 
 For builders, maintainers, and contributors — users should grab a prebuilt package from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest) instead.
 
-Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
+Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded. Every preset builds the full self-contained package (GUI + `version.dll` + `wemod_enhancer.py`).
 
 ```sh
 cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
 cmake --workflow --preset msvc-full                 # Windows (MSVC) package
+cmake --workflow --preset linux-gcc-amd64-full      # Linux (GCC) package
 ```
 
-GUI builds on Linux hosts need SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+Native Linux builds need the SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
 
 <div align="center">
 <sub>MIT © 2026 Evgeniy Gleba · Not affiliated with WeMod.</sub>
