@@ -34,7 +34,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     hoene/libmysofa
     GIT_TAG
-    v1.3.4
+    1.3.5
     SYSTEM
     ON
     GIT_SHALLOW
