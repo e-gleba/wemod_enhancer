@@ -10,7 +10,8 @@
 # CMAKE_INSTALL_PREFIX / CMAKE_INSTALL_BINDIR are passed into the child
 # so it does not invent its own layout. The parent already called
 # include(GNUInstallDirs); this module only copies the nested artifact
-# into the parent's bindir at install time.
+# into the parent's bindir at install time - the GUI package ships the
+# DLL next to the executable, and the GUI finds it there at runtime.
 #
 # CMAKE_CURRENT_LIST_DIR (this file lives in cmake/) not PROJECT_SOURCE_DIR:
 # the latter is wrong if a super-project add_subdirectory's us.
