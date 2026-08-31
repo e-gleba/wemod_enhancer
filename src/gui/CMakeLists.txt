@@ -28,5 +28,3 @@ install(
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     BUNDLE DESTINATION . # required because MACOSX_BUNDLE is TRUE
 )
-
-set(CPACK_PACKAGE_NAME "wemod_enhancer_gui")

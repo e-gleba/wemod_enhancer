@@ -47,6 +47,10 @@ add_subdirectory(scripts)
 if(PROJECT_IS_TOP_LEVEL)
     include(ct_cpack)
 
+    if(WEMOD_ENHANCER_BUILD_GUI)
+        set(CPACK_PACKAGE_NAME "wemod_enhancer_gui")
+    endif()
+
     # include(CPack) reads all CPACK_* variables at include-time and
     # ignores later changes — keep it last.
     # Ref: Professional CMake §36.1 "Packaging Basics"
