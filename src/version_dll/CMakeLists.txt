@@ -1,8 +1,9 @@
 # Dual-use: add_subdirectory from a Windows parent, or ExternalProject
-# child on Linux hosts. project()/GNUInstallDirs only when standalone.
-if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
-    cmake_minimum_required(VERSION 3.31)
-    project(wemod_version_dll LANGUAGES C)
+# child on Linux hosts.
+cmake_minimum_required(VERSION 3.31)
+project(wemod_version_dll LANGUAGES C)
+
+if(PROJECT_IS_TOP_LEVEL)
     include(GNUInstallDirs)
 endif()
 
