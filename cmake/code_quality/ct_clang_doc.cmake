@@ -1,6 +1,8 @@
-# ─── clang-doc: AST-based documentation from source ───────────────
-# Requires compile_commands.json — every clang LibTooling-based tool does.
+# --- clang-doc: AST-based documentation from source ---------------------------
+# Requires compile_commands.json - every clang LibTooling-based tool does.
 # clang-doc is still "early development" per LLVM docs; expect rough edges.
+
+include_guard(GLOBAL)
 
 find_program(
     clang_doc_exe
@@ -8,13 +10,26 @@ find_program(
     DOC "clang-doc: generates C/C++ documentation from AST" OPTIONAL)
 
 if(NOT clang_doc_exe)
-    message(
-        NOTICE
-        "clang-doc not found -- '${PROJECT_NAME}-clang-doc' target disabled\n"
-        "  fedora:  sudo dnf install clang-tools-extra\n"
-        "  ubuntu:  sudo apt install clang-tools-extra\n"
-        "  macos:   brew install llvm\n"
-        "  windows: choco install llvm")
+    message(NOTICE [[clang-doc not found - clang-doc target disabled
+  fedora:  sudo dnf install clang-tools-extra
+  ubuntu:  sudo apt install clang-tools-extra
+  alt:     sudo apt-get install clang-tools
+  macos:   brew install llvm
+  windows: choco install llvm]])
+    return()
+endif()
+
+# --- compile_commands.json ----------------------------------------------------
+# Enable here too: this module must work even when clang_tidy.cmake
+# (which also enables it) is not included first.
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
+
+# Only Makefile/Ninja generators emit the database; on any other
+# generator the target would configure but always fail.
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    message(NOTICE
+            "clang-doc target disabled - generator '${CMAKE_GENERATOR}'"
+            " does not emit compile_commands.json")
     return()
 endif()
 
@@ -35,7 +50,7 @@ list(
     clang_doc_filter_regex)
 
 add_custom_target(
-    ${PROJECT_NAME}-clang-doc
+    ${PROJECT_NAME}_clang_doc
     COMMAND
         "${clang_doc_exe}"
         # --executor=all-TUs: documented invocation mode for
@@ -44,7 +59,7 @@ add_custom_target(
         --executor=all-TUs -p "${CMAKE_BINARY_DIR}" --format=html
         "--output=${clang_doc_output_dir}" "--project-name=${PROJECT_NAME}"
         "--source-root=${PROJECT_SOURCE_DIR}"
-        # Filter to project sources only — avoids documenting
+        # Filter to project sources only - avoids documenting
         # system headers and fetched dependencies.
         "--filter=${clang_doc_filter_regex}" --doxygen --ignore-map-errors
     WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"

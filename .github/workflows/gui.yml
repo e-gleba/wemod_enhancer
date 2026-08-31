@@ -36,12 +36,36 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - { name: windows-msvc-amd64,       os: windows-2022,     preset: gui-windows-msvc-amd64 }
-                    - { name: windows-clang-amd64,      os: windows-2022,     preset: gui-windows-clang-amd64 }
-                    - { name: windows-llvm-mingw-amd64, os: ubuntu-24.04,     preset: gui-windows-llvm-mingw-amd64 }
-                    - { name: linux-gcc-amd64,          os: ubuntu-24.04,     preset: gui-linux-gcc-amd64 }
-                    - { name: linux-clang-amd64,        os: ubuntu-24.04,     preset: gui-linux-clang-amd64 }
-                    - { name: linux-gcc-arm64,          os: ubuntu-24.04-arm, preset: gui-linux-gcc-arm64 }
+                    - {
+                          name: windows-msvc-amd64,
+                          os: windows-2022,
+                          preset: gui-windows-msvc-amd64,
+                      }
+                    - {
+                          name: windows-clang-amd64,
+                          os: windows-2022,
+                          preset: gui-windows-clang-amd64,
+                      }
+                    - {
+                          name: windows-llvm-mingw-amd64,
+                          os: ubuntu-24.04,
+                          preset: gui-windows-llvm-mingw-amd64,
+                      }
+                    - {
+                          name: linux-gcc-amd64,
+                          os: ubuntu-24.04,
+                          preset: gui-linux-gcc-amd64,
+                      }
+                    - {
+                          name: linux-clang-amd64,
+                          os: ubuntu-24.04,
+                          preset: gui-linux-clang-amd64,
+                      }
+                    - {
+                          name: linux-gcc-arm64,
+                          os: ubuntu-24.04-arm,
+                          preset: gui-linux-gcc-arm64,
+                      }
 
         steps:
             - uses: actions/checkout@v7
@@ -50,7 +74,7 @@ jobs:
               uses: actions/cache@v6
               with:
                   path: ${{ env.CPM_SOURCE_CACHE }}
-                  key: cpm-gui-${{ matrix.name }}-${{ hashFiles('cmake/cpm-config.cmake') }}
+                  key: cpm-gui-${{ matrix.name }}-${{ hashFiles('cmake/ct_cpm.cmake') }}
                   restore-keys: cpm-gui-${{ matrix.name }}-
 
             # SDL3 needs the X11/Wayland development headers to create
