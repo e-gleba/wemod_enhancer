@@ -9,6 +9,14 @@ endif()
 # Ref: Professional CMake §27
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_subdirectory(version_dll)
+    if(WEMOD_ENHANCER_BUILD_GUI)
+        # The GUI never links the DLL, so a target-limited build
+        # (cmake --build --target wemod_enhancer_gui, used by the GUI
+        # build presets) would skip it and CPack could not package it.
+        # The package ships version.dll next to the exe - make the GUI
+        # build depend on it.
+        add_dependencies(wemod_enhancer_gui version)
+    endif()
 elseif(WEMOD_ENHANCER_BUILD_GUI)
     include(ct_version_dll)
     # Without add_dependencies the ExternalProject target never builds:
