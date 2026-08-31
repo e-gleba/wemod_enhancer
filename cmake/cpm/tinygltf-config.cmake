@@ -4,7 +4,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     syoyo/tinygltf
     GIT_TAG
-    v3.0.0
+    3.0.1
     SYSTEM
     ON
     GIT_SHALLOW
