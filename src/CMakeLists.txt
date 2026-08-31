@@ -1,22 +1,16 @@
 if(WEMOD_ENHANCER_BUILD_GUI)
     add_subdirectory(gui)
-    return()
 endif()
 
-add_library(version SHARED fuses.c library.c library.def)
-
-set_target_properties(
-    version
-    PROPERTIES PREFIX ""
-               OUTPUT_NAME "version"
-               MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-
-target_compile_features(version PRIVATE c_std_11)
-
-target_link_options(
-    version
-    PRIVATE
-    "$<$<AND:$<C_COMPILER_ID:Clang>,$<NOT:$<C_COMPILER_FRONTEND_VARIANT:MSVC>>>:-static>"
-)
-
-install(TARGETS version)
+# version.dll is a Windows PE. One CMake process = one toolchain, so:
+#   Windows parent  → add_subdirectory (MSVC or Clang GNU driver)
+#   Linux GUI parent → ExternalProject + llvm-mingw (ct_version_dll)
+#   Linux CLI parent → unreachable: CLI presets already cross-compile
+#                      via CMAKE_TOOLCHAIN_FILE, so they hit the Windows
+#                      branch above.
+# Ref: Professional CMake §27
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    add_subdirectory(version_dll)
+elseif(WEMOD_ENHANCER_BUILD_GUI)
+    include(ct_version_dll)
+endif()
