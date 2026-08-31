@@ -579,11 +579,11 @@ void start_wemod_download(app_state& state)
                                      : exe_dir().string()};
         const fs::path setup{downloads / "WeMod-Setup.exe"};
         const std::string command{
-            "powershell -NoProfile -ExecutionPolicy Bypass -Command \"\\""
+            "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
             "$ProgressPreference='SilentlyContinue'; "
             "Invoke-WebRequest -Uri '" + std::string(wemod_setup_url) +
-            "' -OutFile '" + setup.string() + "'; " +
-            "Start-Process '" + setup.string() + "\""};
+            "' -OutFile '" + setup.string() + "'; "
+            "Start-Process '" + setup.string() + "'\""};
         start_command(state, run_kind::wemod, command, command);
     } else {
         const char* home{env_var("HOME")};
