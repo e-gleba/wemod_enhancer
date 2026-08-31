@@ -150,9 +150,9 @@ jobs:
           if-no-files-found: error
 
   # ── GUI: MSVC Windows AMD64 ────────────────────────────────────────────────
-  # The GUI is a pure downloader/automator (exe only, no DLL inside).
-  # One artifact per end-user platform; the GUI pulls the patcher
-  # (wemod_enhancer.py + version.dll) from the releases at runtime.
+  # Self-contained GUI package: exe + wemod_enhancer.py + version.dll
+  # are all built by the workflow preset - the GUI downloads nothing
+  # at runtime. One artifact per end-user platform.
   gui_windows_msvc_amd64:
     name: gui-windows-msvc-amd64
     runs-on: windows-2022
