@@ -5,25 +5,25 @@
 # Optional dependency: Graphviz (dot) for class / call / collaboration /
 # directory graphs.
 
+include_guard(GLOBAL)
+
 find_package(Doxygen OPTIONAL_COMPONENTS dot)
 
 if(NOT DOXYGEN_FOUND)
-    message(
-        NOTICE
-        "Doxygen not found -- documentation target disabled.\n"
-        "Install instructions:\n"
-        "  Fedora:  sudo dnf install doxygen graphviz\n"
-        "  Ubuntu:  sudo apt install doxygen graphviz\n"
-        "  macOS:   brew install doxygen graphviz\n"
-        "  Windows: choco install doxygen.install graphviz")
+    message(NOTICE [[doxygen not found - documentation target disabled
+  fedora:  sudo dnf install doxygen graphviz
+  ubuntu:  sudo apt install doxygen graphviz
+  alt:     sudo apt-get install doxygen graphviz
+  macos:   brew install doxygen graphviz
+  windows: choco install doxygen.install graphviz]])
     return()
 endif()
 
-# ─── Centralised paths ───────────────────────────────────
+# --- centralised paths --------------------------------------------------------
 set(DOXYGEN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/generated_docs")
 set(DOXYGEN_OUTPUT_DIRECTORY "${DOXYGEN_OUTPUT_DIR}")
 
-# ─── Project metadata ────────────────────────────────────
+# --- project metadata ---------------------------------------------------------
 set(DOXYGEN_PROJECT_NAME "${PROJECT_NAME}")
 set(DOXYGEN_PROJECT_NUMBER "${PROJECT_VERSION}")
 set(DOXYGEN_PROJECT_BRIEF "${PROJECT_DESCRIPTION}")
@@ -38,7 +38,7 @@ set(DOXYGEN_TAB_SIZE 4)
 set(DOXYGEN_STRIP_FROM_PATH "${PROJECT_SOURCE_DIR}")
 set(DOXYGEN_STRIP_FROM_INC_PATH "${PROJECT_SOURCE_DIR}")
 
-# ─── Input / content ─────────────────────────────────────
+# --- input / content ----------------------------------------------------------
 set(DOXYGEN_RECURSIVE YES)
 set(DOXYGEN_EXTRACT_ALL YES)
 set(DOXYGEN_EXTRACT_PRIVATE YES)
@@ -123,7 +123,7 @@ foreach(
     endif()
 endforeach()
 
-# ─── Navigation & sorting ────────────────────────────────
+# --- navigation and sorting ---------------------------------------------------
 set(DOXYGEN_GENERATE_TREEVIEW YES)
 set(DOXYGEN_SEARCHENGINE YES)
 set(DOXYGEN_DISABLE_INDEX NO)
@@ -132,36 +132,35 @@ set(DOXYGEN_SORT_MEMBER_DOCS YES)
 set(DOXYGEN_SORT_BRIEF_DOCS YES)
 set(DOXYGEN_SORT_GROUP_NAMES YES)
 
-# ─── Cross-references ────────────────────────────────────
+# --- cross-references ---------------------------------------------------------
 set(DOXYGEN_REFERENCED_BY_RELATION YES)
 set(DOXYGEN_REFERENCES_RELATION YES)
 
-# ─── Quality checklists ──────────────────────────────────
+# --- quality checklists -------------------------------------------------------
 set(DOXYGEN_GENERATE_TODOLIST YES)
 set(DOXYGEN_GENERATE_BUGLIST YES)
 set(DOXYGEN_GENERATE_DEPRECATEDLIST YES)
 
-# ─── Parser settings ─────────────────────────────────────
+# --- parser settings ----------------------------------------------------------
 if(NOT CMAKE_CROSSCOMPILING)
     set(DOXYGEN_CLANG_ASSISTED_PARSING YES)
     set(DOXYGEN_CLANG_OPTIONS "-std=c++23 -stdlib=libc++")
 endif()
 set(DOXYGEN_CPP_CLI_SUPPORT YES)
 
-# ─── Output formats ──────────────────────────────────────
+# --- output formats -----------------------------------------------------------
 set(DOXYGEN_GENERATE_HTML YES)
 set(DOXYGEN_HTML_OUTPUT html)
 set(DOXYGEN_GENERATE_MAN YES)
 set(DOXYGEN_MAN_OUTPUT man)
 
-# ─── Presentation ────────────────────────────────────────
-set(DOXYGEN_HTML_COLORSTYLE "dark")
+# --- presentation -------------------------------------------------------------
 set(DOXYGEN_HTML_DYNAMIC_SECTIONS YES)
 set(DOXYGEN_INTERACTIVE_SVG YES)
 set(DOXYGEN_USE_MATHJAX YES)
 set(DOXYGEN_MATHJAX_FORMAT TeX)
 
-# ─── Graphs (Graphviz) ───────────────────────────────────
+# --- graphs (Graphviz) --------------------------------------------------------
 if(DOXYGEN_DOT_FOUND)
     set(DOXYGEN_HAVE_DOT YES)
     set(DOXYGEN_DOT_IMAGE_FORMAT svg)
@@ -179,33 +178,37 @@ if(DOXYGEN_DOT_FOUND)
     set(DOXYGEN_DIRECTORY_GRAPH YES)
 endif()
 
-# ─── Warning hygiene ─────────────────────────────────────
+# --- warning hygiene ----------------------------------------------------------
 set(DOXYGEN_QUIET YES)
 set(DOXYGEN_WARN_IF_UNDOCUMENTED YES)
 set(DOXYGEN_WARN_IF_DOC_ERROR YES)
 set(DOXYGEN_WARN_NO_PARAMDOC YES)
 set(DOXYGEN_WARN_AS_ERROR NO)
 
-# ─── Modern theme: Doxygen Awesome ───────────────────────
+# --- modern theme: Doxygen Awesome --------------------------------------------
+# Std CMake FetchContent, self-contained in this module - no CPM, no
+# include-order dependency on cmake/cpm.cmake.
+# The theme repo has no CMakeLists.txt: MakeAvailable only populates it
+# and never calls add_subdirectory (documented behavior) - exactly what
+# a download-only CSS dependency needs.
 include(FetchContent)
-fetchcontent_declare(
-    doxygen-awesome
+FetchContent_Declare(
+    doxygen_awesome
     GIT_REPOSITORY https://github.com/jothepro/doxygen-awesome-css.git
-    GIT_TAG v2.3.4
-    GIT_SHALLOW TRUE
-    GIT_PROGRESS FALSE)
-fetchcontent_makeavailable(doxygen-awesome)
+    GIT_TAG v2.4.2
+    GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(doxygen_awesome)
 
 set(DOXYGEN_HTML_EXTRA_STYLESHEET
-    "${doxygen-awesome_SOURCE_DIR}/doxygen-awesome.css"
-    "${doxygen-awesome_SOURCE_DIR}/doxygen-awesome-sidebar-only.css")
+    "${doxygen_awesome_SOURCE_DIR}/doxygen-awesome.css"
+    "${doxygen_awesome_SOURCE_DIR}/doxygen-awesome-sidebar-only.css")
 set(DOXYGEN_HTML_COLORSTYLE LIGHT)
 
-# ─── Target ──────────────────────────────────────────────
+# --- target -------------------------------------------------------------------
 doxygen_add_docs(docs ${docs_inputs}
                  COMMENT "Generating API documentation with Doxygen")
 
-# ─── Installation / packaging ──────────────────────────
+# --- installation / packaging -------------------------------------------------
 include(GNUInstallDirs)
 install(
     DIRECTORY "${DOXYGEN_OUTPUT_DIR}/"
