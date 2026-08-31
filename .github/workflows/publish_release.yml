@@ -34,7 +34,7 @@ env:
 jobs:
   # ── LLVM-MinGW cross-compile (Linux → Windows) ─────────────────────────────
   windows_llvm_mingw_amd64:
-    name: windows-llvm-mingw-amd64
+    name: windows_llvm_mingw_amd64
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -58,28 +58,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install \"cmake>=3.31\"
+          pip install "cmake>=3.31"
 
       - name: build_and_package
-        run: cmake --workflow --preset llvm-mingw-x86_64-full
+        run: cmake --workflow --preset windows_llvm_mingw_amd64_full
 
       - name: rename_artifact
         run: |
-          cd build/llvm-mingw-x86_64
+          cd build/windows_llvm_mingw_amd64
           for f in *.tar.xz; do
-            mv \"$f\" \"wemod_enhancer-windows-llvm-mingw-amd64.tar.xz\"
+            mv "$f" "wemod_enhancer-windows-llvm-mingw-amd64.tar.xz"
           done
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: windows-llvm-mingw-amd64
-          path: build/llvm-mingw-x86_64/*.tar.xz
+          path: build/windows_llvm_mingw_amd64/*.tar.xz
           if-no-files-found: error
 
   # ── Clang Windows AMD64 (MSVC ABI) ─────────────────────────────────────────
   windows_clang_amd64:
-    name: windows-clang-amd64
+    name: windows_clang_amd64
     runs-on: windows-2022
     permissions:
       contents: read
@@ -102,27 +102,27 @@ jobs:
       - name: install_dependencies
         run: |
           choco install ninja --yes
-          pip install \"cmake>=3.31\"
+          pip install "cmake>=3.31"
 
       - name: build_and_package
-        run: cmake --workflow --preset clang-windows-amd64-full
+        run: cmake --workflow --preset windows_clang_amd64_full
 
       - name: rename_artifact
         shell: pwsh
         run: |
-          cd build/clang-windows-amd64
-          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer-windows-clang-amd64.zip\"
+          cd build/windows_clang_amd64
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-clang-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: windows-clang-amd64
-          path: build/clang-windows-amd64/*.zip
+          path: build/windows_clang_amd64/*.zip
           if-no-files-found: error
 
   # ── MSVC Windows AMD64 ─────────────────────────────────────────────────────
   windows_msvc_amd64:
-    name: windows-msvc-amd64
+    name: windows_msvc_amd64
     runs-on: windows-2022
     permissions:
       contents: read
@@ -138,24 +138,24 @@ jobs:
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
       - name: build_and_package
-        run: cmake --workflow --preset msvc-full
+        run: cmake --workflow --preset windows_msvc_amd64_full
 
       - name: rename_artifact
         shell: pwsh
         run: |
-          cd build/msvc
-          Get-ChildItem *.zip | Rename-Item -NewName \"wemod_enhancer-windows-msvc-amd64.zip\"
+          cd build/windows_msvc_amd64
+          Get-ChildItem *.zip | Rename-Item -NewName "wemod_enhancer-windows-msvc-amd64.zip"
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: windows-msvc-amd64
-          path: build/msvc/*.zip
+          path: build/windows_msvc_amd64/*.zip
           if-no-files-found: error
 
   # ── GCC Linux AMD64 ────────────────────────────────────────────────────────
   linux_gcc_amd64:
-    name: linux-gcc-amd64
+    name: linux_gcc_amd64
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -191,25 +191,25 @@ jobs:
               liburing-dev
 
       - name: build_and_package
-        run: cmake --workflow --preset linux-gcc-amd64-full
+        run: cmake --workflow --preset linux_gcc_amd64_full
 
       - name: rename_artifact
         run: |
-          cd build/linux-gcc-amd64
+          cd build/linux_gcc_amd64
           for f in *.tar.xz; do
-            mv \"$f\" \"wemod_enhancer-linux-amd64.tar.xz\"
+            mv "$f" "wemod_enhancer-linux-amd64.tar.xz"
           done
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: linux-amd64
-          path: build/linux-gcc-amd64/*.tar.xz
+          path: build/linux_gcc_amd64/*.tar.xz
           if-no-files-found: error
 
   # ── GCC Linux ARM64 (Steam Deck / ARM handhelds) ───────────────────────────
   linux_gcc_arm64:
-    name: linux-gcc-arm64
+    name: linux_gcc_arm64
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -241,20 +241,20 @@ jobs:
               liburing-dev
 
       - name: build_and_package
-        run: cmake --workflow --preset linux-gcc-arm64-full
+        run: cmake --workflow --preset linux_gcc_arm64_full
 
       - name: rename_artifact
         run: |
-          cd build/linux-gcc-arm64
+          cd build/linux_gcc_arm64
           for f in *.tar.xz; do
-            mv \"$f\" \"wemod_enhancer-linux-arm64.tar.xz\"
+            mv "$f" "wemod_enhancer-linux-arm64.tar.xz"
           done
 
       - name: upload_artifact
         uses: actions/upload-artifact@v7
         with:
           name: linux-arm64
-          path: build/linux-gcc-arm64/*.tar.xz
+          path: build/linux_gcc_arm64/*.tar.xz
           if-no-files-found: error
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
@@ -277,12 +277,12 @@ jobs:
 
       - name: configure_git
         run: |
-          git config user.name \"github-actions[bot]\"
-          git config user.email \"github-actions[bot]@users.noreply.github.com\"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: create_and_push_tag
         run: |
-          git tag -a ${{ inputs.version }} -m \"release ${{ inputs.version }}\"
+          git tag -a ${{ inputs.version }} -m "release ${{ inputs.version }}"
           git push origin ${{ inputs.version }}
 
       - name: download_llvm_mingw_artifact
@@ -320,21 +320,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          args=(-f tag_name=\"${{ inputs.version }}\" -f target_commitish=\"main\")
-          if [ -n \"${{ inputs.previous_tag }}\" ]; then
-            args+=(-f previous_tag_name=\"${{ inputs.previous_tag }}\")
+          args=(-f tag_name="${{ inputs.version }}" -f target_commitish="main")
+          if [ -n "${{ inputs.previous_tag }}" ]; then
+            args+=(-f previous_tag_name="${{ inputs.previous_tag }}")
           fi
           gh api repos/${{ github.repository }}/releases/generate-notes \
-            \"${args[@]}\" --jq '.body' > release_notes.md
-          echo \"notes_file=release_notes.md\" >> \"$GITHUB_OUTPUT\"
+            "${args[@]}" --jq '.body' > release_notes.md
+          echo "notes_file=release_notes.md" >> "$GITHUB_OUTPUT"
 
       - name: create_github_release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create \
-            \"${{ inputs.version }}\" \
-            --title \"${{ inputs.version }}\" \
+            "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
             --notes-file release_notes.md \
             artifacts/*
 
@@ -366,33 +366,33 @@ jobs:
 
       - name: validate_next_version
         run: |
-          if [[ ! \"$NEXT_VERSION\" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            printf \"::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '%s'\\n\" \"$NEXT_VERSION\"
+          if [[ ! "$NEXT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf "::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '%s'\n" "$NEXT_VERSION"
             exit 1
           fi
           current=$(grep -E '^[[:space:]]*VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
-          if [[ -z \"$current\" ]]; then
-            echo \"::error::could not read the current project version from CMakeLists.txt\"
+          if [[ -z "$current" ]]; then
+            echo "::error::could not read the current project version from CMakeLists.txt"
             exit 1
           fi
           # sort -V ordering: the smaller of the two sorts first, so an
           # equal or lower next_version sorts first - reject both.
-          lowest=$(printf '%s\\n%s\\n' \"$current\" \"$NEXT_VERSION\" | sort -V | head -n1)
-          if [[ \"$lowest\" == \"$NEXT_VERSION\" ]]; then
-            printf \"::error::next_version (%s) must be greater than the current project version (%s)\\n\" \"$NEXT_VERSION\" \"$current\"
+          lowest=$(printf '%s\n%s\n' "$current" "$NEXT_VERSION" | sort -V | head -n1)
+          if [[ "$lowest" == "$NEXT_VERSION" ]]; then
+            printf "::error::next_version (%s) must be greater than the current project version (%s)\n" "$NEXT_VERSION" "$current"
             exit 1
           fi
 
       - name: bump_project_version
         run: |
-          sed -i -E \"s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\\1$NEXT_VERSION/\" CMakeLists.txt
-          grep -E \"^[[:space:]]*VERSION[[:space:]]+$NEXT_VERSION[[:space:]]*$\" CMakeLists.txt
+          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\1$NEXT_VERSION/" CMakeLists.txt
+          grep -E "^[[:space:]]*VERSION[[:space:]]+$NEXT_VERSION[[:space:]]*$" CMakeLists.txt
 
       - name: commit_and_push
         run: |
-          git config user.name \"github-actions[bot]\"
-          git config user.email \"github-actions[bot]@users.noreply.github.com\"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add CMakeLists.txt
-          git commit -m \"chore: bump CMake project version to $NEXT_VERSION\"
+          git commit -m "chore: bump CMake project version to $NEXT_VERSION"
           git pull --rebase origin main
           git push origin HEAD:main

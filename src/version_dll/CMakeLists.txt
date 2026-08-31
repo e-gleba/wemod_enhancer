@@ -20,7 +20,7 @@ target_compile_features(version PRIVATE c_std_11)
 set_target_properties(
     version
     PROPERTIES PREFIX ""
-               OUTPUT_NAME "version"
+               OUTPUT_NAME \"version\"
                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # llvm-mingw / Clang GNU driver: no libgcc_s / libwinpthread next to the
@@ -34,4 +34,8 @@ target_link_options(
 
 # CMAKE_INSTALL_BINDIR comes from the parent GNUInstallDirs, or from the
 # child's include above, or from ExternalProject -DCMAKE_INSTALL_BINDIR=bin.
+# Only the RUNTIME artifact (the DLL itself) is installed: the import
+# .lib is a build-time artifact and nothing links version.dll - WeMod
+# loads it through DLL search order (proxy), so shipping the .lib would
+# be dead weight.
 install(TARGETS version RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")

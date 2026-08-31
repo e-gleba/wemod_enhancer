@@ -1,4 +1,16 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+#
+# The single CI workflow. Every configure builds the full self-contained
+# package (GUI + version.dll + wemod_enhancer.py) - there is no build
+# option, so one matrix covers the whole platform/compiler set:
+# MSVC + pure Clang on windows-2022, LLVM-MinGW cross on ubuntu-24.04,
+# GCC + Clang on ubuntu-24.04, GCC on ubuntu-24.04-arm.
+#
+# No bespoke setup beyond SDL3's Linux headers: the runner images ship
+# MSVC / Clang / GCC / Ninja, and the llvm-mingw toolchain file
+# (cmake/toolchains/llvm_mingw.cmake) auto-downloads the cross compiler
+# on first configure.
+
 name: cmake_multiplatform_workflow
 
 on:
@@ -36,133 +48,77 @@ env:
     CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
 
 jobs:
-    # ── native builds ───────────────────────────────────────────────────────────
-    native:
-        name: ${{ matrix.artifact-name }}
+    build:
+        name: ${{ matrix.preset }}
         runs-on: ${{ matrix.os }}
         strategy:
             fail-fast: false
             matrix:
                 include:
-                    - os: windows-2022
-                      preset: msvc-full
-                      artifact-name: windows-msvc-amd64
-                      build-dir: build/msvc
-                      install-deps: ''
-                    - os: windows-2022
-                      preset: clang-windows-amd64-full
-                      artifact-name: windows-clang-amd64
-                      build-dir: build/clang-windows-amd64
-                      install-deps: |-
-                          choco install ninja --yes
-                          pip install "cmake>=3.31"
+                    - {
+                          preset: windows_msvc_amd64,
+                          os: windows-2022,
+                      }
+                    - {
+                          preset: windows_clang_amd64,
+                          os: windows-2022,
+                      }
+                    - {
+                          preset: windows_llvm_mingw_amd64,
+                          os: ubuntu-24.04,
+                      }
+                    - {
+                          preset: linux_gcc_amd64,
+                          os: ubuntu-24.04,
+                      }
+                    - {
+                          preset: linux_clang_amd64,
+                          os: ubuntu-24.04,
+                      }
+                    - {
+                          preset: linux_gcc_arm64,
+                          os: ubuntu-24.04-arm,
+                      }
 
         steps:
-            - name: checkout
-              uses: actions/checkout@v7
+            - uses: actions/checkout@v7
 
-            - name: setup python
-              if: matrix.install-deps != ''
-              uses: actions/setup-python@v7
-              with:
-                  python-version: "3.13"
-
-            - name: cache cpm sources
+            - name: Restore CPM source cache
               uses: actions/cache@v6
               with:
-                  path: .cpm_cache
-                  key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
-                  restore-keys: cpm-${{ matrix.artifact-name }}-
+                  path: ${{ env.CPM_SOURCE_CACHE }}
+                  key: cpm-${{ matrix.preset }}-${{ hashFiles('cmake/ct_cpm.cmake') }}
+                  restore-keys: cpm-${{ matrix.preset }}-
 
-            - name: install build tools
-              if: matrix.install-deps != ''
-              run: ${{ matrix.install-deps }}
-
-            - name: build
-              run: cmake --workflow --preset ${{ matrix.preset }}
-
-            - name: rename zip artifact
-              if: matrix.artifact-name == 'windows-msvc-amd64' || matrix.artifact-name == 'windows-clang-amd64'
-              shell: pwsh
+            # SDL3 needs the X11/Wayland development headers to create
+            # desktop windows at all (its CMake aborts without them).
+            # Package list straight from the official SDL3 docs:
+            # https://wiki.libsdl.org/SDL3/README-linux (Ubuntu 22.04+).
+            - name: Install SDL3 build dependencies (Linux)
+              if: runner.os == 'Linux' && !contains(matrix.preset, 'mingw')
               run: |
-                  cd ${{ matrix.build-dir }}
-                  Get-ChildItem *.zip -ErrorAction SilentlyContinue | ForEach-Object {
-                      Rename-Item $_.Name "wemod_enhancer-${{ matrix.artifact-name }}.zip"
-                  }
+                  sudo apt-get update
+                  sudo apt-get install -y \
+                      build-essential git make pkg-config \
+                      libasound2-dev libpulse-dev libaudio-dev \
+                      libfribidi-dev libjack-dev libsndio-dev \
+                      libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+                      libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+                      libxkbcommon-dev libdrm-dev libgbm-dev \
+                      libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+                      libdbus-1-dev libibus-1.0-dev libudev-dev \
+                      libthai-dev libusb-1.0-0-dev \
+                      libpipewire-0.3-dev libwayland-dev libdecor-0-dev \
+                      liburing-dev
 
-            - name: rename tgz artifact
-              if: matrix.artifact-name == 'windows-msvc-amd64' || matrix.artifact-name == 'windows-clang-amd64'
-              shell: pwsh
-              run: |
-                  cd ${{ matrix.build-dir }}
-                  Get-ChildItem *.tar.gz -ErrorAction SilentlyContinue | ForEach-Object {
-                      Rename-Item $_.Name "wemod_enhancer-${{ matrix.artifact-name }}.tar.gz"
-                  }
+            - name: Configure + build + package (RelWithDebInfo)
+              run: cmake --workflow --preset ${{ matrix.preset }}_full
 
-            - name: upload zip artifact
+            - name: Upload package
               uses: actions/upload-artifact@v7
               with:
-                  name: ${{ matrix.artifact-name }}-zip
-                  path: ${{ matrix.build-dir }}/*.zip
-                  if-no-files-found: ignore
-                  compression-level: 0
-
-            - name: upload tgz artifact
-              uses: actions/upload-artifact@v7
-              with:
-                  name: ${{ matrix.artifact-name }}-tgz
-                  path: ${{ matrix.build-dir }}/*.tar.gz
-                  if-no-files-found: ignore
-                  compression-level: 0
-
-    # ── cross-compile: Linux → Windows (llvm-mingw) ─────────────────────────────
-    cross-windows:
-        name: ${{ matrix.artifact-name }}
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - preset: llvm-mingw-x86_64-full
-                      artifact-name: windows-llvm-mingw-amd64
-                      build-dir: build/llvm-mingw-x86_64
-
-        steps:
-            - name: checkout
-              uses: actions/checkout@v7
-
-            - name: install build tools
-              run: |
-                  sudo apt-get update -qq
-                  sudo apt-get install -y --no-install-recommends ninja-build
-
-            - name: cache llvm-mingw toolchain
-              uses: actions/cache@v6
-              with:
-                  path: llvm_mingw
-                  key: llvm-mingw-${{ hashFiles('cmake/toolchains/llvm_mingw.cmake') }}
-
-            - name: cache cpm sources
-              uses: actions/cache@v6
-              with:
-                  path: .cpm_cache
-                  key: cpm-${{ matrix.artifact-name }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
-                  restore-keys: cpm-${{ matrix.artifact-name }}-
-
-            - name: build
-              run: cmake --workflow --preset ${{ matrix.preset }}
-
-            - name: rename txz artifact
-              run: |
-                  cd ${{ matrix.build-dir }}
-                  for f in *.tar.xz; do
-                    [ -f "$f" ] && mv "$f" "wemod_enhancer-${{ matrix.artifact-name }}.tar.xz"
-                  done
-
-            - name: upload txz artifact
-              uses: actions/upload-artifact@v7
-              with:
-                  name: ${{ matrix.artifact-name }}-txz
-                  path: ${{ matrix.build-dir }}/*.tar.xz
-                  if-no-files-found: ignore
-                  compression-level: 0
+                  name: wemod_enhancer-${{ matrix.preset }}
+                  path: |
+                      build/${{ matrix.preset }}/*.zip
+                      build/${{ matrix.preset }}/*.tar.xz
+                  if-no-files-found: error

@@ -10,7 +10,6 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
 [![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
-[![gui ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/gui.yml?branch=main&label=gui%20ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/gui.yml)
 [![release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
 [![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake)](https://cmake.org)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
@@ -119,7 +118,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Language** | C + Python (stdlib only) | C# / .NET / WPF |
 | **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `cmake --workflow --preset llvm-mingw-x86_64-full` | Fork → GitHub Actions → download artifact |
+| **Build from source** | `cmake --workflow --preset windows_llvm_mingw_amd64_full` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
 | **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
@@ -140,15 +139,15 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 
 For builders, maintainers, and contributors — users should grab a prebuilt package from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest) instead.
 
-Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded. Every preset builds the full self-contained package (GUI + `version.dll` + `wemod_enhancer.py`).
+Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded. Every preset builds the full self-contained package (GUI + `version.dll` + `wemod_enhancer.py`) in RelWithDebInfo. Presets are named `os_compiler_arch`:
 
 ```sh
-cmake --workflow --preset llvm-mingw-x86_64-full    # Linux → Windows package
-cmake --workflow --preset msvc-full                 # Windows (MSVC) package
-cmake --workflow --preset linux-gcc-amd64-full      # Linux (GCC) package
+cmake --workflow --preset windows_llvm_mingw_amd64_full   # Linux → Windows package
+cmake --workflow --preset windows_msvc_amd64_full         # Windows (MSVC) package
+cmake --workflow --preset linux_gcc_amd64_full            # Linux (GCC) package
 ```
 
-Native Linux builds need the SDL3 Wayland/X11 dev packages (build-time only) — see [gui.yml](.github/workflows/gui.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+Native Linux builds need the SDL3 Wayland/X11 dev packages (build-time only) — see [cmake_multi_platform.yml](.github/workflows/cmake_multi_platform.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
 
 <div align="center">
 <sub>MIT © 2026 Evgeniy Gleba · Not affiliated with WeMod.</sub>
