@@ -16,7 +16,7 @@ set_target_properties(
 target_link_options(
     wemod_enhancer_gui
     PRIVATE
-    "$<$<AND:$<PLATFORM_ID:Windows>,$<LINK_LANG_AND_ID:CXX,GNU>>:-static>"
+    "$<$<AND:$<PLATFORM_ID:Windows>,$<LINK_LANG_AND_ID:CXX,GNU,Clang>>:-static>"
     "$<$<PLATFORM_ID:Linux>:-static-libstdc++;-static-libgcc>")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
