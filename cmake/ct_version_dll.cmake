@@ -30,9 +30,11 @@ else()
     set(version_dll_build_type Release)
 endif()
 
+cmake_path(GET CMAKE_CURRENT_LIST_DIR PARENT_PATH version_dll_root)
+
 set(version_dll_toolchain
     "${CMAKE_CURRENT_LIST_DIR}/toolchains/llvm_mingw.cmake")
-set(version_dll_source "${CMAKE_CURRENT_LIST_DIR}/../src/version_dll")
+set(version_dll_source "${version_dll_root}/src/version_dll")
 set(version_dll_install "${CMAKE_BINARY_DIR}/_ep/version_dll-install")
 
 ExternalProject_Add(
