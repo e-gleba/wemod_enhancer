@@ -1,4 +1,4 @@
-if(NOT WEMOD_ENHANCER_BUILD_GUI)
+if(WEMOD_ENHANCER_BUILD_GUI)
     return()
 endif()
 
