@@ -34,10 +34,10 @@
 //   - std::filesystem resolves the install layout: exe_dir()
 //     (SDL_GetBasePath) is the single anchor, script and DLL are
 //     siblings of the executable.
-//   - gsl::not_null for pointers out of C callbacks, gsl::finally for
-//     SDL_Quit, Expects() for preconditions; app state ownership is a
-//     std::unique_ptr (make_unique in SDL_AppInit, re-acquired in
-//     SDL_AppQuit) - no manual delete anywhere.
+//   - gsl::not_null for pointers out of C callbacks, Expects() for
+//     preconditions; app state ownership is a std::unique_ptr
+//     (make_unique in SDL_AppInit, re-acquired in SDL_AppQuit) - no
+//     manual delete anywhere.
 //   - No C-style strings in logic; std::string / std::string_view.
 //   - C++23 library over hand-rolled loops: std::ranges::max_element
 //     (newest version dir), std::ranges::all_of (tag validation).
@@ -53,11 +53,9 @@
 //   - ImGui widget widths are computed from the font size
 //     (CalcTextSize / GetFrameHeight), so nothing clips at any DPI.
 //   - One scale factor for the whole UI: style.FontScaleDpi at init
-//     scales every font-size-derived widget (ImGui 1.92+), and the
-//     window is created at logical 720x480 so SDL keeps the physical
-//     size constant across DPIs. No per-widget math: what
-//     main_scale) is the one correct multiplier - it tracks the
-//     monitor's DPI, so the UI looks identical on every display.
+//     scales every font-size-derived widget (ImGui 1.92+); the window
+//     is created at logical size, so SDL keeps the physical size
+//     constant across DPIs.
 //   - Folder validity is an INVARIANT of the current field text:
 //     resolve_wemod_dir() re-runs on edits and a 500 ms timer (never
 //     every frame - it walks directories), so the field can never
@@ -77,14 +75,15 @@
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
+#include <imgui_stdlib.h>
 
 #include <gsl/narrow>
 #include <gsl/pointers>
-#include <gsl/util>
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -101,6 +100,10 @@
 #include <utility>
 #include <vector>
 
+#ifndef _WIN32
+#include <sys/wait.h> // WIFEXITED / WEXITSTATUS for pclose()
+#endif
+
 namespace
 {
 
@@ -108,7 +111,7 @@ namespace fs = std::filesystem;
 
 // GUI version: the CMake project version, injected at compile time -
 // the GUI can never show a version that differs from its package.
-constexpr std::string_view gui_version{WEMOD_GUI_VERSION};
+constexpr std::string_view gui_version{WEMOD_ENHANCER_GUI_VERSION};
 
 // Compile-time platform facts. The preprocessor stays only where the
 // names do not exist on the other platform (popen/pclose); everything
@@ -287,9 +290,27 @@ void append_log(app_state& state, const std::string_view text)
     return SDL_GetEnvironmentVariable(SDL_GetEnvironment(), name);
 }
 
+// RFC 3986 percent-encoding (unreserved characters pass through), for
+// the pre-filled GitHub issue URL behind the Report bug button.
+[[nodiscard]] std::string url_encode(const std::string_view text)
+{
+    constexpr std::string_view unreserved{
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"};
+    std::string out;
+    out.reserve(text.size());
+    for (const unsigned char c : text) {
+        if (unreserved.find(static_cast<char>(c)) != std::string_view::npos) {
+            out += static_cast<char>(c);
+        } else {
+            out += std::format("%{:02X}", c);
+        }
+    }
+    return out;
+}
+
 // Quote one argument for the shell that runs our background commands:
 // cmd.exe on Windows (double quotes, "" escapes a quote), /bin/sh
-// elsewhere (single quotes, '"'"' escapes a quote).
+// elsewhere (single quotes, '"' escapes a quote).
 [[nodiscard]] std::string shell_quote(const std::string_view arg)
 {
     if constexpr (is_windows) {
@@ -348,7 +369,8 @@ void append_log(app_state& state, const std::string_view text)
     result.exit_code = _pclose(pipe);
 #else
     const int status{pclose(pipe)};
-    result.exit_code = status == -1 ? -1 : WEXITSTATUS(status);
+    result.exit_code =
+        status == -1 || !WIFEXITED(status) ? -1 : WEXITSTATUS(status);
 #endif
     return result;
 }
@@ -564,15 +586,14 @@ void start_run(app_state& state, const char* subcommand)
 void start_wemod_download(app_state& state)
 {
     if constexpr (is_windows) {
-        char* downloads_raw{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
-        if (downloads_raw == nullptr) {
+        // SDL_GetUserFolder returns SDL-owned memory - do not free.
+        const char* const downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
+        if (downloads == nullptr) {
             sdl_log_error(std::string("SDL_GetUserFolder: ") +
                           SDL_GetError());
             return;
         }
-        const fs::path installer{fs::path(downloads_raw) /
-                                 "wemod_setup.exe"};
-        SDL_free(downloads_raw);
+        const fs::path installer{fs::path(downloads) / "wemod_setup.exe"};
         const std::string command{
             "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
             "$ProgressPreference='SilentlyContinue'; "
@@ -784,12 +805,9 @@ void report_bug(app_state& state)
     body += "```\n\n" + env_info(state);
     const std::string url{std::string(issue_new_url) +
                           "?template=bug_report.yml&title=" +
-                          SDL_URLEncode("bug: ").c_str()};
-    // SDL_URLEncode returns SDL-managed memory; build the full URL in
-    // one expression and free nothing manually.
-    const std::string full{url +
-                           SDL_URLEncode(body.c_str()).c_str()};
-    if (!SDL_OpenURL(full.c_str())) {
+                          url_encode("bug: gui report") +
+                          "&body=" + url_encode(body)};
+    if (!SDL_OpenURL(url.c_str())) {
         sdl_log_error(std::string("SDL_OpenURL: ") + SDL_GetError());
     }
 }
@@ -848,7 +866,7 @@ void help_marker(const char* text, const char* url)
     if (!script_ok) {
         return "The bundled patcher is missing - see Settings";
     }
-    return ready;
+    return nullptr;
 }
 
 // Status line text while a background command runs.
@@ -1003,9 +1021,6 @@ void draw_ui(app_state& state)
     if (fit_button("Restore")) {
         start_run(state, "restore");
     }
-    if (fit_button("Status")) {
-        start_run(state, "status");
-    }
     ImGui::EndDisabled();
 
     // --- Settings (collapsed by default) ------------------------------
@@ -1147,16 +1162,13 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     (void)argc;
     (void)argv;
 
-    // SDL owns its own cleanup: whatever fails after SDL_Init still
-    // runs SDL_Quit exactly once.
+    // SDL_AppQuit runs even when SDL_AppInit fails and calls SDL_Quit
+    // there - no cleanup needed in this scope.
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         sdl_log_error(std::string("SDL_Init: ") + SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    const auto sdl_cleanup{gsl::finally([] { SDL_Quit(); })};
 
-    const float main_scale{SDL_GetDisplayContentScale(
-        SDL_GetPrimaryDisplay())};
     SDL_Window* window{nullptr};
     SDL_Renderer* renderer{nullptr};
     if (!SDL_CreateWindowAndRenderer(
@@ -1175,8 +1187,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     // One knob scales the whole UI: style.FontScaleDpi (ImGui 1.92+)
     // scales every font-size-derived widget, and the window was
     // created at logical size so SDL keeps the physical size constant
-    // across DPIs.
-    ImGui::GetStyle().FontScaleDpi = main_scale;
+    // across DPIs. SDL returns 0.0 when the scale is unknown - that
+    // would zero every widget, so fall back to 1.0.
+    const float main_scale{SDL_GetDisplayContentScale(
+        SDL_GetPrimaryDisplay())};
+    ImGui::GetStyle().FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
@@ -1269,7 +1284,5 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
         SDL_DestroyRenderer(state_owner->renderer);
         SDL_DestroyWindow(state_owner->window);
     }
-    // SDL_Quit runs via the gsl::finally in SDL_AppInit's caller scope -
-    // no: SDL_AppQuit is the last callback, so quit here directly.
     SDL_Quit();
 }
