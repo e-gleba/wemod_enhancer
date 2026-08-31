@@ -20,7 +20,7 @@ target_compile_features(version PRIVATE c_std_11)
 set_target_properties(
     version
     PROPERTIES PREFIX ""
-               OUTPUT_NAME \"version\"
+               OUTPUT_NAME "version"
                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # llvm-mingw / Clang GNU driver: no libgcc_s / libwinpthread next to the
