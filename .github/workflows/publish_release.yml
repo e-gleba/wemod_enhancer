@@ -1,33 +1,36 @@
-# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: publish_release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Existing tag to publish (e.g. v1.0.2)'
+      version:
+        description: 'Version tag (e.g. v1.0.0)'
+        required: true
+        type: string
+      previous_tag:
+        description: 'Previous tag for release notes diff (leave empty for first release)'
+        required: false
+        type: string
+        default: ''
+      next_version:
+        description: 'Next CMake project version, no v prefix (e.g. 1.0.5) - bot commits it to main after the release'
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.ref_name || inputs.tag }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cpm_cache
 
-# Every job builds the same self-contained package for its platform:
-# GUI + version.dll + wemod_enhancer.py, nothing downloaded at runtime.
 jobs:
   # ── LLVM-MinGW cross-compile (Linux → Windows) ─────────────────────────────
   windows_llvm_mingw_amd64:
-    name: windows_llvm_mingw_amd64
+    name: windows-llvm-mingw-amd64
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,19 +39,22 @@ jobs:
       - name: checkout
         uses: actions/checkout@v7
 
-      - name: install_build_tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ninja-build
+      - name: setup_python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
 
-      - name: cache_llvm_mingw_toolchain
+      - name: cache_dependencies
         uses: actions/cache@v6
         with:
-          path: llvm_mingw
-          key: llvm-mingw-${{ hashFiles('cmake/toolchains/llvm_mingw.cmake') }}
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
-      - name: install_cmake
-        run: pip install "cmake>=3.31"
+      - name: install_dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          pip install "cmake>=3.31"
 
       - name: build_and_package
         run: cmake --workflow --preset windows_llvm_mingw_amd64_full
@@ -69,7 +75,7 @@ jobs:
 
   # ── Clang Windows AMD64 (MSVC ABI) ─────────────────────────────────────────
   windows_clang_amd64:
-    name: windows_clang_amd64
+    name: windows-clang-amd64
     runs-on: windows-2022
     permissions:
       contents: read
@@ -78,22 +84,21 @@ jobs:
       - name: checkout
         uses: actions/checkout@v7
 
+      - name: setup_python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
       - name: cache_dependencies
         uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
           key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
-      - name: install_ninja
-        run: choco install ninja --yes
-
-      - name: setup_python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-
-      - name: install_cmake
-        run: pip install "cmake>=3.31"
+      - name: install_dependencies
+        run: |
+          choco install ninja --yes
+          pip install "cmake>=3.31"
 
       - name: build_and_package
         run: cmake --workflow --preset windows_clang_amd64_full
@@ -113,7 +118,7 @@ jobs:
 
   # ── MSVC Windows AMD64 ─────────────────────────────────────────────────────
   windows_msvc_amd64:
-    name: windows_msvc_amd64
+    name: windows-msvc-amd64
     runs-on: windows-2022
     permissions:
       contents: read
@@ -146,7 +151,7 @@ jobs:
 
   # ── GCC Linux AMD64 ────────────────────────────────────────────────────────
   linux_gcc_amd64:
-    name: linux_gcc_amd64
+    name: linux-gcc-amd64
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -159,13 +164,17 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
-      - name: install_build_dependencies
+      # SDL3 needs the X11/Wayland development headers to create
+      # desktop windows at all (its CMake aborts without them).
+      # Package list straight from the official SDL3 docs:
+      # https://wiki.libsdl.org/SDL3/README-linux (Ubuntu 22.04+).
+      - name: install_sdl3_dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-              build-essential git make ninja-build pkg-config \
+              build-essential git make pkg-config \
               libasound2-dev libpulse-dev libaudio-dev \
               libfribidi-dev libjack-dev libsndio-dev \
               libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
@@ -196,7 +205,7 @@ jobs:
 
   # ── GCC Linux ARM64 (Steam Deck / ARM handhelds) ───────────────────────────
   linux_gcc_arm64:
-    name: linux_gcc_arm64
+    name: linux-gcc-arm64
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
@@ -209,13 +218,13 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
-          key: cpm-gui-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
 
-      - name: install_build_dependencies
+      - name: install_sdl3_dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-              build-essential git make ninja-build pkg-config \
+              build-essential git make pkg-config \
               libasound2-dev libpulse-dev libaudio-dev \
               libfribidi-dev libjack-dev libsndio-dev \
               libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
@@ -245,8 +254,8 @@ jobs:
           if-no-files-found: error
 
   # ── Create GitHub Release ──────────────────────────────────────────────────
-  create_release:
-    name: create_release
+  release:
+    name: Create Release
     needs:
       - windows_llvm_mingw_amd64
       - windows_clang_amd64
@@ -256,20 +265,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
-      - name: validate_tag
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "error: tag '$RELEASE_TAG' does not match vX.Y.Z"
-            exit 1
-          fi
-
       - name: checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: configure_git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: create_and_push_tag
+        run: |
+          git tag -a ${{ inputs.version }} -m "release ${{ inputs.version }}"
+          git push origin ${{ inputs.version }}
 
       - name: download_llvm_mingw_artifact
         uses: actions/download-artifact@v8
@@ -277,13 +287,13 @@ jobs:
           name: windows-llvm-mingw-amd64
           path: artifacts/
 
-      - name: download_clang_artifact
+      - name: download_clang_windows_artifact
         uses: actions/download-artifact@v8
         with:
           name: windows-clang-amd64
           path: artifacts/
 
-      - name: download_msvc_artifact
+      - name: download_msvc_windows_artifact
         uses: actions/download-artifact@v8
         with:
           name: windows-msvc-amd64
@@ -302,28 +312,83 @@ jobs:
           path: artifacts/
 
       - name: generate_release_notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          {
-            echo "## wemod_enhancer ${RELEASE_TAG}"
-            echo ""
-            echo "### What's Changed"
-            echo ""
-            git log --pretty=format:"- %s (\\\\`%h\\\\`)" $(git describe --tags --abbrev=0 ${RELEASE_TAG}^ 2>/dev/null || echo "HEAD~10")..${RELEASE_TAG} 2>/dev/null || git log --pretty=format:"- %s (\\\\`%h\\\\`)" -10
-            echo ""
-            echo "### Checksums"
-            echo ""
-            echo '```'
-            (cd artifacts && sha256sum *.zip *.tar.xz 2>/dev/null || sha256sum *)
-            echo '```'
-          } > release_notes.md
+          args=(-f tag_name="${{ inputs.version }}" -f target_commitish="main")
+          if [ -n "${{ inputs.previous_tag }}" ]; then
+            args+=(-f previous_tag_name="${{ inputs.previous_tag }}")
+          fi
+          gh api repos/${{ github.repository }}/releases/generate-notes \
+            "${args[@]}" --jq '.body' > release_notes.md
+          echo "notes_file=release_notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: create_release
-        uses: softprops/action-gh-release@v3
+      - name: create_github_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create \
+            "${{ inputs.version }}" \
+            --title "${{ inputs.version }}" \
+            --notes-file release_notes.md \
+            artifacts/*
+
+  # ── Post-release: bump CMake project version on main ───────────────────────
+  # Runs only after the release is published, so the tag and the
+  # just-built artifacts stay untouched. This prepares main for the NEXT
+  # release: packages always ship the project() version of their own tag.
+  bump_cmake_version:
+    name: Bump CMake version on main
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Two release runs must never rebase-race the version commit:
+    # queue the bump jobs, never cancel them mid-push.
+    concurrency:
+      group: post-release-cmake-version-bump
+      cancel-in-progress: false
+    env:
+      # Bound once via env - never expand a workflow input into shell
+      # source (zizmor template-injection).
+      NEXT_VERSION: ${{ inputs.next_version }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: wemod_enhancer ${{ env.RELEASE_TAG }}
-          body_path: release_notes.md
-          files: artifacts/*
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: true
+          ref: main
+          fetch-depth: 0
+
+      - name: validate_next_version
+        run: |
+          if [[ ! "$NEXT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf "::error::next_version must be plain semver, no v prefix (e.g. 1.0.5) - got '%s'\n" "$NEXT_VERSION"
+            exit 1
+          fi
+          current=$(grep -E '^[[:space:]]*VERSION[[:space:]]+[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$' CMakeLists.txt | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          if [[ -z "$current" ]]; then
+            echo "::error::could not read the current project version from CMakeLists.txt"
+            exit 1
+          fi
+          # sort -V ordering: the smaller of the two sorts first, so an
+          # equal or lower next_version sorts first - reject both.
+          lowest=$(printf '%s\n%s\n' "$current" "$NEXT_VERSION" | sort -V | head -n1)
+          if [[ "$lowest" == "$NEXT_VERSION" ]]; then
+            printf "::error::next_version (%s) must be greater than the current project version (%s)\n" "$NEXT_VERSION" "$current"
+            exit 1
+          fi
+
+      - name: bump_project_version
+        run: |
+          sed -i -E "s/^([[:space:]]*VERSION[[:space:]]+)[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$/\1$NEXT_VERSION/" CMakeLists.txt
+          grep -E "^[[:space:]]*VERSION[[:space:]]+$NEXT_VERSION[[:space:]]*$" CMakeLists.txt
+
+      - name: commit_and_push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CMakeLists.txt
+          git commit -m "chore: bump CMake project version to $NEXT_VERSION"
+          git pull --rebase origin main
+          git push origin HEAD:main
