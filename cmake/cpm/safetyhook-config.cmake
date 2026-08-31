@@ -4,7 +4,7 @@ cpmaddpackage(
     GITHUB_REPOSITORY
     cursey/safetyhook
     GIT_TAG
-    v0.6.9
+    0.7.0
     EXCLUDE_FROM_ALL
     ON
     OPTIONS
