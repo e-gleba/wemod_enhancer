@@ -3,8 +3,8 @@ cpmaddpackage(
     GSL
     GITHUB_REPOSITORY
     microsoft/GSL
-    GIT_TAG
-    4.2.2
+    VERSION
+    5.0.0
     GIT_SHALLOW
     TRUE
     GIT_PROGRESS
