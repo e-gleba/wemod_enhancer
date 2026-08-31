@@ -52,10 +52,12 @@
 //     not throw on a half-installed WeMod.
 //   - ImGui widget widths are computed from the font size
 //     (CalcTextSize / GetFrameHeight), so nothing clips at any DPI.
-//   - One scale factor for the whole UI: style.FontScaleDpi at init
-//     scales every font-size-derived widget (ImGui 1.92+); the window
-//     is created at logical size, so SDL keeps the physical size
-//     constant across DPIs.
+//   - Scale at init, the ImGui 1.92+ way: style.FontSizeBase lifts
+//     the tiny 13 px default font, style.FontScaleDpi applies the
+//     display DPI on top, and ScaleAllSizes bakes the same factor
+//     into paddings/spacings (they do not follow the font scale on
+//     their own). The window is created at logical size, so SDL
+//     keeps the physical size constant across DPIs.
 //   - Folder validity is an INVARIANT of the current field text:
 //     resolve_wemod_dir() re-runs on edits and a 500 ms timer (never
 //     every frame - it walks directories), so the field can never
@@ -161,15 +163,23 @@ constexpr std::string_view default_python{
 
 // Window logical size; SDL keeps the physical size constant across
 // DPIs, and style.FontScaleDpi scales every font-size-derived widget.
-constexpr std::int32_t window_width{720};
-constexpr std::int32_t window_height{480};
-constexpr std::int32_t log_lines_reserved{8};
+// The minimum size keeps the layout adequate: SDL clamps resizes
+// below it, so no field or button can ever be clipped away.
+constexpr std::int32_t window_width{960};
+constexpr std::int32_t window_height{640};
+constexpr std::int32_t window_min_width{720};
+constexpr std::int32_t window_min_height{480};
 
-// ImGui tables size columns from the cell TEXT, not the widget: a
-// button column sized for "Patch" clips "Restore". Padding for the
-// widest label keeps the column wide enough for every state.
-constexpr std::string_view widest_button{"Download WeMod"};
-constexpr float button_padding{24.0F};
+// The embedded default font is 13 px - small on a desktop monitor.
+// One base size lifts the whole UI (FontScaleDpi multiplies on top);
+// past 15 px ImGui auto-selects its scalable vector font, so text
+// stays crisp at any DPI.
+constexpr float base_font_size{16.0F};
+
+// Primary actions sit taller than plain widgets: the thing the user
+// came for should be the easiest target on screen.
+constexpr float action_height_ratio{1.6F};
+
 constexpr float field_padding{12.0F};
 constexpr float section_indent{16.0F};
 constexpr float field_width_ratio{0.55F};
@@ -814,6 +824,15 @@ void report_bug(app_state& state)
 
 // --- layout helpers (font-size derived, DPI-correct) ------------------
 
+// Width a fit_button occupies: label text plus frame padding. Rows
+// that stretch a field next to buttons need the number up front.
+[[nodiscard]] float fit_width(const char* label)
+{
+    Expects(label != nullptr);
+    return ImGui::CalcTextSize(label).x +
+        ImGui::GetStyle().FramePadding.x * 2.0F;
+}
+
 // Button sized to its label; returns true when clicked.
 bool fit_button(const char* label)
 {
@@ -897,26 +916,7 @@ void draw_ui(app_state& state)
 
     ImGui::Begin("##main", nullptr, window_flags);
 
-    // One table for the whole window: labels column + buttons column.
-    // ImGui sizes button columns from the cell TEXT, so the buttons
-    // column gets an explicit width hint for the widest label -
-    // otherwise "Restore" clips where "Patch" fit.
     const ImGuiStyle& style{ImGui::GetStyle()};
-    const float buttons_width{ImGui::CalcTextSize(widest_button.data()).x +
-                              style.FramePadding.x * 2.0F +
-                              button_padding};
-
-    ImGui::BeginTable("layout", 2,
-                      ImGuiTableFlags_SizingStretchProp |
-                          ImGuiTableFlags_NoSavedSettings);
-    ImGui::TableSetupColumn("fields", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed,
-                            buttons_width);
-
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-
-    // title bar already says "WeMod Enhancer" - no duplicate title here.
 
     // --- WeMod folder: the only thing a user must provide -----------
     // Validity is an invariant of the current field text, re-probed on
@@ -928,6 +928,7 @@ void draw_ui(app_state& state)
     const bool install_ok{!resolved_dir.empty()};
     const bool script_ok{state.script_present};
 
+    // The title bar already says "WeMod Enhancer" - no duplicate title.
     field_label("WeMod folder");
     help_marker(
         "The app-x.y.z folder with resources/app.asar inside. Pick the "
@@ -935,29 +936,38 @@ void draw_ui(app_state& state)
         "Linux: the wemod-launcher clone works too - after the first "
         "run + login its wemod_data/wemod_bin is picked up.",
         "https://github.com/e-gleba/wemod_enhancer#quick-start");
-    ImGui::SameLine();
     if (!state.install_dir.empty()) {
+        // SameLine only when the status text actually exists - an
+        // unconsumed SameLine would pull the field onto this line.
+        ImGui::SameLine();
         text_colored(install_ok ? color_ok : color_err,
                      install_ok ? "ok" : "not a WeMod install");
     }
+
+    // One row: the field stretches across whatever width its buttons
+    // leave, so nothing clips at any window size or DPI.
+    const float spacing_x{style.ItemSpacing.x};
+    const float browse_width{fit_width("Browse...")};
+    float download_width{0.0F};
+    if (!install_ok) {
+        download_width = fit_width("Download WeMod") + spacing_x;
+    }
+    const float buttons_width{browse_width + spacing_x + download_width};
+    const float avail_x{ImGui::GetContentRegionAvail().x};
+    ImGui::SetNextItemWidth(std::max(avail_x - buttons_width,
+                                     min_field_width));
 
     // Valid path = quiet green tint on the field itself.
     if (install_ok) {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, field_ok_bg);
     }
-    ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##install_dir", "path to WeMod",
                              &state.install_dir);
     if (install_ok) {
         ImGui::PopStyleColor();
     }
 
-    // The resolved app-x.y.z dir when it differs from the field text.
-    if (install_ok && resolved_dir.string() != state.install_dir) {
-        text_disabled(resolved_dir.string());
-    }
-
-    ImGui::TableNextColumn();
+    ImGui::SameLine();
     if (fit_button("Browse...")) {
         SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
                                  state.install_dir.empty()
@@ -966,6 +976,7 @@ void draw_ui(app_state& state)
                                  false);
     }
     if (!install_ok) {
+        ImGui::SameLine();
         if (fit_button("Download WeMod")) {
             start_wemod_download(state);
         }
@@ -978,17 +989,46 @@ void draw_ui(app_state& state)
         }
     }
 
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    // The resolved app-x.y.z dir when it differs from the field text.
+    if (install_ok && resolved_dir.string() != state.install_dir) {
+        text_disabled(resolved_dir.string());
+    }
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-    ImGui::TableNextColumn();
 
     // --- Actions ------------------------------------------------------
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    // Patch and Restore split the row evenly and sit taller than
+    // plain widgets: the two things this app exists for get the two
+    // biggest targets.
+    const char* block_reason{patch_block_reason(install_ok, script_ok)};
+    const bool blocked{state.running || block_reason != nullptr};
+    const ImVec2 action_size{
+        (ImGui::GetContentRegionAvail().x - spacing_x) * 0.5F,
+        ImGui::GetFrameHeight() * action_height_ratio};
 
+    ImGui::BeginDisabled(blocked);
+    if (ImGui::Button("Patch", action_size)) {
+        // Normalize the field to the resolved dir: the log then shows
+        // the exact folder the patcher ran against.
+        state.install_dir = resolved_dir.string();
+        start_run(state, "patch");
+    }
+    ImGui::EndDisabled();
+    if (block_reason != nullptr &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text(block_reason);
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(state.running);
+    if (ImGui::Button("Restore", action_size)) {
+        start_run(state, "restore");
+    }
+    ImGui::EndDisabled();
+
+    // The status line reports on the actions, so it sits under them.
     if (state.running) {
         text_disabled(running_status(state.kind));
     } else if (state.has_run) {
@@ -1002,37 +1042,11 @@ void draw_ui(app_state& state)
         text_disabled("Patch, then launch WeMod.");
     }
 
-    ImGui::TableNextColumn();
-    const char* block_reason{patch_block_reason(install_ok, script_ok)};
-    const bool blocked{state.running || block_reason != nullptr};
-    ImGui::BeginDisabled(blocked);
-    if (fit_button("Patch")) {
-        // Normalize the field to the resolved dir: the log then shows
-        // the exact folder the patcher ran against.
-        state.install_dir = resolved_dir.string();
-        start_run(state, "patch");
-    }
-    ImGui::EndDisabled();
-    if (block_reason != nullptr &&
-        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        tooltip_text(block_reason);
-    }
-    ImGui::BeginDisabled(state.running);
-    if (fit_button("Restore")) {
-        start_run(state, "restore");
-    }
-    ImGui::EndDisabled();
-
-    // --- Settings (collapsed by default) ------------------------------
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-    ImGui::TableNextColumn();
 
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    // --- Settings (collapsed by default) ------------------------------
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent(section_indent);
 
@@ -1059,11 +1073,15 @@ void draw_ui(app_state& state)
             "Windows, python3 elsewhere. Point it at a full path if "
             "Python is not on PATH.",
             "https://www.python.org/downloads/");
-        ImGui::SameLine();
-        if (state.python_ok == probe_state::works) {
-            text_colored(color_ok, state.python_version);
-        } else if (state.python_ok == probe_state::failed) {
-            text_colored(color_err, "not working");
+        if (state.python_ok != probe_state::unknown) {
+            // SameLine only when the status text actually exists (see
+            // the folder label above).
+            ImGui::SameLine();
+            if (state.python_ok == probe_state::works) {
+                text_colored(color_ok, state.python_version);
+            } else {
+                text_colored(color_err, "not working");
+            }
         }
         ImGui::SetNextItemWidth(-FLT_MIN);
         ImGui::InputText("##python", &state.python);
@@ -1083,18 +1101,19 @@ void draw_ui(app_state& state)
         ImGui::Unindent();
     }
 
-    ImGui::EndTable();
-
-    // --- Log: fills the rest of the window ----------------------------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    const float line_height{ImGui::GetTextLineHeightWithSpacing()};
-    const float log_height{std::max(
-        ImGui::GetContentRegionAvail().y -
-            line_height * log_lines_reserved,
-        line_height * 4.0F)};
+    // --- Log: fills every pixel the footer does not need --------------
+    // The footer is one row of fit_buttons: frame height plus the
+    // spacing above it. Reserving exactly that - not a fixed line
+    // count - leaves no dead gap under the log at any window height.
+    const float footer_height{ImGui::GetFrameHeight() +
+                              style.ItemSpacing.y};
+    const float log_height{
+        std::max(ImGui::GetContentRegionAvail().y - footer_height,
+                 ImGui::GetFrameHeight() * 4.0F)};
 
     ImGui::BeginChild("##log", ImVec2(0.0F, log_height),
                       ImGuiChildFlags_Borders,
@@ -1180,18 +1199,31 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
+    // Below this size the layout would clip; SDL clamps the resize.
+    if (!SDL_SetWindowMinimumSize(window, window_min_width,
+                                  window_min_height)) {
+        sdl_log_error(std::string("SDL_SetWindowMinimumSize: ") +
+                      SDL_GetError());
+    }
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    // One knob scales the whole UI: style.FontScaleDpi (ImGui 1.92+)
-    // scales every font-size-derived widget, and the window was
-    // created at logical size so SDL keeps the physical size constant
-    // across DPIs. SDL returns 0.0 when the scale is unknown - that
-    // would zero every widget, so fall back to 1.0.
+    // Vanilla dark theme, scaled the ImGui 1.92+ way: FontSizeBase
+    // lifts the tiny 13 px default (past 15 px ImGui auto-selects its
+    // scalable vector font), FontScaleDpi applies the display DPI on
+    // top, and ScaleAllSizes bakes the same factor into paddings and
+    // spacings - they do not follow the font scale on their own.
+    // SDL returns 0.0 when the scale is unknown - that would zero
+    // every widget, so fall back to 1.0.
     const float main_scale{SDL_GetDisplayContentScale(
         SDL_GetPrimaryDisplay())};
-    ImGui::GetStyle().FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
+    const float dpi_scale{main_scale > 0.0F ? main_scale : 1.0F};
+    ImGuiStyle& style{ImGui::GetStyle()};
+    style.FontSizeBase = base_font_size;
+    style.FontScaleDpi = dpi_scale;
+    style.ScaleAllSizes(dpi_scale);
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
