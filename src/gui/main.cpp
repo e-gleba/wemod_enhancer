@@ -32,6 +32,7 @@
 //     Patch and Restore need a valid folder and the patcher script.
 //   - Status line, then Settings as a collapsing header. Patcher /
 //     Python / version.dll are path fields, tinted green or red.
+//     version.dll is prefilled with the bundled path next to the exe.
 //   - Console section: muted label, then the log filling the rest.
 //     Copy output / Clear output / Report bug share one equal-width
 //     full-span row; Copied! left and the version centered on the
@@ -235,7 +236,7 @@ struct app_state final
     std::string install_dir;
     std::string script_path;
     std::string python;
-    std::string version_dll; // empty = auto: the copy next to the exe
+    std::string version_dll; // prefilled: the copy next to the exe
     std::string log;
     std::future<run_result> pending;
     bool running{false};
@@ -250,7 +251,7 @@ struct app_state final
     std::string probed_version_dll; // ditto, for the dll probe
     fs::path resolved_install_dir;  // cached resolve_wemod_dir result
     bool script_present{false};     // the patcher script exists on disk
-    bool dll_present{false};        // effective version.dll exists on disk
+    bool dll_present{false};        // version.dll field path exists on disk
     std::chrono::steady_clock::time_point last_probe; // last stat() round
     // --- diagnostics ---
     probe_state python_ok{probe_state::unknown};
@@ -498,15 +499,6 @@ version_parts(std::string name)
     return {};
 }
 
-// The bundled patcher script: a sibling of the executable.
-[[nodiscard]] fs::path bundled_script()
-{
-    if (const char* base{SDL_GetBasePath()}) {
-        return fs::path(base) / patcher_script_name;
-    }
-    return fs::temp_directory_path() / "wemod_enhancer" / patcher_script_name;
-}
-
 // Dir the running exe sits in. SDL_GetBasePath picks it on every OS;
 // the patcher is installed next to the exe, so the whole install stays
 // one self-contained, movable folder. The result is SDL-owned internal
@@ -520,15 +512,16 @@ version_parts(std::string name)
     return fs::temp_directory_path() / "wemod_enhancer";
 }
 
-// The bundled proxy DLL, reported only when it exists on disk.
+// The bundled patcher script: a sibling of the executable.
+[[nodiscard]] fs::path bundled_script()
+{
+    return exe_dir() / patcher_script_name;
+}
+
+// Expected version.dll path next to the exe (shown in Settings).
 [[nodiscard]] fs::path bundled_version_dll()
 {
-    std::error_code ec;
-    fs::path dll{exe_dir() / version_dll_name};
-    if (fs::is_regular_file(dll, ec)) {
-        return dll;
-    }
-    return {};
+    return exe_dir() / version_dll_name;
 }
 
 // Throttled probes behind the field validity invariant: edits re-probe
@@ -551,10 +544,8 @@ void probe_filesystem(app_state& state)
     std::error_code ec;
     state.script_present = !state.script_path.empty() &&
         fs::is_regular_file(state.script_path, ec);
-    const std::string dll{!state.version_dll.empty()
-                              ? state.version_dll
-                              : bundled_version_dll().string()};
-    state.dll_present = !dll.empty() && fs::is_regular_file(dll, ec);
+    state.dll_present = !state.version_dll.empty() &&
+        fs::is_regular_file(state.version_dll, ec);
 }
 
 // SDL dialog callback: may run on another thread; it only writes a
@@ -601,15 +592,9 @@ void start_run(app_state& state, const char* subcommand)
     std::string command{shell_quote(state.python) + " -u " +
                         shell_quote(state.script_path) + " " + subcommand +
                         " --install-dir " + shell_quote(state.install_dir)};
-    if (std::string_view(subcommand) == "patch") {
-        // Field override wins; else the bundled DLL next to the exe.
-        const std::string dll{!state.version_dll.empty()
-                                  ? state.version_dll
-                                  : bundled_version_dll().string()};
-        if (!dll.empty()) {
-            shown += " --version-dll " + dll;
-            command += " --version-dll " + shell_quote(dll);
-        }
+    if (std::string_view(subcommand) == "patch" && !state.version_dll.empty()) {
+        shown += " --version-dll " + state.version_dll;
+        command += " --version-dll " + shell_quote(state.version_dll);
     }
     start_command(state, run_kind::patcher, shown, command);
 }
@@ -1014,12 +999,12 @@ void draw_settings(app_state& state)
 
     field_label("version.dll");
     help_marker(
-        "The proxy DLL the patcher drops next to WeMod. Leave empty "
-        "to use the copy bundled next to the executable.",
+        "The proxy DLL the patcher drops next to WeMod. Default: the "
+        "copy next to the executable.",
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
     push_field_tint(state.dll_present);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##version_dll", "auto: next to the exe",
+    ImGui::InputTextWithHint("##version_dll", "version.dll next to the exe",
                              &state.version_dll);
     ImGui::PopStyleColor();
     field_fail_hover(state.dll_present, "version.dll not found");
@@ -1317,6 +1302,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     state.renderer = renderer;
     state.install_dir = default_install_dir();
     state.script_path = bundled_script().string();
+    state.version_dll = bundled_version_dll().string();
     state.python = std::string(default_python);
 
     // Say what was auto-detected up front - the log doubles as the
