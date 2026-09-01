@@ -65,7 +65,9 @@ jobs:
                       preset: linux_clang_amd64_full
                       artifact-name: linux-clang-amd64
                       build-dir: build/linux_clang_amd64
-                      install-deps: ''
+                      install-deps: |-
+                          sudo apt-get update
+                          sudo apt-get install -y clang lld ninja-build
                     - os: ubuntu-24.04-arm
                       preset: linux_gcc_arm64_full
                       artifact-name: linux-gcc-arm64
