@@ -25,7 +25,8 @@
 //
 // Layout (default imgui theme, untouched - hierarchy comes from
 // alignment, not colors):
-//   - One table: a stretching content column + a fixed-width action
+//   - One table with a single logical row: a stretching content
+//     column (folder field + status) and a fixed-width action
 //     column. Every button shares one width (the widest label), so
 //     Browse / Patch / Restore / Download WeMod form a single
 //     aligned stack on the right - the settings-page habit: aligned
@@ -34,6 +35,11 @@
 //   - The stack order is the workflow: pick the folder, patch,
 //     restore; Download WeMod appears only while the folder is
 //     unresolved.
+//   - Below the table, full window width: the separator, the
+//     Settings collapsing header and its inputs. TableNextColumn()
+//     selects the FIRST cell of a new row - it never spans both
+//     columns - so these sections live outside the table, like the
+//     log and the bottom toolbar.
 //   - The bottom toolbar holds the secondary utilities (Copy
 //     output, Report bug) left, the version pinned right.
 //
@@ -906,6 +912,9 @@ void help_marker(const char* text, const char* url)
     return {};
 }
 
+// The whole window: table with the folder field + the aligned action
+// stack, then full-width sections below - separator, Settings, the
+// scrolling log and the bottom toolbar. One frame = one draw call.
 void draw_ui(app_state& state)
 {
     const ImGuiViewport* viewport{ImGui::GetMainViewport()};
@@ -928,11 +937,13 @@ void draw_ui(app_state& state)
                               style.FramePadding.x * 2.0F +
                               button_padding};
 
-    // One table for the whole top block: a stretching content column
-    // plus a fixed action column - the settings-page arrangement.
-    // ImGui sizes button columns from the cell TEXT, not the widget,
-    // so the action column gets an explicit width hint; every button
-    // in it is drawn at exactly that width.
+    // One table for the folder row: a stretching content column plus a
+    // fixed action column - the settings-page arrangement. ImGui
+    // sizes button columns from the cell TEXT, not the widget, so the
+    // action column gets an explicit width hint; every button in it
+    // is drawn at exactly that width. The table ends with that row:
+    // everything below (Settings, log, toolbar) spans the full
+    // window width.
     ImGui::BeginTable("layout", 2,
                       ImGuiTableFlags_SizingStretchProp |
                           ImGuiTableFlags_NoSavedSettings);
@@ -1051,15 +1062,17 @@ void draw_ui(app_state& state)
         }
     }
 
-    // --- Settings (collapsed by default), spanning the full width ----
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn(); // spans both columns: no second cell
+    // The folder/action pair is the only row: end the table here.
+    // TableNextColumn() selects the FIRST cell of a new row - it does
+    // not span both columns - so the sections below live outside the
+    // table and cover the full window width.
+    ImGui::EndTable();
+
+    // --- Settings (collapsed by default), full window width ---------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn(); // ditto - full-width fields for paths
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent(section_indent);
 
@@ -1109,8 +1122,6 @@ void draw_ui(app_state& state)
 
         ImGui::Unindent();
     }
-
-    ImGui::EndTable();
 
     // --- Log: fills the rest of the window ----------------------------
     ImGui::Spacing();
