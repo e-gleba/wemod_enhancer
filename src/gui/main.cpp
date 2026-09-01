@@ -25,13 +25,13 @@
 //
 // Layout (default imgui theme, untouched colors - hierarchy comes
 // from alignment, padding and scale):
-//   - WeMod folder field with Browse on the same row.
+//   - WeMod folder field with Browse on the same row. Validity is
+//     the field color (green / red), no extra status word.
 //   - Full-width action row under the path: Patch / Restore, plus
-//     Download WeMod only while the folder is unresolved. Buttons
-//     share the row equally. Same height as Copy / Clear / Report
-//     so every full-span row reads as one control language.
-//   - Status line, then Settings as a collapsing header (collapsed
-//     by default, full width - Python / patcher / version.dll).
+//     Download WeMod only while the folder is unresolved. Both
+//     Patch and Restore need a valid folder and the patcher script.
+//   - Status line, then Settings as a collapsing header. Patcher /
+//     Python / version.dll are path fields, tinted green or red.
 //   - Console section: muted label, then the log filling the rest.
 //     Copy output / Clear output / Report bug share one equal-width
 //     full-span row; Copied! left and the version centered on the
@@ -206,8 +206,10 @@ constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 constexpr ImVec4 color_ok{0.35F, 0.85F, 0.45F, 1.00F};
 constexpr ImVec4 color_err{0.90F, 0.30F, 0.30F, 1.00F};
 
-// Input field tint when the path is valid: quiet green fill.
+// Quiet fill tints for path fields. Validity is the color, not a
+// word next to the label.
 constexpr ImVec4 field_ok_bg{0.14F, 0.32F, 0.16F, 0.70F};
+constexpr ImVec4 field_err_bg{0.32F, 0.14F, 0.14F, 0.70F};
 
 struct run_result final
 {
@@ -245,8 +247,10 @@ struct app_state final
     // --- filesystem probe cache (see probe_filesystem) ---
     std::string probed_install_dir; // field text the last resolve ran on
     std::string probed_script_path; // ditto, for the script probe
+    std::string probed_version_dll; // ditto, for the dll probe
     fs::path resolved_install_dir;  // cached resolve_wemod_dir result
-    bool script_present{false};     // the bundled script exists on disk
+    bool script_present{false};     // the patcher script exists on disk
+    bool dll_present{false};        // effective version.dll exists on disk
     std::chrono::steady_clock::time_point last_probe; // last stat() round
     // --- diagnostics ---
     probe_state python_ok{probe_state::unknown};
@@ -494,37 +498,13 @@ version_parts(std::string name)
     return {};
 }
 
-// Throttled probes behind the field validity invariant: edits re-probe
-// immediately, reprobe_interval catches on-disk changes.
-void probe_filesystem(app_state& state)
+// The bundled patcher script: a sibling of the executable.
+[[nodiscard]] fs::path bundled_script()
 {
-    const auto now{std::chrono::steady_clock::now()};
-    if (state.probed_install_dir == state.install_dir &&
-        state.probed_script_path == state.script_path &&
-        (now - state.last_probe) < reprobe_interval) {
-        return;
+    if (const char* base{SDL_GetBasePath()}) {
+        return fs::path(base) / patcher_script_name;
     }
-    state.probed_install_dir = state.install_dir;
-    state.probed_script_path = state.script_path;
-    state.last_probe = now;
-    state.resolved_install_dir = resolve_wemod_dir(state.install_dir);
-    // error_code overload: a malformed path in the field must not throw.
-    std::error_code ec;
-    state.script_present = !state.script_path.empty() &&
-        fs::is_regular_file(state.script_path, ec);
-}
-
-// SDL dialog callback: may run on another thread; it only writes a
-// std::string that the UI thread reads next frame - safe in practice
-// because the dialog is modal and the field is not edited meanwhile.
-void SDLCALL on_folder_chosen(void* userdata,
-                              const char* const* filelist,
-                              int /*filter*/)
-{
-    auto& state{state_of(userdata)};
-    if (filelist != nullptr && filelist[0] != nullptr) {
-        state.install_dir = filelist[0];
-    }
+    return fs::temp_directory_path() / "wemod_enhancer" / patcher_script_name;
 }
 
 // Dir the running exe sits in. SDL_GetBasePath picks it on every OS;
@@ -540,12 +520,6 @@ void SDLCALL on_folder_chosen(void* userdata,
     return fs::temp_directory_path() / "wemod_enhancer";
 }
 
-// The bundled patcher script: a sibling of the executable.
-[[nodiscard]] fs::path bundled_script()
-{
-    return exe_dir() / patcher_script_name;
-}
-
 // The bundled proxy DLL, reported only when it exists on disk.
 [[nodiscard]] fs::path bundled_version_dll()
 {
@@ -555,6 +529,45 @@ void SDLCALL on_folder_chosen(void* userdata,
         return dll;
     }
     return {};
+}
+
+// Throttled probes behind the field validity invariant: edits re-probe
+// immediately, reprobe_interval catches on-disk changes.
+void probe_filesystem(app_state& state)
+{
+    const auto now{std::chrono::steady_clock::now()};
+    if (state.probed_install_dir == state.install_dir &&
+        state.probed_script_path == state.script_path &&
+        state.probed_version_dll == state.version_dll &&
+        (now - state.last_probe) < reprobe_interval) {
+        return;
+    }
+    state.probed_install_dir = state.install_dir;
+    state.probed_script_path = state.script_path;
+    state.probed_version_dll = state.version_dll;
+    state.last_probe = now;
+    state.resolved_install_dir = resolve_wemod_dir(state.install_dir);
+    // error_code overload: a malformed path in the field must not throw.
+    std::error_code ec;
+    state.script_present = !state.script_path.empty() &&
+        fs::is_regular_file(state.script_path, ec);
+    const std::string dll{!state.version_dll.empty()
+                              ? state.version_dll
+                              : bundled_version_dll().string()};
+    state.dll_present = !dll.empty() && fs::is_regular_file(dll, ec);
+}
+
+// SDL dialog callback: may run on another thread; it only writes a
+// std::string that the UI thread reads next frame - safe in practice
+// because the dialog is modal and the field is not edited meanwhile.
+void SDLCALL on_folder_chosen(void* userdata,
+                              const char* const* filelist,
+                              int /*filter*/)
+{
+    auto& state{state_of(userdata)};
+    if (filelist != nullptr && filelist[0] != nullptr) {
+        state.install_dir = filelist[0];
+    }
 }
 
 // Launch a background command and stream its output into the log.
@@ -912,18 +925,33 @@ void help_marker(const char* text, const char* url)
     }
 }
 
-// Why Patch is disabled, or nullptr when it can run.
-[[nodiscard]] const char* patch_block_reason(const bool install_ok,
-                                             const bool script_ok)
+// Quiet green / red fill on the next input. Validity is the color.
+void push_field_tint(const bool ok)
+{
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ok ? field_ok_bg : field_err_bg);
+}
+
+// Hover on a red field: one line, no extra label clutter.
+void field_fail_hover(const bool ok, const char* why)
+{
+    Expects(why != nullptr);
+    if (!ok && ImGui::IsItemHovered()) {
+        tooltip_text(why);
+    }
+}
+
+// Why Patch / Restore is disabled, or nullptr when it can run.
+[[nodiscard]] const char* run_block_reason(const bool install_ok,
+                                           const bool script_ok)
 {
     if (!install_ok && !script_ok) {
-        return "Needs a valid WeMod folder and the patcher";
+        return "Needs a WeMod folder and the patcher script";
     }
     if (!install_ok) {
-        return "Pick a valid WeMod folder first";
+        return "Select a WeMod folder first";
     }
     if (!script_ok) {
-        return "The bundled patcher is missing - see Settings";
+        return "Patcher script missing - open Settings";
     }
     return nullptr;
 }
@@ -943,23 +971,20 @@ void help_marker(const char* text, const char* url)
     return {};
 }
 
-// Settings body: patcher / Python / version.dll. Inputs stretch.
-void draw_settings(app_state& state, const bool script_ok)
+// Settings body: patcher / Python / version.dll as tinted path fields.
+void draw_settings(app_state& state)
 {
     field_label("Patcher");
     help_marker(
-        "wemod_enhancer.py + version.dll ship inside this package, "
-        "next to the executable - no download, no update step. If the "
-        "script is reported missing, re-download the GUI package.",
+        "wemod_enhancer.py ships next to the executable. Re-download "
+        "the GUI package if the field stays red.",
         "https://github.com/e-gleba/wemod_enhancer/releases/latest");
-    ImGui::SameLine();
-    if (script_ok) {
-        text_colored(color_ok, "ready");
-        ImGui::SameLine();
-        text_disabled(state.script_path);
-    } else {
-        text_colored(color_err, "missing next to the exe");
-    }
+    push_field_tint(state.script_present);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##script_path", "wemod_enhancer.py next to the exe",
+                             &state.script_path);
+    ImGui::PopStyleColor();
+    field_fail_hover(state.script_present, "Patcher script not found");
 
     ImGui::Spacing();
 
@@ -971,12 +996,19 @@ void draw_settings(app_state& state, const bool script_ok)
         "https://www.python.org/downloads/");
     ImGui::SameLine();
     if (state.python_ok == probe_state::works) {
-        text_colored(color_ok, state.python_version);
-    } else if (state.python_ok == probe_state::failed) {
-        text_colored(color_err, "not working");
+        text_disabled(state.python_version);
+    }
+    const bool python_tinted{state.python_ok != probe_state::unknown};
+    const bool python_ok{state.python_ok == probe_state::works};
+    if (python_tinted) {
+        push_field_tint(python_ok);
     }
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputText("##python", &state.python);
+    ImGui::InputTextWithHint("##python", "python / python3", &state.python);
+    if (python_tinted) {
+        ImGui::PopStyleColor();
+        field_fail_hover(python_ok, "Python failed to start");
+    }
 
     ImGui::Spacing();
 
@@ -985,10 +1017,12 @@ void draw_settings(app_state& state, const bool script_ok)
         "The proxy DLL the patcher drops next to WeMod. Leave empty "
         "to use the copy bundled next to the executable.",
         "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
+    push_field_tint(state.dll_present);
     ImGui::SetNextItemWidth(-FLT_MIN);
-    ImGui::InputTextWithHint("##version_dll",
-                             "auto: next to the exe",
+    ImGui::InputTextWithHint("##version_dll", "auto: next to the exe",
                              &state.version_dll);
+    ImGui::PopStyleColor();
+    field_fail_hover(state.dll_present, "version.dll not found");
 }
 
 // The whole window: path+Browse, equal-width action row, status,
@@ -1016,10 +1050,9 @@ void draw_ui(app_state& state)
     const bool script_ok{state.script_present};
 
     // --- WeMod folder + Browse on one row -----------------------------
-    // Validity is an invariant of the current field text, re-probed on
-    // edits and on the reprobe timer (never every frame - the resolve
-    // walks directories). Patch normalizes the field to the resolved
-    // dir so the log always shows the exact folder used.
+    // Validity is the field color (green / red), re-probed on edits
+    // and on the reprobe timer. Empty stays default. Patch normalizes
+    // the field to the resolved dir so the log shows the exact folder.
     field_label("WeMod folder");
     help_marker(
         "The app-x.y.z folder with resources/app.asar inside. Pick the "
@@ -1027,11 +1060,6 @@ void draw_ui(app_state& state)
         "Linux: the wemod-launcher clone works too - after the first "
         "run + login its wemod_data/wemod_bin is picked up.",
         "https://github.com/e-gleba/wemod_enhancer#quick-start");
-    ImGui::SameLine();
-    if (!state.install_dir.empty()) {
-        text_colored(install_ok ? color_ok : color_err,
-                     install_ok ? "ok" : "not a WeMod install");
-    }
 
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (style.FramePadding.x * 2.0F) + button_padding};
@@ -1039,14 +1067,16 @@ void draw_ui(app_state& state)
                                     style.ItemSpacing.x,
                                 ImGui::GetFontSize() * 8.0F)};
 
-    if (install_ok) {
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, field_ok_bg);
+    const bool folder_tinted{!state.install_dir.empty()};
+    if (folder_tinted) {
+        push_field_tint(install_ok);
     }
     ImGui::SetNextItemWidth(path_w);
     ImGui::InputTextWithHint("##install_dir", "path to WeMod",
                              &state.install_dir);
-    if (install_ok) {
+    if (folder_tinted) {
         ImGui::PopStyleColor();
+        field_fail_hover(install_ok, "Not a WeMod install");
     }
     ImGui::SameLine();
     if (action_button("Browse...", browse_w, 0.0F)) {
@@ -1063,14 +1093,13 @@ void draw_ui(app_state& state)
 
     // --- Actions: equal-width row, full span under the path -----------
     // Count = 2 (Patch, Restore) or 3 (+ Download WeMod while the
-    // folder is unresolved). Every button gets the same slice so the
-    // row is one alignment axis, whatever the labels. Height matches
-    // the Copy / Clear / Report row below.
+    // folder is unresolved). Patch and Restore share one block
+    // reason: valid folder + patcher script.
     ImGui::Spacing();
     const int action_count{install_ok ? 2 : 3};
     const float action_w{equal_button_width(action_count)};
 
-    const char* block_reason{patch_block_reason(install_ok, script_ok)};
+    const char* block_reason{run_block_reason(install_ok, script_ok)};
     const bool blocked{state.running || block_reason != nullptr};
     ImGui::BeginDisabled(blocked);
     if (action_button("Patch", action_w, row_h)) {
@@ -1086,11 +1115,15 @@ void draw_ui(app_state& state)
     }
 
     ImGui::SameLine();
-    ImGui::BeginDisabled(state.running);
+    ImGui::BeginDisabled(blocked);
     if (action_button("Restore", action_w, row_h)) {
         start_run(state, "restore");
     }
     ImGui::EndDisabled();
+    if (block_reason != nullptr &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text(block_reason);
+    }
 
     if (!install_ok) {
         ImGui::SameLine();
@@ -1116,8 +1149,9 @@ void draw_ui(app_state& state)
         if (state.last_exit_code == 0) {
             text_colored(color_ok, "Done. Launch WeMod - Pro is active.");
         } else {
-            text_colored(color_err, std::format("Failed (exit code {})",
-                                                state.last_exit_code));
+            text_colored(color_err,
+                         std::format("Failed (exit code {})",
+                                     state.last_exit_code));
         }
     } else {
         text_disabled("Patch, then launch WeMod.");
@@ -1130,7 +1164,7 @@ void draw_ui(app_state& state)
 
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent(section_indent);
-        draw_settings(state, script_ok);
+        draw_settings(state);
         ImGui::Unindent();
     }
 
