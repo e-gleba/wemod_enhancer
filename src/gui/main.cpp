@@ -38,11 +38,13 @@
 //     full-span row; Copied! left and the version centered on the
 //     footer line under it.
 //   - Window size is a fraction of the usable display (clamped) so
-//     FHD / 1440p / 4K all open comfortably. DPI: FontScaleDpi +
-//     ScaleAllSizes + SDL_SetRenderScale, matching imgui's
-//     SDL3+SDL_Renderer example. Skip the render scale and the UI
-//     sits in the top-left corner on Wayland/HiDPI, with InputText
-//     hints clipped.
+//     FHD / 1440p / 4K all open comfortably. DPI is one knob:
+//     SDL_SetRenderScale(DisplayFramebufferScale) maps imgui window
+//     coordinates onto the HIGH_PIXEL_DENSITY framebuffer. Skip that
+//     and the UI sits in the top-left corner on Wayland/HiDPI, with
+//     InputText hints clipped. Do not also bake FontScaleDpi /
+//     ScaleAllSizes to the display scale - that double-counts and
+//     widgets go ~2x too big.
 //
 // C++ Core Guidelines, applied where they cost nothing:
 //   - No owning raw pointers, no new/delete, no C casts; const and
@@ -73,12 +75,12 @@
 //     not throw on a half-installed WeMod.
 //   - ImGui widget widths are computed from the font size
 //     (CalcTextSize / GetFrameHeight), so nothing clips at any DPI.
-//   - DPI follows imgui's SDL3+SDL_Renderer example: FontScaleDpi and
-//     ScaleAllSizes at init, SDL_SetRenderScale(DisplayFramebufferScale)
-//     every frame. Window size stays in SDL window coordinates
-//     (pick_window_size uses usable bounds); HIGH_PIXEL_DENSITY then
-//     gives a larger framebuffer. Do not also multiply the window by
-//     the content scale - usable bounds are already in that space.
+//   - DPI: SDL_SetRenderScale(DisplayFramebufferScale) every frame.
+//     Window size stays in SDL window coordinates (pick_window_size
+//     uses usable bounds); HIGH_PIXEL_DENSITY then gives a larger
+//     framebuffer. Layout and fonts stay 1x in window coords. Do
+//     not also set FontScaleDpi / ScaleAllSizes to the content
+//     scale - that double-counts on HiDPI (~2x too big).
 //   - Folder validity is an INVARIANT of the current field text:
 //     resolve_wemod_dir() re-runs on edits and a 500 ms timer (never
 //     every frame - it walks directories), so the field can never
@@ -186,9 +188,8 @@ constexpr std::string_view default_python{
 // Fallback window size when the display cannot be queried.
 // pick_window_size() uses a fraction of the usable display so FHD /
 // 1440p / 4K all get a comfortable default. Units are SDL window
-// coordinates (same as SDL_GetDisplayUsableBounds); HiDPI is
-// FontScaleDpi + ScaleAllSizes + SDL_SetRenderScale, not a second
-// multiply on this size.
+// coordinates (same as SDL_GetDisplayUsableBounds). HiDPI is
+// SDL_SetRenderScale, not a second multiply on this size.
 constexpr std::int32_t window_width_fallback{1024};
 constexpr std::int32_t window_height_fallback{680};
 constexpr std::int32_t window_min_width{880};
@@ -851,8 +852,8 @@ void report_bug(app_state& state)
 
 // Comfortable window size in SDL window coordinates: a fraction of
 // the usable display, clamped so laptops stay usable and 4K does not
-// open a postage stamp. HiDPI is FontScaleDpi + ScaleAllSizes +
-// SDL_SetRenderScale - this only picks the window.
+// open a postage stamp. HiDPI is SDL_SetRenderScale - this only
+// picks the window.
 [[nodiscard]] std::pair<std::int32_t, std::int32_t> pick_window_size()
 {
     SDL_Rect usable{};
@@ -1265,11 +1266,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
-    // Content scale is the expected UI scale for this display. 0 means
-    // unknown - never feed that to FontScaleDpi or every widget zeros.
-    const float display_scale{SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay())};
-    const float main_scale{display_scale > 0.0F ? display_scale : 1.0F};
-
     const auto [win_w, win_h]{pick_window_size()};
 
     SDL_Window* window{nullptr};
@@ -1292,6 +1288,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     // Density only: default dark colors stay. Opened padding matches
     // the settings-page habit (generous hit targets, even gaps) so
     // FHD and 4K both read as the same layout, just larger.
+    // Padding stays 1x in window coordinates. SDL_SetRenderScale
+    // (DisplayFramebufferScale) maps those onto the HiDPI framebuffer
+    // every frame. Baking FontScaleDpi / ScaleAllSizes on top of that
+    // double-counts and the UI goes ~2x too big.
     ImGuiStyle& style{ImGui::GetStyle()};
     style.WindowPadding = ImVec2(16.0F, 14.0F);
     style.FramePadding = ImVec2(14.0F, 8.0F);
@@ -1299,12 +1299,6 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     style.ItemInnerSpacing = ImVec2(8.0F, 6.0F);
     style.ScrollbarSize = 16.0F;
     style.GrabMinSize = 14.0F;
-
-    // imgui SDL3+SDL_Renderer example: bake padding, then DPI-scale
-    // the font. ScaleAllSizes is not idempotent - once, at init.
-    // SDL_SetRenderScale(DisplayFramebufferScale) runs every frame.
-    style.ScaleAllSizes(main_scale);
-    style.FontScaleDpi = main_scale;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
@@ -1365,12 +1359,6 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
     poll_run(state);
 
-    // Keep font DPI in sync when the window moves between displays.
-    // ScaleAllSizes stays at the init bake (not idempotent).
-    if (const float dpi{SDL_GetWindowDisplayScale(state.window)}; dpi > 0.0F) {
-        ImGui::GetStyle().FontScaleDpi = dpi;
-    }
-
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -1379,9 +1367,10 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
     ImGui::Render();
     // Map imgui window coordinates onto the HIGH_PIXEL_DENSITY
-    // framebuffer. The SDL_Renderer backend skips its own clip-scale
-    // when a render scale is already set (rsx != 1), so this is the
-    // one knob - same call as imgui's example_sdl3_sdlrenderer3.
+    // framebuffer. Layout stays 1x; this is the only DPI knob. The
+    // SDL_Renderer backend skips its own clip-scale when a render
+    // scale is already set (rsx != 1), so this is also what keeps
+    // InputText hints from being clipped.
     const ImGuiIO& io{ImGui::GetIO()};
     SDL_SetRenderScale(state.renderer, io.DisplayFramebufferScale.x,
                        io.DisplayFramebufferScale.y);
