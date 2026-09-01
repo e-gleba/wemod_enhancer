@@ -32,9 +32,9 @@
 //     hit targets at any DPI.
 //   - Status line, then Settings as a collapsing header (collapsed
 //     by default, full width - Python / patcher / version.dll).
-//   - Log fills the rest. Copy output / Report bug share one
-//     equal-width full-span row; Copied! left and version right on
-//     the footer line under it.
+//   - Log fills the rest. Copy output / Clear output / Report bug
+//     share one equal-width full-span row; Copied! left and the
+//     version centered on the footer line under it.
 //   - Window size is a fraction of the usable display (clamped) so
 //     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
 //     every font-size-derived widget.
@@ -170,7 +170,8 @@ constexpr std::size_t issue_log_budget{3000};
 constexpr auto reprobe_interval{std::chrono::milliseconds(500)};
 
 // Past this budget the oldest log lines are dropped at a newline.
-constexpr std::size_t log_budget{512 * 1024};
+// UZ: multiply in std::size_t, no int-to-size_t widening of the product.
+constexpr std::size_t log_budget{512UZ * 1024UZ};
 
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
@@ -194,8 +195,8 @@ constexpr float button_padding{24.0F};
 constexpr float section_indent{16.0F};
 
 // Action row (Patch / Restore / Download): taller than the default
-// frame so they are easy hit targets. Utility row (Copy / Report)
-// is a step down - still large, not competing with Patch.
+// frame so they are easy hit targets. Utility row (Copy / Clear /
+// Report) is a step down - still large, not competing with Patch.
 // Font-size derived via GetFrameHeight().
 constexpr float action_height_scale{2.0F};
 constexpr float util_height_scale{1.55F};
@@ -535,7 +536,7 @@ void SDLCALL on_folder_chosen(void* userdata,
 [[nodiscard]] fs::path exe_dir()
 {
     if (const char* base{SDL_GetBasePath()}) {
-        return fs::path(base);
+        return {base};
     }
     return fs::temp_directory_path() / "wemod_enhancer";
 }
@@ -817,6 +818,13 @@ void copy_output(app_state& state)
     state.copied_flash = 1.5F;
 }
 
+// Drop the log. The next patch run fills it again.
+void clear_output(app_state& state)
+{
+    state.log.clear();
+    state.copied_flash = 0.0F;
+}
+
 // Open a pre-filled bug report: the log tail and the environment ride
 // in the body. SDL_OpenURL handles the platform browser.
 void report_bug(app_state& state)
@@ -894,7 +902,7 @@ void help_marker(const char* text, const char* url)
     Expects(text != nullptr);
     Expects(url != nullptr);
     ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    text_disabled("(?)");
     if (ImGui::IsItemHovered()) {
         tooltip_text(text);
     }
@@ -985,7 +993,7 @@ void draw_settings(app_state& state, const bool script_ok)
 }
 
 // The whole window: path+Browse, equal-width action row, status,
-// collapsing Settings, scrolling log, equal-width Copy/Report.
+// collapsing Settings, scrolling log, equal-width Copy/Clear/Report.
 // One frame = one draw call.
 void draw_ui(app_state& state)
 {
@@ -1026,7 +1034,7 @@ void draw_ui(app_state& state)
     }
 
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
-                         style.FramePadding.x * 2.0F + button_padding};
+                         (style.FramePadding.x * 2.0F) + button_padding};
     const float path_w{std::max(ImGui::GetContentRegionAvail().x - browse_w -
                                     style.ItemSpacing.x,
                                 ImGui::GetFontSize() * 8.0F)};
@@ -1133,7 +1141,7 @@ void draw_ui(app_state& state)
 
     const float line_height{ImGui::GetTextLineHeightWithSpacing()};
     const float util_h{ImGui::GetFrameHeight() * util_height_scale};
-    const float toolbar_h{util_h + line_height + style.ItemSpacing.y * 3.0F};
+    const float toolbar_h{util_h + line_height + (style.ItemSpacing.y * 3.0F)};
     const float log_height{std::max(ImGui::GetContentRegionAvail().y - toolbar_h,
                                     line_height * 4.0F)};
 
@@ -1156,14 +1164,23 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    // --- Bottom toolbar: Copy / Report equal-width --------------------
+    // --- Bottom toolbar: Copy / Clear / Report, equal-width -----------
     ImGui::Spacing();
-    const float util_w{equal_button_width(2)};
+    const float util_w{equal_button_width(3)};
     if (action_button("Copy output", util_w, util_h)) {
         copy_output(state);
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Copy the log and environment info to the clipboard");
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(state.log.empty());
+    if (action_button("Clear output", util_w, util_h)) {
+        clear_output(state);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text("Clear the log");
     }
     ImGui::SameLine();
     if (action_button("Report bug", util_w, util_h)) {
@@ -1173,8 +1190,7 @@ void draw_ui(app_state& state)
         tooltip_text("Open a pre-filled GitHub issue with the log attached");
     }
 
-    // Footer under the full-span row: Copied! left, version right.
-    // Copy/Report already ate the row - SameLine onto it would clip.
+    // Footer under the full-span row: Copied! left, version centered.
     ImGui::Spacing();
     const float footer_y{ImGui::GetCursorPosY()};
     if (state.copied_flash > 0.0F) {
@@ -1184,10 +1200,12 @@ void draw_ui(app_state& state)
     {
         const std::string version_text{std::format("v{}", gui_version)};
         const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
-        ImGui::SetCursorPos(
-            ImVec2(ImGui::GetWindowContentRegionMax().x - text_width,
-                   footer_y));
-        ImGui::TextDisabled("%s", version_text.c_str());
+        const float content_min{ImGui::GetWindowContentRegionMin().x};
+        const float content_max{ImGui::GetWindowContentRegionMax().x};
+        ImGui::SetCursorPos(ImVec2(
+            content_min + ((content_max - content_min) - text_width) * 0.5F,
+            footer_y));
+        text_disabled(version_text);
         if (ImGui::IsItemHovered()) {
             tooltip_text(std::string(SDL_GetPlatform()) + " " +
                          std::string(target_arch));
