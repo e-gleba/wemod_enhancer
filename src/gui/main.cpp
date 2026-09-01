@@ -23,6 +23,24 @@
 // Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS is set via
 // CMake), one frame = poll the background command + draw the UI.
 //
+// Layout (default imgui theme, untouched colors - hierarchy comes
+// from alignment, padding and scale):
+//   - WeMod folder field with Browse on the same row. Validity is
+//     the field color (green / red), no extra status word.
+//   - Full-width action row under the path: Patch / Restore, plus
+//     Download WeMod only while the folder is unresolved. Both
+//     Patch and Restore need a valid folder and the patcher script.
+//   - Status line, then Settings as a collapsing header. Patcher /
+//     Python / version.dll are path fields, tinted green or red.
+//     version.dll is prefilled with the bundled path next to the exe.
+//   - Console section: muted label, then the log filling the rest.
+//     Copy output / Clear output / Report bug share one equal-width
+//     full-span row; Copied! left and the version centered on the
+//     footer line under it.
+//   - Window size is a fraction of the usable display (clamped) so
+//     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
+//     every font-size-derived widget.
+//
 // C++ Core Guidelines, applied where they cost nothing:
 //   - No owning raw pointers, no new/delete, no C casts; const and
 //     #ifdef wherever both branches compile; the preprocessor only
@@ -154,34 +172,45 @@ constexpr std::size_t issue_log_budget{3000};
 constexpr auto reprobe_interval{std::chrono::milliseconds(500)};
 
 // Past this budget the oldest log lines are dropped at a newline.
-constexpr std::size_t log_budget{512 * 1024};
+// UZ: multiply in std::size_t, no int-to-size_t widening of the product.
+constexpr std::size_t log_budget{512UZ * 1024UZ};
 
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
 
-// Window logical size; SDL keeps the physical size constant across
-// DPIs, and style.FontScaleDpi scales every font-size-derived widget.
-constexpr std::int32_t window_width{720};
-constexpr std::int32_t window_height{480};
-constexpr std::int32_t log_lines_reserved{8};
+// Fallback logical window size when the display cannot be queried.
+// pick_window_size() uses a fraction of the usable display so FHD /
+// 1440p / 4K all get a comfortable default; FontScaleDpi then scales
+// every font-size-derived widget. SDL keeps the physical size
+// constant across DPIs because the window is created at logical size.
+constexpr std::int32_t window_width_fallback{1024};
+constexpr std::int32_t window_height_fallback{680};
+constexpr std::int32_t window_min_width{880};
+constexpr std::int32_t window_min_height{600};
+constexpr std::int32_t window_max_width{1680};
+constexpr std::int32_t window_max_height{1050};
 
-// ImGui tables size columns from the cell TEXT, not the widget: a
-// button column sized for "Patch" clips "Restore". Padding for the
-// widest label keeps the column wide enough for every state.
-constexpr std::string_view widest_button{"Download WeMod"};
+// Extra horizontal padding on the Browse button so it matches the
+// path field's visual weight. Action buttons ignore this - they
+// stretch to share the full row.
 constexpr float button_padding{24.0F};
-constexpr float field_padding{12.0F};
 constexpr float section_indent{16.0F};
-constexpr float field_width_ratio{0.55F};
-constexpr float min_field_width{220.0F};
+
+// One height for every full-span button row (Patch / Restore and
+// Copy / Clear / Report). Same scale = one control language.
+// Font-size derived via GetFrameHeight().
+constexpr float row_height_scale{1.55F};
+
 constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 
 // Status colors (replacing the magic-number literals).
 constexpr ImVec4 color_ok{0.35F, 0.85F, 0.45F, 1.00F};
 constexpr ImVec4 color_err{0.90F, 0.30F, 0.30F, 1.00F};
 
-// Input field tint when the path is valid: quiet green fill.
+// Quiet fill tints for path fields. Validity is the color, not a
+// word next to the label.
 constexpr ImVec4 field_ok_bg{0.14F, 0.32F, 0.16F, 0.70F};
+constexpr ImVec4 field_err_bg{0.32F, 0.14F, 0.14F, 0.70F};
 
 struct run_result final
 {
@@ -207,7 +236,7 @@ struct app_state final
     std::string install_dir;
     std::string script_path;
     std::string python;
-    std::string version_dll; // empty = auto: the copy next to the exe
+    std::string version_dll; // prefilled: the copy next to the exe
     std::string log;
     std::future<run_result> pending;
     bool running{false};
@@ -219,8 +248,10 @@ struct app_state final
     // --- filesystem probe cache (see probe_filesystem) ---
     std::string probed_install_dir; // field text the last resolve ran on
     std::string probed_script_path; // ditto, for the script probe
+    std::string probed_version_dll; // ditto, for the dll probe
     fs::path resolved_install_dir;  // cached resolve_wemod_dir result
-    bool script_present{false};     // the bundled script exists on disk
+    bool script_present{false};     // the patcher script exists on disk
+    bool dll_present{false};        // version.dll field path exists on disk
     std::chrono::steady_clock::time_point last_probe; // last stat() round
     // --- diagnostics ---
     probe_state python_ok{probe_state::unknown};
@@ -310,7 +341,7 @@ void append_log(app_state& state, const std::string_view text)
 
 // Quote one argument for the shell that runs our background commands:
 // cmd.exe on Windows (double quotes, "" escapes a quote), /bin/sh
-// elsewhere (single quotes, '"' escapes a quote).
+// elsewhere (single quotes, '"''"'"' escapes a quote).
 [[nodiscard]] std::string shell_quote(const std::string_view arg)
 {
     if constexpr (is_windows) {
@@ -468,6 +499,31 @@ version_parts(std::string name)
     return {};
 }
 
+// Dir the running exe sits in. SDL_GetBasePath picks it on every OS;
+// the patcher is installed next to the exe, so the whole install stays
+// one self-contained, movable folder. The result is SDL-owned internal
+// memory (const char*, cached internally) - unlike SDL_GetPrefPath it
+// must NOT be freed, so plain pointer it is.
+[[nodiscard]] fs::path exe_dir()
+{
+    if (const char* base{SDL_GetBasePath()}) {
+        return {base};
+    }
+    return fs::temp_directory_path() / "wemod_enhancer";
+}
+
+// The bundled patcher script: a sibling of the executable.
+[[nodiscard]] fs::path bundled_script()
+{
+    return exe_dir() / patcher_script_name;
+}
+
+// Expected version.dll path next to the exe (shown in Settings).
+[[nodiscard]] fs::path bundled_version_dll()
+{
+    return exe_dir() / version_dll_name;
+}
+
 // Throttled probes behind the field validity invariant: edits re-probe
 // immediately, reprobe_interval catches on-disk changes.
 void probe_filesystem(app_state& state)
@@ -475,17 +531,21 @@ void probe_filesystem(app_state& state)
     const auto now{std::chrono::steady_clock::now()};
     if (state.probed_install_dir == state.install_dir &&
         state.probed_script_path == state.script_path &&
+        state.probed_version_dll == state.version_dll &&
         (now - state.last_probe) < reprobe_interval) {
         return;
     }
     state.probed_install_dir = state.install_dir;
     state.probed_script_path = state.script_path;
+    state.probed_version_dll = state.version_dll;
     state.last_probe = now;
     state.resolved_install_dir = resolve_wemod_dir(state.install_dir);
     // error_code overload: a malformed path in the field must not throw.
     std::error_code ec;
     state.script_present = !state.script_path.empty() &&
         fs::is_regular_file(state.script_path, ec);
+    state.dll_present = !state.version_dll.empty() &&
+        fs::is_regular_file(state.version_dll, ec);
 }
 
 // SDL dialog callback: may run on another thread; it only writes a
@@ -499,36 +559,6 @@ void SDLCALL on_folder_chosen(void* userdata,
     if (filelist != nullptr && filelist[0] != nullptr) {
         state.install_dir = filelist[0];
     }
-}
-
-// Dir the running exe sits in. SDL_GetBasePath picks it on every OS;
-// the patcher is installed next to the exe, so the whole install stays
-// one self-contained, movable folder. The result is SDL-owned internal
-// memory (const char*, cached internally) - unlike SDL_GetPrefPath it
-// must NOT be freed, so plain pointer it is.
-[[nodiscard]] fs::path exe_dir()
-{
-    if (const char* base{SDL_GetBasePath()}) {
-        return fs::path(base);
-    }
-    return fs::temp_directory_path() / "wemod_enhancer";
-}
-
-// The bundled patcher script: a sibling of the executable.
-[[nodiscard]] fs::path bundled_script()
-{
-    return exe_dir() / patcher_script_name;
-}
-
-// The bundled proxy DLL, reported only when it exists on disk.
-[[nodiscard]] fs::path bundled_version_dll()
-{
-    std::error_code ec;
-    fs::path dll{exe_dir() / version_dll_name};
-    if (fs::is_regular_file(dll, ec)) {
-        return dll;
-    }
-    return {};
 }
 
 // Launch a background command and stream its output into the log.
@@ -562,15 +592,9 @@ void start_run(app_state& state, const char* subcommand)
     std::string command{shell_quote(state.python) + " -u " +
                         shell_quote(state.script_path) + " " + subcommand +
                         " --install-dir " + shell_quote(state.install_dir)};
-    if (std::string_view(subcommand) == "patch") {
-        // Field override wins; else the bundled DLL next to the exe.
-        const std::string dll{!state.version_dll.empty()
-                                  ? state.version_dll
-                                  : bundled_version_dll().string()};
-        if (!dll.empty()) {
-            shown += " --version-dll " + dll;
-            command += " --version-dll " + shell_quote(dll);
-        }
+    if (std::string_view(subcommand) == "patch" && !state.version_dll.empty()) {
+        shown += " --version-dll " + state.version_dll;
+        command += " --version-dll " + shell_quote(state.version_dll);
     }
     start_command(state, run_kind::patcher, shown, command);
 }
@@ -791,6 +815,13 @@ void copy_output(app_state& state)
     state.copied_flash = 1.5F;
 }
 
+// Drop the log. The next patch run fills it again.
+void clear_output(app_state& state)
+{
+    state.log.clear();
+    state.copied_flash = 0.0F;
+}
+
 // Open a pre-filled bug report: the log tail and the environment ride
 // in the body. SDL_OpenURL handles the platform browser.
 void report_bug(app_state& state)
@@ -812,18 +843,44 @@ void report_bug(app_state& state)
     }
 }
 
+// Comfortable logical window size: a fraction of the usable display,
+// clamped so laptops stay usable and 4K does not open a postage stamp.
+// HiDPI is FontScaleDpi's job - this only picks the window.
+[[nodiscard]] std::pair<std::int32_t, std::int32_t> pick_window_size()
+{
+    SDL_Rect usable{};
+    if (!SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) ||
+        usable.w <= 0 || usable.h <= 0) {
+        return {window_width_fallback, window_height_fallback};
+    }
+    const std::int32_t width{std::clamp(usable.w / 2, window_min_width,
+                                        window_max_width)};
+    const std::int32_t height{std::clamp((usable.h * 3) / 5,
+                                         window_min_height,
+                                         window_max_height)};
+    return {width, height};
+}
+
 // --- layout helpers (font-size derived, DPI-correct) ------------------
 
-// Button sized to its label; returns true when clicked.
-bool fit_button(const char* label)
+// Button at an explicit size. Height 0 keeps the default frame
+// height (path-row Browse). Returns true when clicked.
+bool action_button(const char* label, const float width, const float height)
 {
     Expects(label != nullptr);
+    return ImGui::Button(label, ImVec2(width, height));
+}
+
+// Equal slice of the current row for `count` sibling buttons, gaps
+// included. Stretch-to-fill: action and utility rows always span
+// the window.
+[[nodiscard]] float equal_button_width(const int count)
+{
+    Expects(count > 0);
     const ImGuiStyle& style{ImGui::GetStyle()};
-    const ImVec2 text{ImGui::CalcTextSize(label)};
-    return ImGui::Button(
-        label,
-        ImVec2(text.x + style.FramePadding.x * 2.0F,
-               text.y + style.FramePadding.y * 2.0F));
+    const float avail{ImGui::GetContentRegionAvail().x};
+    const float gaps{style.ItemSpacing.x * static_cast<float>(count - 1)};
+    return std::max((avail - gaps) / static_cast<float>(count), 1.0F);
 }
 
 // Small dim section label above a field.
@@ -842,7 +899,7 @@ void help_marker(const char* text, const char* url)
     Expects(text != nullptr);
     Expects(url != nullptr);
     ImGui::SameLine();
-    ImGui::TextDisabled("(?)");
+    text_disabled("(?)");
     if (ImGui::IsItemHovered()) {
         tooltip_text(text);
     }
@@ -853,18 +910,33 @@ void help_marker(const char* text, const char* url)
     }
 }
 
-// Why Patch is disabled, or nullptr when it can run.
-[[nodiscard]] const char* patch_block_reason(const bool install_ok,
-                                             const bool script_ok)
+// Quiet green / red fill on the next input. Validity is the color.
+void push_field_tint(const bool ok)
+{
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ok ? field_ok_bg : field_err_bg);
+}
+
+// Hover on a red field: one line, no extra label clutter.
+void field_fail_hover(const bool ok, const char* why)
+{
+    Expects(why != nullptr);
+    if (!ok && ImGui::IsItemHovered()) {
+        tooltip_text(why);
+    }
+}
+
+// Why Patch / Restore is disabled, or nullptr when it can run.
+[[nodiscard]] const char* run_block_reason(const bool install_ok,
+                                           const bool script_ok)
 {
     if (!install_ok && !script_ok) {
-        return "Needs a valid WeMod folder and the patcher";
+        return "Needs a WeMod folder and the patcher script";
     }
     if (!install_ok) {
-        return "Pick a valid WeMod folder first";
+        return "Select a WeMod folder first";
     }
     if (!script_ok) {
-        return "The bundled patcher is missing - see Settings";
+        return "Patcher script missing - open Settings";
     }
     return nullptr;
 }
@@ -884,6 +956,63 @@ void help_marker(const char* text, const char* url)
     return {};
 }
 
+// Settings body: patcher / Python / version.dll as tinted path fields.
+void draw_settings(app_state& state)
+{
+    field_label("Patcher");
+    help_marker(
+        "wemod_enhancer.py ships next to the executable. Re-download "
+        "the GUI package if the field stays red.",
+        "https://github.com/e-gleba/wemod_enhancer/releases/latest");
+    push_field_tint(state.script_present);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##script_path", "wemod_enhancer.py next to the exe",
+                             &state.script_path);
+    ImGui::PopStyleColor();
+    field_fail_hover(state.script_present, "Patcher script not found");
+
+    ImGui::Spacing();
+
+    field_label("Python command");
+    help_marker(
+        "The interpreter that runs the patcher. Default: python on "
+        "Windows, python3 elsewhere. Point it at a full path if "
+        "Python is not on PATH.",
+        "https://www.python.org/downloads/");
+    ImGui::SameLine();
+    if (state.python_ok == probe_state::works) {
+        text_disabled(state.python_version);
+    }
+    const bool python_tinted{state.python_ok != probe_state::unknown};
+    const bool python_ok{state.python_ok == probe_state::works};
+    if (python_tinted) {
+        push_field_tint(python_ok);
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##python", "python / python3", &state.python);
+    if (python_tinted) {
+        ImGui::PopStyleColor();
+        field_fail_hover(python_ok, "Python failed to start");
+    }
+
+    ImGui::Spacing();
+
+    field_label("version.dll");
+    help_marker(
+        "The proxy DLL the patcher drops next to WeMod. Default: the "
+        "copy next to the executable.",
+        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
+    push_field_tint(state.dll_present);
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##version_dll", "version.dll next to the exe",
+                             &state.version_dll);
+    ImGui::PopStyleColor();
+    field_fail_hover(state.dll_present, "version.dll not found");
+}
+
+// The whole window: path+Browse, equal-width action row, status,
+// collapsing Settings, scrolling log, equal-width Copy/Clear/Report.
+// One frame = one draw call.
 void draw_ui(app_state& state)
 {
     const ImGuiViewport* viewport{ImGui::GetMainViewport()};
@@ -897,37 +1026,18 @@ void draw_ui(app_state& state)
 
     ImGui::Begin("##main", nullptr, window_flags);
 
-    // One table for the whole window: labels column + buttons column.
-    // ImGui sizes button columns from the cell TEXT, so the buttons
-    // column gets an explicit width hint for the widest label -
-    // otherwise "Restore" clips where "Patch" fit.
     const ImGuiStyle& style{ImGui::GetStyle()};
-    const float buttons_width{ImGui::CalcTextSize(widest_button.data()).x +
-                              style.FramePadding.x * 2.0F +
-                              button_padding};
+    const float row_h{ImGui::GetFrameHeight() * row_height_scale};
 
-    ImGui::BeginTable("layout", 2,
-                      ImGuiTableFlags_SizingStretchProp |
-                          ImGuiTableFlags_NoSavedSettings);
-    ImGui::TableSetupColumn("fields", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed,
-                            buttons_width);
-
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-
-    // title bar already says "WeMod Enhancer" - no duplicate title here.
-
-    // --- WeMod folder: the only thing a user must provide -----------
-    // Validity is an invariant of the current field text, re-probed on
-    // edits and on the reprobe timer (never every frame - the resolve
-    // walks directories). Patch normalizes the field to the resolved
-    // dir so the log always shows the exact folder used.
     probe_filesystem(state);
     const fs::path& resolved_dir{state.resolved_install_dir};
     const bool install_ok{!resolved_dir.empty()};
     const bool script_ok{state.script_present};
 
+    // --- WeMod folder + Browse on one row -----------------------------
+    // Validity is the field color (green / red), re-probed on edits
+    // and on the reprobe timer. Empty stays default. Patch normalizes
+    // the field to the resolved dir so the log shows the exact folder.
     field_label("WeMod folder");
     help_marker(
         "The app-x.y.z folder with resources/app.asar inside. Pick the "
@@ -935,38 +1045,74 @@ void draw_ui(app_state& state)
         "Linux: the wemod-launcher clone works too - after the first "
         "run + login its wemod_data/wemod_bin is picked up.",
         "https://github.com/e-gleba/wemod_enhancer#quick-start");
-    ImGui::SameLine();
-    if (!state.install_dir.empty()) {
-        text_colored(install_ok ? color_ok : color_err,
-                     install_ok ? "ok" : "not a WeMod install");
-    }
 
-    // Valid path = quiet green tint on the field itself.
-    if (install_ok) {
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, field_ok_bg);
+    const float browse_w{ImGui::CalcTextSize("Browse...").x +
+                         (style.FramePadding.x * 2.0F) + button_padding};
+    const float path_w{std::max(ImGui::GetContentRegionAvail().x - browse_w -
+                                    style.ItemSpacing.x,
+                                ImGui::GetFontSize() * 8.0F)};
+
+    const bool folder_tinted{!state.install_dir.empty()};
+    if (folder_tinted) {
+        push_field_tint(install_ok);
     }
-    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::SetNextItemWidth(path_w);
     ImGui::InputTextWithHint("##install_dir", "path to WeMod",
                              &state.install_dir);
-    if (install_ok) {
+    if (folder_tinted) {
         ImGui::PopStyleColor();
+        field_fail_hover(install_ok, "Not a WeMod install");
     }
-
-    // The resolved app-x.y.z dir when it differs from the field text.
-    if (install_ok && resolved_dir.string() != state.install_dir) {
-        text_disabled(resolved_dir.string());
-    }
-
-    ImGui::TableNextColumn();
-    if (fit_button("Browse...")) {
+    ImGui::SameLine();
+    if (action_button("Browse...", browse_w, 0.0F)) {
         SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
                                  state.install_dir.empty()
                                      ? nullptr
                                      : state.install_dir.c_str(),
                                  false);
     }
+
+    if (install_ok && resolved_dir.string() != state.install_dir) {
+        text_disabled(resolved_dir.string());
+    }
+
+    // --- Actions: equal-width row, full span under the path -----------
+    // Count = 2 (Patch, Restore) or 3 (+ Download WeMod while the
+    // folder is unresolved). Patch and Restore share one block
+    // reason: valid folder + patcher script.
+    ImGui::Spacing();
+    const int action_count{install_ok ? 2 : 3};
+    const float action_w{equal_button_width(action_count)};
+
+    const char* block_reason{run_block_reason(install_ok, script_ok)};
+    const bool blocked{state.running || block_reason != nullptr};
+    ImGui::BeginDisabled(blocked);
+    if (action_button("Patch", action_w, row_h)) {
+        // Normalize the field to the resolved dir: the log then shows
+        // the exact folder the patcher ran against.
+        state.install_dir = resolved_dir.string();
+        start_run(state, "patch");
+    }
+    ImGui::EndDisabled();
+    if (block_reason != nullptr &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text(block_reason);
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(blocked);
+    if (action_button("Restore", action_w, row_h)) {
+        start_run(state, "restore");
+    }
+    ImGui::EndDisabled();
+    if (block_reason != nullptr &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text(block_reason);
+    }
+
     if (!install_ok) {
-        if (fit_button("Download WeMod")) {
+        ImGui::SameLine();
+        if (action_button("Download WeMod", action_w, row_h)) {
             start_wemod_download(state);
         }
         if (ImGui::IsItemHovered()) {
@@ -978,123 +1124,50 @@ void draw_ui(app_state& state)
         }
     }
 
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    // --- Status -------------------------------------------------------
+    // One line under the actions: what is running, how the last run
+    // ended, or the initial hint. Detail lives in the log below.
     ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-    ImGui::TableNextColumn();
-
-    // --- Actions ------------------------------------------------------
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-
     if (state.running) {
         text_disabled(running_status(state.kind));
     } else if (state.has_run) {
         if (state.last_exit_code == 0) {
             text_colored(color_ok, "Done. Launch WeMod - Pro is active.");
         } else {
-            text_colored(color_err, std::format("Failed (exit code {})",
-                                                state.last_exit_code));
+            text_colored(color_err,
+                         std::format("Failed (exit code {})",
+                                     state.last_exit_code));
         }
     } else {
         text_disabled("Patch, then launch WeMod.");
     }
 
-    ImGui::TableNextColumn();
-    const char* block_reason{patch_block_reason(install_ok, script_ok)};
-    const bool blocked{state.running || block_reason != nullptr};
-    ImGui::BeginDisabled(blocked);
-    if (fit_button("Patch")) {
-        // Normalize the field to the resolved dir: the log then shows
-        // the exact folder the patcher ran against.
-        state.install_dir = resolved_dir.string();
-        start_run(state, "patch");
-    }
-    ImGui::EndDisabled();
-    if (block_reason != nullptr &&
-        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        tooltip_text(block_reason);
-    }
-    ImGui::BeginDisabled(state.running);
-    if (fit_button("Restore")) {
-        start_run(state, "restore");
-    }
-    ImGui::EndDisabled();
-
-    // --- Settings (collapsed by default) ------------------------------
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    // --- Settings (collapsed by default), full window width -----------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-    ImGui::TableNextColumn();
 
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent(section_indent);
-
-        field_label("Patcher");
-        help_marker(
-            "wemod_enhancer.py + version.dll ship inside this package, "
-            "next to the executable - no download, no update step. If the "
-            "script is reported missing, re-download the GUI package.",
-            "https://github.com/e-gleba/wemod_enhancer/releases/latest");
-        ImGui::SameLine();
-        if (script_ok) {
-            text_colored(color_ok, "ready");
-            ImGui::SameLine();
-            text_disabled(state.script_path);
-        } else {
-            text_colored(color_err, "missing next to the exe");
-        }
-
-        ImGui::Spacing();
-
-        field_label("Python command");
-        help_marker(
-            "The interpreter that runs the patcher. Default: python on "
-            "Windows, python3 elsewhere. Point it at a full path if "
-            "Python is not on PATH.",
-            "https://www.python.org/downloads/");
-        ImGui::SameLine();
-        if (state.python_ok == probe_state::works) {
-            text_colored(color_ok, state.python_version);
-        } else if (state.python_ok == probe_state::failed) {
-            text_colored(color_err, "not working");
-        }
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputText("##python", &state.python);
-
-        ImGui::Spacing();
-
-        field_label("version.dll");
-        help_marker(
-            "The proxy DLL the patcher drops next to WeMod. Leave empty "
-            "to use the copy bundled next to the executable.",
-            "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##version_dll",
-                                 "auto: next to the exe",
-                                 &state.version_dll);
-
+        draw_settings(state);
         ImGui::Unindent();
     }
 
-    ImGui::EndTable();
-
-    // --- Log: fills the rest of the window ----------------------------
+    // --- Console: live stdout/stderr, fills the rest of the window ----
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
+    field_label("Console");
+    help_marker(
+        "Live stdout and stderr from the patcher, the Python probe, "
+        "and Download WeMod. Copy it below if something fails.",
+        "https://github.com/e-gleba/wemod_enhancer/issues/new");
+
     const float line_height{ImGui::GetTextLineHeightWithSpacing()};
-    const float log_height{std::max(
-        ImGui::GetContentRegionAvail().y -
-            line_height * log_lines_reserved,
-        line_height * 4.0F)};
+    const float toolbar_h{row_h + line_height + (style.ItemSpacing.y * 3.0F)};
+    const float log_height{std::max(ImGui::GetContentRegionAvail().y - toolbar_h,
+                                    line_height * 4.0F)};
 
     ImGui::BeginChild("##log", ImVec2(0.0F, log_height),
                       ImGuiChildFlags_Borders,
@@ -1115,36 +1188,49 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    // --- Bottom toolbar -------------------------------------------------
+    // --- Bottom toolbar: Copy / Clear / Report, equal-width -----------
     ImGui::Spacing();
-    if (fit_button("Copy output")) {
+    const float util_w{equal_button_width(3)};
+    if (action_button("Copy output", util_w, row_h)) {
         copy_output(state);
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Copy the log and environment info to the clipboard");
     }
     ImGui::SameLine();
-    if (fit_button("Report bug")) {
+    ImGui::BeginDisabled(state.log.empty());
+    if (action_button("Clear output", util_w, row_h)) {
+        clear_output(state);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text("Clear the log");
+    }
+    ImGui::SameLine();
+    if (action_button("Report bug", util_w, row_h)) {
         report_bug(state);
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Open a pre-filled GitHub issue with the log attached");
     }
+
+    // Footer under the full-span row: Copied! left, version centered.
+    ImGui::Spacing();
+    const float footer_y{ImGui::GetCursorPosY()};
     if (state.copied_flash > 0.0F) {
         state.copied_flash -= ImGui::GetIO().DeltaTime;
-        ImGui::SameLine();
         text_colored(color_ok, "Copied!");
     }
-
-    // Build version pinned to the right end of the bottom toolbar row:
-    // the CMake project version, injected at compile time - the GUI
-    // can never show a version that differs from its package.
     {
         const std::string version_text{std::format("v{}", gui_version)};
         const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x +
-                        ImGui::GetCursorPosX() - text_width);
-        ImGui::TextDisabled("%s", version_text.c_str());
+        const float content_min{ImGui::GetWindowContentRegionMin().x};
+        const float content_max{ImGui::GetWindowContentRegionMax().x};
+        const float content_span{content_max - content_min};
+        const float version_x{content_min +
+                              ((content_span - text_width) * 0.5F)};
+        ImGui::SetCursorPos(ImVec2(version_x, footer_y));
+        text_disabled(version_text);
         if (ImGui::IsItemHovered()) {
             tooltip_text(std::string(SDL_GetPlatform()) + " " +
                          std::string(target_arch));
@@ -1169,20 +1255,34 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
+    const auto [win_w, win_h]{pick_window_size()};
+
     SDL_Window* window{nullptr};
     SDL_Renderer* renderer{nullptr};
     if (!SDL_CreateWindowAndRenderer(
-            "WeMod Enhancer", window_width, window_height,
+            "WeMod Enhancer", win_w, win_h,
             SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window,
             &renderer)) {
         sdl_log_error(std::string("SDL_CreateWindowAndRenderer: ") +
                       SDL_GetError());
         return SDL_APP_FAILURE;
     }
+    SDL_SetWindowMinimumSize(window, window_min_width, window_min_height);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
+
+    // Density only: default dark colors stay. Opened padding matches
+    // the settings-page habit (generous hit targets, even gaps) so
+    // FHD and 4K both read as the same layout, just larger.
+    ImGuiStyle& style{ImGui::GetStyle()};
+    style.WindowPadding = ImVec2(16.0F, 14.0F);
+    style.FramePadding = ImVec2(14.0F, 8.0F);
+    style.ItemSpacing = ImVec2(10.0F, 8.0F);
+    style.ItemInnerSpacing = ImVec2(8.0F, 6.0F);
+    style.ScrollbarSize = 16.0F;
+    style.GrabMinSize = 14.0F;
 
     // One knob scales the whole UI: style.FontScaleDpi (ImGui 1.92+)
     // scales every font-size-derived widget, and the window was
@@ -1191,7 +1291,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     // would zero every widget, so fall back to 1.0.
     const float main_scale{SDL_GetDisplayContentScale(
         SDL_GetPrimaryDisplay())};
-    ImGui::GetStyle().FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
+    style.FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
@@ -1202,6 +1302,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     state.renderer = renderer;
     state.install_dir = default_install_dir();
     state.script_path = bundled_script().string();
+    state.version_dll = bundled_version_dll().string();
     state.python = std::string(default_python);
 
     // Say what was auto-detected up front - the log doubles as the
