@@ -203,6 +203,56 @@ jobs:
           path: build/linux_gcc_amd64/*.tar.xz
           if-no-files-found: error
 
+  # ── Clang Linux AMD64 (matches the local Linux toolchain) ──────────────────
+  linux_clang_amd64:
+    name: linux-clang-amd64
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: cache_dependencies
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-clang-${{ hashFiles('**/CMakeLists.txt', '**/cmake/**/*.cmake') }}
+
+      - name: install_sdl3_dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+              build-essential git make pkg-config clang lld ninja-build \
+              libasound2-dev libpulse-dev libaudio-dev \
+              libfribidi-dev libjack-dev libsndio-dev \
+              libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+              libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+              libxkbcommon-dev libdrm-dev libgbm-dev \
+              libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev \
+              libdbus-1-dev libibus-1.0-dev libudev-dev \
+              libthai-dev libusb-1.0-0-dev \
+              libpipewire-0.3-dev libwayland-dev libdecor-0-dev \
+              liburing-dev
+
+      - name: build_and_package
+        run: cmake --workflow --preset linux_clang_amd64_full
+
+      - name: rename_artifact
+        run: |
+          cd build/linux_clang_amd64
+          for f in *.tar.xz; do
+            mv "$f" "wemod_enhancer-linux-clang-amd64.tar.xz"
+          done
+
+      - name: upload_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-clang-amd64
+          path: build/linux_clang_amd64/*.tar.xz
+          if-no-files-found: error
+
   # ── GCC Linux ARM64 (Steam Deck / ARM handhelds) ───────────────────────────
   linux_gcc_arm64:
     name: linux-gcc-arm64
@@ -261,6 +311,7 @@ jobs:
       - windows_clang_amd64
       - windows_msvc_amd64
       - linux_gcc_amd64
+      - linux_clang_amd64
       - linux_gcc_arm64
     runs-on: ubuntu-latest
     permissions:
@@ -303,6 +354,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: linux-amd64
+          path: artifacts/
+
+      - name: download_linux_clang_amd64_artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-clang-amd64
           path: artifacts/
 
       - name: download_linux_arm64_artifact
