@@ -33,7 +33,8 @@
 //   - Status line, then Settings as a collapsing header (collapsed
 //     by default, full width - Python / patcher / version.dll).
 //   - Log fills the rest. Copy output / Report bug share one
-//     equal-width full-span row; version pinned right under it.
+//     equal-width full-span row; Copied! left and version right on
+//     the footer line under it.
 //   - Window size is a fraction of the usable display (clamped) so
 //     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
 //     every font-size-derived widget.
@@ -1155,7 +1156,7 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    // --- Bottom toolbar: Copy / Report equal-width, version right -----
+    // --- Bottom toolbar: Copy / Report equal-width --------------------
     ImGui::Spacing();
     const float util_w{equal_button_width(2)};
     if (action_button("Copy output", util_w, util_h)) {
@@ -1172,16 +1173,20 @@ void draw_ui(app_state& state)
         tooltip_text("Open a pre-filled GitHub issue with the log attached");
     }
 
+    // Footer under the full-span row: Copied! left, version right.
+    // Copy/Report already ate the row - SameLine onto it would clip.
+    ImGui::Spacing();
+    const float footer_y{ImGui::GetCursorPosY()};
     if (state.copied_flash > 0.0F) {
         state.copied_flash -= ImGui::GetIO().DeltaTime;
         text_colored(color_ok, "Copied!");
-        ImGui::SameLine();
     }
     {
         const std::string version_text{std::format("v{}", gui_version)};
         const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x +
-                        ImGui::GetCursorPosX() - text_width);
+        ImGui::SetCursorPos(
+            ImVec2(ImGui::GetWindowContentRegionMax().x - text_width,
+                   footer_y));
         ImGui::TextDisabled("%s", version_text.c_str());
         if (ImGui::IsItemHovered()) {
             tooltip_text(std::string(SDL_GetPlatform()) + " " +
