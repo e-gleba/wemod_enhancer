@@ -28,8 +28,8 @@
 //   - WeMod folder field with Browse on the same row.
 //   - Full-width action row under the path: Patch / Restore, plus
 //     Download WeMod only while the folder is unresolved. Buttons
-//     share the row equally and use a taller frame so they are easy
-//     hit targets at any DPI.
+//     share the row equally. Same height as Copy / Clear / Report
+//     so every full-span row reads as one control language.
 //   - Status line, then Settings as a collapsing header (collapsed
 //     by default, full width - Python / patcher / version.dll).
 //   - Log fills the rest. Copy output / Clear output / Report bug
@@ -194,12 +194,10 @@ constexpr std::int32_t window_max_height{1050};
 constexpr float button_padding{24.0F};
 constexpr float section_indent{16.0F};
 
-// Action row (Patch / Restore / Download): taller than the default
-// frame so they are easy hit targets. Utility row (Copy / Clear /
-// Report) is a step down - still large, not competing with Patch.
+// One height for every full-span button row (Patch / Restore and
+// Copy / Clear / Report). Same scale = one control language.
 // Font-size derived via GetFrameHeight().
-constexpr float action_height_scale{2.0F};
-constexpr float util_height_scale{1.55F};
+constexpr float row_height_scale{1.55F};
 
 constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 
@@ -1009,6 +1007,7 @@ void draw_ui(app_state& state)
     ImGui::Begin("##main", nullptr, window_flags);
 
     const ImGuiStyle& style{ImGui::GetStyle()};
+    const float row_h{ImGui::GetFrameHeight() * row_height_scale};
 
     probe_filesystem(state);
     const fs::path& resolved_dir{state.resolved_install_dir};
@@ -1064,16 +1063,16 @@ void draw_ui(app_state& state)
     // --- Actions: equal-width row, full span under the path -----------
     // Count = 2 (Patch, Restore) or 3 (+ Download WeMod while the
     // folder is unresolved). Every button gets the same slice so the
-    // row is one alignment axis, whatever the labels.
+    // row is one alignment axis, whatever the labels. Height matches
+    // the Copy / Clear / Report row below.
     ImGui::Spacing();
     const int action_count{install_ok ? 2 : 3};
     const float action_w{equal_button_width(action_count)};
-    const float action_h{ImGui::GetFrameHeight() * action_height_scale};
 
     const char* block_reason{patch_block_reason(install_ok, script_ok)};
     const bool blocked{state.running || block_reason != nullptr};
     ImGui::BeginDisabled(blocked);
-    if (action_button("Patch", action_w, action_h)) {
+    if (action_button("Patch", action_w, row_h)) {
         // Normalize the field to the resolved dir: the log then shows
         // the exact folder the patcher ran against.
         state.install_dir = resolved_dir.string();
@@ -1087,14 +1086,14 @@ void draw_ui(app_state& state)
 
     ImGui::SameLine();
     ImGui::BeginDisabled(state.running);
-    if (action_button("Restore", action_w, action_h)) {
+    if (action_button("Restore", action_w, row_h)) {
         start_run(state, "restore");
     }
     ImGui::EndDisabled();
 
     if (!install_ok) {
         ImGui::SameLine();
-        if (action_button("Download WeMod", action_w, action_h)) {
+        if (action_button("Download WeMod", action_w, row_h)) {
             start_wemod_download(state);
         }
         if (ImGui::IsItemHovered()) {
@@ -1140,8 +1139,7 @@ void draw_ui(app_state& state)
     ImGui::Spacing();
 
     const float line_height{ImGui::GetTextLineHeightWithSpacing()};
-    const float util_h{ImGui::GetFrameHeight() * util_height_scale};
-    const float toolbar_h{util_h + line_height + (style.ItemSpacing.y * 3.0F)};
+    const float toolbar_h{row_h + line_height + (style.ItemSpacing.y * 3.0F)};
     const float log_height{std::max(ImGui::GetContentRegionAvail().y - toolbar_h,
                                     line_height * 4.0F)};
 
@@ -1167,7 +1165,7 @@ void draw_ui(app_state& state)
     // --- Bottom toolbar: Copy / Clear / Report, equal-width -----------
     ImGui::Spacing();
     const float util_w{equal_button_width(3)};
-    if (action_button("Copy output", util_w, util_h)) {
+    if (action_button("Copy output", util_w, row_h)) {
         copy_output(state);
     }
     if (ImGui::IsItemHovered()) {
@@ -1175,7 +1173,7 @@ void draw_ui(app_state& state)
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(state.log.empty());
-    if (action_button("Clear output", util_w, util_h)) {
+    if (action_button("Clear output", util_w, row_h)) {
         clear_output(state);
     }
     ImGui::EndDisabled();
@@ -1183,7 +1181,7 @@ void draw_ui(app_state& state)
         tooltip_text("Clear the log");
     }
     ImGui::SameLine();
-    if (action_button("Report bug", util_w, util_h)) {
+    if (action_button("Report bug", util_w, row_h)) {
         report_bug(state);
     }
     if (ImGui::IsItemHovered()) {
@@ -1202,9 +1200,10 @@ void draw_ui(app_state& state)
         const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
         const float content_min{ImGui::GetWindowContentRegionMin().x};
         const float content_max{ImGui::GetWindowContentRegionMax().x};
-        ImGui::SetCursorPos(ImVec2(
-            content_min + ((content_max - content_min) - text_width) * 0.5F,
-            footer_y));
+        const float content_span{content_max - content_min};
+        const float version_x{content_min +
+                              ((content_span - text_width) * 0.5F)};
+        ImGui::SetCursorPos(ImVec2(version_x, footer_y));
         text_disabled(version_text);
         if (ImGui::IsItemHovered()) {
             tooltip_text(std::string(SDL_GetPlatform()) + " " +
