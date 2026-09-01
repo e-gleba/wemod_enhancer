@@ -23,6 +23,20 @@
 // Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS is set via
 // CMake), one frame = poll the background command + draw the UI.
 //
+// Layout (default imgui theme, untouched - hierarchy comes from
+// alignment, not colors):
+//   - One table: a stretching content column + a fixed-width action
+//     column. Every button shares one width (the widest label), so
+//     Browse / Patch / Restore / Download WeMod form a single
+//     aligned stack on the right - the settings-page habit: aligned
+//     controls read as one group, and the primary action always
+//     sits in the same spot.
+//   - The stack order is the workflow: pick the folder, patch,
+//     restore; Download WeMod appears only while the folder is
+//     unresolved.
+//   - The bottom toolbar holds the secondary utilities (Copy
+//     output, Report bug) left, the version pinned right.
+//
 // C++ Core Guidelines, applied where they cost nothing:
 //   - No owning raw pointers, no new/delete, no C casts; const and
 //     #ifdef wherever both branches compile; the preprocessor only
@@ -165,15 +179,13 @@ constexpr std::int32_t window_width{720};
 constexpr std::int32_t window_height{480};
 constexpr std::int32_t log_lines_reserved{8};
 
-// ImGui tables size columns from the cell TEXT, not the widget: a
-// button column sized for "Patch" clips "Restore". Padding for the
-// widest label keeps the column wide enough for every state.
+// Action buttons share ONE width: the widest label plus padding.
+// Equal-width buttons in a vertical stack form a clean alignment
+// axis (the settings-page habit); per-label widths would read as a
+// ragged list and the eye would re-find the edge for every row.
 constexpr std::string_view widest_button{"Download WeMod"};
 constexpr float button_padding{24.0F};
-constexpr float field_padding{12.0F};
 constexpr float section_indent{16.0F};
-constexpr float field_width_ratio{0.55F};
-constexpr float min_field_width{220.0F};
 constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 
 // Status colors (replacing the magic-number literals).
@@ -814,7 +826,17 @@ void report_bug(app_state& state)
 
 // --- layout helpers (font-size derived, DPI-correct) ------------------
 
-// Button sized to its label; returns true when clicked.
+// Aligned action button: the shared width, default height. Every
+// caller passes the same `width`, so the stack forms one clean
+// vertical axis. Returns true when clicked.
+bool action_button(const char* label, const float width)
+{
+    Expects(label != nullptr);
+    return ImGui::Button(label, ImVec2(width, 0.0F));
+}
+
+// Small utility button sized to its label, for the bottom toolbar
+// where buttons sit in one horizontal row. Returns true when clicked.
 bool fit_button(const char* label)
 {
     Expects(label != nullptr);
@@ -897,20 +919,25 @@ void draw_ui(app_state& state)
 
     ImGui::Begin("##main", nullptr, window_flags);
 
-    // One table for the whole window: labels column + buttons column.
-    // ImGui sizes button columns from the cell TEXT, so the buttons
-    // column gets an explicit width hint for the widest label -
-    // otherwise "Restore" clips where "Patch" fit.
     const ImGuiStyle& style{ImGui::GetStyle()};
+
+    // Shared width of every action button: the widest label plus
+    // padding, computed from the font size so nothing clips at any
+    // DPI. One width for all actions = one alignment axis.
     const float buttons_width{ImGui::CalcTextSize(widest_button.data()).x +
                               style.FramePadding.x * 2.0F +
                               button_padding};
 
+    // One table for the whole top block: a stretching content column
+    // plus a fixed action column - the settings-page arrangement.
+    // ImGui sizes button columns from the cell TEXT, not the widget,
+    // so the action column gets an explicit width hint; every button
+    // in it is drawn at exactly that width.
     ImGui::BeginTable("layout", 2,
                       ImGuiTableFlags_SizingStretchProp |
                           ImGuiTableFlags_NoSavedSettings);
-    ImGui::TableSetupColumn("fields", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("buttons", ImGuiTableColumnFlags_WidthFixed,
+    ImGui::TableSetupColumn("content", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("actions", ImGuiTableColumnFlags_WidthFixed,
                             buttons_width);
 
     ImGui::TableNextRow();
@@ -957,38 +984,10 @@ void draw_ui(app_state& state)
         text_disabled(resolved_dir.string());
     }
 
-    ImGui::TableNextColumn();
-    if (fit_button("Browse...")) {
-        SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
-                                 state.install_dir.empty()
-                                     ? nullptr
-                                     : state.install_dir.c_str(),
-                                 false);
-    }
-    if (!install_ok) {
-        if (fit_button("Download WeMod")) {
-            start_wemod_download(state);
-        }
-        if (ImGui::IsItemHovered()) {
-            tooltip_text(is_windows
-                             ? "Download the official WeMod installer into "
-                               "your Downloads folder and run it"
-                             : "Clone wemod-launcher into ~/wemod-launcher "
-                               "and open the setup tutorial");
-        }
-    }
-
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    // --- Status -------------------------------------------------------
+    // One line under the folder: what is running, how the last run
+    // ended, or the initial hint. Detail lives in the log below.
     ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-    ImGui::TableNextColumn();
-
-    // --- Actions ------------------------------------------------------
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-
     if (state.running) {
         text_disabled(running_status(state.kind));
     } else if (state.has_run) {
@@ -1002,11 +1001,26 @@ void draw_ui(app_state& state)
         text_disabled("Patch, then launch WeMod.");
     }
 
+    // --- Actions: one aligned stack, right column --------------------
+    // Every button shares the width computed above, so the stack
+    // forms a single vertical alignment axis - the primary action
+    // always sits in the same spot, whatever the labels or the state.
+    // Stack order = workflow order: pick the folder, patch, restore;
+    // Download WeMod appears only while the folder is unresolved.
     ImGui::TableNextColumn();
+
+    if (action_button("Browse...", buttons_width)) {
+        SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
+                                 state.install_dir.empty()
+                                     ? nullptr
+                                     : state.install_dir.c_str(),
+                                 false);
+    }
+
     const char* block_reason{patch_block_reason(install_ok, script_ok)};
     const bool blocked{state.running || block_reason != nullptr};
     ImGui::BeginDisabled(blocked);
-    if (fit_button("Patch")) {
+    if (action_button("Patch", buttons_width)) {
         // Normalize the field to the resolved dir: the log then shows
         // the exact folder the patcher ran against.
         state.install_dir = resolved_dir.string();
@@ -1017,22 +1031,35 @@ void draw_ui(app_state& state)
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         tooltip_text(block_reason);
     }
+
     ImGui::BeginDisabled(state.running);
-    if (fit_button("Restore")) {
+    if (action_button("Restore", buttons_width)) {
         start_run(state, "restore");
     }
     ImGui::EndDisabled();
 
-    // --- Settings (collapsed by default) ------------------------------
+    if (!install_ok) {
+        if (action_button("Download WeMod", buttons_width)) {
+            start_wemod_download(state);
+        }
+        if (ImGui::IsItemHovered()) {
+            tooltip_text(is_windows
+                             ? "Download the official WeMod installer into "
+                               "your Downloads folder and run it"
+                             : "Clone wemod-launcher into ~/wemod-launcher "
+                               "and open the setup tutorial");
+        }
+    }
+
+    // --- Settings (collapsed by default), spanning the full width ----
     ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    ImGui::TableNextColumn(); // spans both columns: no second cell
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
-    ImGui::TableNextColumn();
 
     ImGui::TableNextRow();
-    ImGui::TableNextColumn();
+    ImGui::TableNextColumn(); // ditto - full-width fields for paths
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent(section_indent);
 
@@ -1115,7 +1142,7 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    // --- Bottom toolbar -------------------------------------------------
+    // --- Bottom toolbar: secondary utilities left, version right ------
     ImGui::Spacing();
     if (fit_button("Copy output")) {
         copy_output(state);
