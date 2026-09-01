@@ -38,8 +38,11 @@
 //     full-span row; Copied! left and the version centered on the
 //     footer line under it.
 //   - Window size is a fraction of the usable display (clamped) so
-//     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
-//     every font-size-derived widget.
+//     FHD / 1440p / 4K all open comfortably. DPI: FontScaleDpi +
+//     ScaleAllSizes + SDL_SetRenderScale, matching imgui's
+//     SDL3+SDL_Renderer example. Skip the render scale and the UI
+//     sits in the top-left corner on Wayland/HiDPI, with InputText
+//     hints clipped.
 //
 // C++ Core Guidelines, applied where they cost nothing:
 //   - No owning raw pointers, no new/delete, no C casts; const and
@@ -70,10 +73,12 @@
 //     not throw on a half-installed WeMod.
 //   - ImGui widget widths are computed from the font size
 //     (CalcTextSize / GetFrameHeight), so nothing clips at any DPI.
-//   - One scale factor for the whole UI: style.FontScaleDpi at init
-//     scales every font-size-derived widget (ImGui 1.92+); the window
-//     is created at logical size, so SDL keeps the physical size
-//     constant across DPIs.
+//   - DPI follows imgui's SDL3+SDL_Renderer example: FontScaleDpi and
+//     ScaleAllSizes at init, SDL_SetRenderScale(DisplayFramebufferScale)
+//     every frame. Window size stays in SDL window coordinates
+//     (pick_window_size uses usable bounds); HIGH_PIXEL_DENSITY then
+//     gives a larger framebuffer. Do not also multiply the window by
+//     the content scale - usable bounds are already in that space.
 //   - Folder validity is an INVARIANT of the current field text:
 //     resolve_wemod_dir() re-runs on edits and a 500 ms timer (never
 //     every frame - it walks directories), so the field can never
@@ -178,11 +183,12 @@ constexpr std::size_t log_budget{512UZ * 1024UZ};
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
 
-// Fallback logical window size when the display cannot be queried.
+// Fallback window size when the display cannot be queried.
 // pick_window_size() uses a fraction of the usable display so FHD /
-// 1440p / 4K all get a comfortable default; FontScaleDpi then scales
-// every font-size-derived widget. SDL keeps the physical size
-// constant across DPIs because the window is created at logical size.
+// 1440p / 4K all get a comfortable default. Units are SDL window
+// coordinates (same as SDL_GetDisplayUsableBounds); HiDPI is
+// FontScaleDpi + ScaleAllSizes + SDL_SetRenderScale, not a second
+// multiply on this size.
 constexpr std::int32_t window_width_fallback{1024};
 constexpr std::int32_t window_height_fallback{680};
 constexpr std::int32_t window_min_width{880};
@@ -341,7 +347,7 @@ void append_log(app_state& state, const std::string_view text)
 
 // Quote one argument for the shell that runs our background commands:
 // cmd.exe on Windows (double quotes, "" escapes a quote), /bin/sh
-// elsewhere (single quotes, '"''"'"' escapes a quote).
+// elsewhere (single quotes, '"'"' escapes a quote).
 [[nodiscard]] std::string shell_quote(const std::string_view arg)
 {
     if constexpr (is_windows) {
@@ -843,9 +849,10 @@ void report_bug(app_state& state)
     }
 }
 
-// Comfortable logical window size: a fraction of the usable display,
-// clamped so laptops stay usable and 4K does not open a postage stamp.
-// HiDPI is FontScaleDpi's job - this only picks the window.
+// Comfortable window size in SDL window coordinates: a fraction of
+// the usable display, clamped so laptops stay usable and 4K does not
+// open a postage stamp. HiDPI is FontScaleDpi + ScaleAllSizes +
+// SDL_SetRenderScale - this only picks the window.
 [[nodiscard]] std::pair<std::int32_t, std::int32_t> pick_window_size()
 {
     SDL_Rect usable{};
@@ -979,8 +986,11 @@ void draw_settings(app_state& state)
         "Windows, python3 elsewhere. Point it at a full path if "
         "Python is not on PATH.",
         "https://www.python.org/downloads/");
-    ImGui::SameLine();
+    // Version rides next to the label, not the field. An unconditional
+    // SameLine put the input on the label row (narrow, shifted) while
+    // Patcher / version.dll stayed full-width below their labels.
     if (state.python_ok == probe_state::works) {
+        ImGui::SameLine();
         text_disabled(state.python_version);
     }
     const bool python_tinted{state.python_ok != probe_state::unknown};
@@ -1255,6 +1265,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
+    // Content scale is the expected UI scale for this display. 0 means
+    // unknown - never feed that to FontScaleDpi or every widget zeros.
+    const float display_scale{SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay())};
+    const float main_scale{display_scale > 0.0F ? display_scale : 1.0F};
+
     const auto [win_w, win_h]{pick_window_size()};
 
     SDL_Window* window{nullptr};
@@ -1268,6 +1283,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
     SDL_SetWindowMinimumSize(window, window_min_width, window_min_height);
+    SDL_SetRenderVSync(renderer, 1);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -1284,14 +1300,11 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     style.ScrollbarSize = 16.0F;
     style.GrabMinSize = 14.0F;
 
-    // One knob scales the whole UI: style.FontScaleDpi (ImGui 1.92+)
-    // scales every font-size-derived widget, and the window was
-    // created at logical size so SDL keeps the physical size constant
-    // across DPIs. SDL returns 0.0 when the scale is unknown - that
-    // would zero every widget, so fall back to 1.0.
-    const float main_scale{SDL_GetDisplayContentScale(
-        SDL_GetPrimaryDisplay())};
-    style.FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
+    // imgui SDL3+SDL_Renderer example: bake padding, then DPI-scale
+    // the font. ScaleAllSizes is not idempotent - once, at init.
+    // SDL_SetRenderScale(DisplayFramebufferScale) runs every frame.
+    style.ScaleAllSizes(main_scale);
+    style.FontScaleDpi = main_scale;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
@@ -1352,6 +1365,12 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
     poll_run(state);
 
+    // Keep font DPI in sync when the window moves between displays.
+    // ScaleAllSizes stays at the init bake (not idempotent).
+    if (const float dpi{SDL_GetWindowDisplayScale(state.window)}; dpi > 0.0F) {
+        ImGui::GetStyle().FontScaleDpi = dpi;
+    }
+
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
@@ -1359,6 +1378,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     draw_ui(state);
 
     ImGui::Render();
+    // Map imgui window coordinates onto the HIGH_PIXEL_DENSITY
+    // framebuffer. The SDL_Renderer backend skips its own clip-scale
+    // when a render scale is already set (rsx != 1), so this is the
+    // one knob - same call as imgui's example_sdl3_sdlrenderer3.
+    const ImGuiIO& io{ImGui::GetIO()};
+    SDL_SetRenderScale(state.renderer, io.DisplayFramebufferScale.x,
+                       io.DisplayFramebufferScale.y);
     SDL_SetRenderDrawColorFloat(state.renderer, clear_color.x,
                                 clear_color.y, clear_color.z,
                                 clear_color.w);
