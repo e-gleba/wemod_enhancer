@@ -23,17 +23,17 @@
 // Structure: SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS is set via
 // CMake), one frame = poll the background command + draw the UI.
 //
-// Layout (default imgui theme, untouched - hierarchy comes from
-// alignment and scale, not colors):
-//   - Top toolbar: Settings opens a floating window (Python,
-//     patcher, version.dll); the build version is pinned right.
+// Layout (default imgui theme, untouched colors - hierarchy comes
+// from alignment, padding and scale):
 //   - WeMod folder field with Browse on the same row.
 //   - Full-width action row under the path: Patch / Restore, plus
-//     Download WeMod only while the folder is unresolved. The
-//     buttons share the row equally and use a taller frame so they
-//     are easy hit targets at any DPI.
-//   - Status line, then the log filling the rest, then Copy output
-//     / Report bug on the bottom toolbar.
+//     Download WeMod only while the folder is unresolved. Buttons
+//     share the row equally and use a taller frame so they are easy
+//     hit targets at any DPI.
+//   - Status line, then Settings as a collapsing header (collapsed
+//     by default, full width - Python / patcher / version.dll).
+//   - Log fills the rest. Copy output / Report bug share one
+//     equal-width full-span row; version pinned right under it.
 //   - Window size is a fraction of the usable display (clamped) so
 //     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
 //     every font-size-derived widget.
@@ -179,22 +179,25 @@ constexpr std::string_view default_python{
 // 1440p / 4K all get a comfortable default; FontScaleDpi then scales
 // every font-size-derived widget. SDL keeps the physical size
 // constant across DPIs because the window is created at logical size.
-constexpr std::int32_t window_width_fallback{960};
-constexpr std::int32_t window_height_fallback{640};
-constexpr std::int32_t window_min_width{800};
-constexpr std::int32_t window_min_height{560};
-constexpr std::int32_t window_max_width{1600};
-constexpr std::int32_t window_max_height{1000};
-constexpr std::int32_t log_lines_reserved{8};
+constexpr std::int32_t window_width_fallback{1024};
+constexpr std::int32_t window_height_fallback{680};
+constexpr std::int32_t window_min_width{880};
+constexpr std::int32_t window_min_height{600};
+constexpr std::int32_t window_max_width{1680};
+constexpr std::int32_t window_max_height{1050};
 
 // Extra horizontal padding on the Browse button so it matches the
 // path field's visual weight. Action buttons ignore this - they
 // stretch to share the full row.
 constexpr float button_padding{24.0F};
+constexpr float section_indent{16.0F};
 
-// Action row: taller than the default frame so Patch / Restore are
-// easy hit targets. Font-size derived via GetFrameHeight().
-constexpr float action_height_scale{1.8F};
+// Action row (Patch / Restore / Download): taller than the default
+// frame so they are easy hit targets. Utility row (Copy / Report)
+// is a step down - still large, not competing with Patch.
+// Font-size derived via GetFrameHeight().
+constexpr float action_height_scale{2.0F};
+constexpr float util_height_scale{1.55F};
 
 constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 
@@ -238,7 +241,6 @@ struct app_state final
     bool has_run{false};
     std::int32_t last_exit_code{0};
     float copied_flash{0.0F}; // seconds left of "Copied!" feedback
-    bool settings_open{false}; // floating Settings window
     // --- filesystem probe cache (see probe_filesystem) ---
     std::string probed_install_dir; // field text the last resolve ran on
     std::string probed_script_path; // ditto, for the script probe
@@ -855,8 +857,8 @@ void report_bug(app_state& state)
 
 // --- layout helpers (font-size derived, DPI-correct) ------------------
 
-// Action / Browse button at an explicit size. Height 0 keeps the
-// default frame height (path row). Returns true when clicked.
+// Button at an explicit size. Height 0 keeps the default frame
+// height (path-row Browse). Returns true when clicked.
 bool action_button(const char* label, const float width, const float height)
 {
     Expects(label != nullptr);
@@ -864,7 +866,8 @@ bool action_button(const char* label, const float width, const float height)
 }
 
 // Equal slice of the current row for `count` sibling buttons, gaps
-// included. Stretch-to-fill: the action row always spans the window.
+// included. Stretch-to-fill: action and utility rows always span
+// the window.
 [[nodiscard]] float equal_button_width(const int count)
 {
     Expects(count > 0);
@@ -872,19 +875,6 @@ bool action_button(const char* label, const float width, const float height)
     const float avail{ImGui::GetContentRegionAvail().x};
     const float gaps{style.ItemSpacing.x * static_cast<float>(count - 1)};
     return std::max((avail - gaps) / static_cast<float>(count), 1.0F);
-}
-
-// Small utility button sized to its label, for the toolbar rows
-// where buttons sit in one horizontal row. Returns true when clicked.
-bool fit_button(const char* label)
-{
-    Expects(label != nullptr);
-    const ImGuiStyle& style{ImGui::GetStyle()};
-    const ImVec2 text{ImGui::CalcTextSize(label)};
-    return ImGui::Button(
-        label,
-        ImVec2(text.x + style.FramePadding.x * 2.0F,
-               text.y + style.FramePadding.y * 2.0F));
 }
 
 // Small dim section label above a field.
@@ -945,12 +935,9 @@ void help_marker(const char* text, const char* url)
     return {};
 }
 
-// Floating Settings window body: patcher / Python / version.dll.
-// Inputs stretch to the window; Dummy below sets a DPI-safe min width.
+// Settings body: patcher / Python / version.dll. Inputs stretch.
 void draw_settings(app_state& state, const bool script_ok)
 {
-    ImGui::Dummy(ImVec2(ImGui::GetFontSize() * 34.0F, 0.0F));
-
     field_label("Patcher");
     help_marker(
         "wemod_enhancer.py + version.dll ship inside this package, "
@@ -996,9 +983,9 @@ void draw_settings(app_state& state, const bool script_ok)
                              &state.version_dll);
 }
 
-// The whole window: toolbar, path+Browse, equal-width action row,
-// status, scrolling log, bottom utilities. Settings is a floating
-// window opened from the toolbar. One frame = one draw call.
+// The whole window: path+Browse, equal-width action row, status,
+// collapsing Settings, scrolling log, equal-width Copy/Report.
+// One frame = one draw call.
 void draw_ui(app_state& state)
 {
     const ImGuiViewport* viewport{ImGui::GetMainViewport()};
@@ -1018,29 +1005,6 @@ void draw_ui(app_state& state)
     const fs::path& resolved_dir{state.resolved_install_dir};
     const bool install_ok{!resolved_dir.empty()};
     const bool script_ok{state.script_present};
-
-    // --- Toolbar: Settings (floating window) + version ----------------
-    if (fit_button("Settings")) {
-        state.settings_open = true;
-    }
-    if (ImGui::IsItemHovered()) {
-        tooltip_text("Python, patcher path, version.dll");
-    }
-    {
-        const std::string version_text{std::format("v{}", gui_version)};
-        const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x +
-                        ImGui::GetCursorPosX() - text_width);
-        ImGui::TextDisabled("%s", version_text.c_str());
-        if (ImGui::IsItemHovered()) {
-            tooltip_text(std::string(SDL_GetPlatform()) + " " +
-                         std::string(target_arch));
-        }
-    }
-
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
 
     // --- WeMod folder + Browse on one row -----------------------------
     // Validity is an invariant of the current field text, re-probed on
@@ -1150,16 +1114,27 @@ void draw_ui(app_state& state)
         text_disabled("Patch, then launch WeMod.");
     }
 
+    // --- Settings (collapsed by default), full window width -----------
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::CollapsingHeader("Settings")) {
+        ImGui::Indent(section_indent);
+        draw_settings(state, script_ok);
+        ImGui::Unindent();
+    }
+
     // --- Log: fills the rest of the window ----------------------------
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
     const float line_height{ImGui::GetTextLineHeightWithSpacing()};
-    const float log_height{std::max(
-        ImGui::GetContentRegionAvail().y -
-            line_height * log_lines_reserved,
-        line_height * 4.0F)};
+    const float util_h{ImGui::GetFrameHeight() * util_height_scale};
+    const float toolbar_h{util_h + line_height + style.ItemSpacing.y * 3.0F};
+    const float log_height{std::max(ImGui::GetContentRegionAvail().y - toolbar_h,
+                                    line_height * 4.0F)};
 
     ImGui::BeginChild("##log", ImVec2(0.0F, log_height),
                       ImGuiChildFlags_Borders,
@@ -1180,39 +1155,38 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    // --- Bottom toolbar: Copy output / Report bug ---------------------
+    // --- Bottom toolbar: Copy / Report equal-width, version right -----
     ImGui::Spacing();
-    if (fit_button("Copy output")) {
+    const float util_w{equal_button_width(2)};
+    if (action_button("Copy output", util_w, util_h)) {
         copy_output(state);
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Copy the log and environment info to the clipboard");
     }
     ImGui::SameLine();
-    if (fit_button("Report bug")) {
+    if (action_button("Report bug", util_w, util_h)) {
         report_bug(state);
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Open a pre-filled GitHub issue with the log attached");
     }
+
     if (state.copied_flash > 0.0F) {
         state.copied_flash -= ImGui::GetIO().DeltaTime;
-        ImGui::SameLine();
         text_colored(color_ok, "Copied!");
+        ImGui::SameLine();
     }
-
-    // --- Floating Settings --------------------------------------------
-    if (state.settings_open) {
-        ImGui::SetNextWindowPos(
-            ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5F,
-                   viewport->WorkPos.y + viewport->WorkSize.y * 0.5F),
-            ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
-        if (ImGui::Begin("Settings", &state.settings_open,
-                         ImGuiWindowFlags_AlwaysAutoResize |
-                             ImGuiWindowFlags_NoCollapse)) {
-            draw_settings(state, script_ok);
+    {
+        const std::string version_text{std::format("v{}", gui_version)};
+        const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x +
+                        ImGui::GetCursorPosX() - text_width);
+        ImGui::TextDisabled("%s", version_text.c_str());
+        if (ImGui::IsItemHovered()) {
+            tooltip_text(std::string(SDL_GetPlatform()) + " " +
+                         std::string(target_arch));
         }
-        ImGui::End();
     }
 
     ImGui::End();
@@ -1251,6 +1225,17 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
+    // Density only: default dark colors stay. Opened padding matches
+    // the settings-page habit (generous hit targets, even gaps) so
+    // FHD and 4K both read as the same layout, just larger.
+    ImGuiStyle& style{ImGui::GetStyle()};
+    style.WindowPadding = ImVec2(16.0F, 14.0F);
+    style.FramePadding = ImVec2(14.0F, 8.0F);
+    style.ItemSpacing = ImVec2(10.0F, 8.0F);
+    style.ItemInnerSpacing = ImVec2(8.0F, 6.0F);
+    style.ScrollbarSize = 16.0F;
+    style.GrabMinSize = 14.0F;
+
     // One knob scales the whole UI: style.FontScaleDpi (ImGui 1.92+)
     // scales every font-size-derived widget, and the window was
     // created at logical size so SDL keeps the physical size constant
@@ -1258,7 +1243,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     // would zero every widget, so fall back to 1.0.
     const float main_scale{SDL_GetDisplayContentScale(
         SDL_GetPrimaryDisplay())};
-    ImGui::GetStyle().FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
+    style.FontScaleDpi = main_scale > 0.0F ? main_scale : 1.0F;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
