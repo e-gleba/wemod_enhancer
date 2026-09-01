@@ -101,6 +101,17 @@
             "description": "Build the Linux ARM64 package natively with GCC (version.dll via nested llvm-mingw)",
             "inherits": "linux_gcc_amd64",
             "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "linux_clang_arm64",
+            "displayName": "Linux ARM64 (Clang)",
+            "description": "Build the Linux ARM64 package natively with Clang (version.dll via nested llvm-mingw)",
+            "inherits": "linux_gcc_arm64",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
         }
     ],
     "buildPresets": [
@@ -138,6 +149,12 @@
             "name": "linux_gcc_arm64",
             "displayName": "Linux ARM64 (GCC) RelWithDebInfo",
             "configurePreset": "linux_gcc_arm64",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "linux_clang_arm64",
+            "displayName": "Linux ARM64 (Clang) RelWithDebInfo",
+            "configurePreset": "linux_clang_arm64",
             "configuration": "RelWithDebInfo"
         }
     ],
@@ -201,6 +218,17 @@
             "name": "linux_gcc_arm64_package",
             "displayName": "Linux ARM64 (GCC) Package",
             "configurePreset": "linux_gcc_arm64",
+            "configurations": [
+                "RelWithDebInfo"
+            ],
+            "generators": [
+                "TXZ"
+            ]
+        },
+        {
+            "name": "linux_clang_arm64_package",
+            "displayName": "Linux ARM64 (Clang) Package",
+            "configurePreset": "linux_clang_arm64",
             "configurations": [
                 "RelWithDebInfo"
             ],
@@ -321,6 +349,25 @@
                 {
                     "type": "package",
                     "name": "linux_gcc_arm64_package"
+                }
+            ]
+        },
+        {
+            "name": "linux_clang_arm64_full",
+            "displayName": "Linux ARM64 (Clang) Pipeline",
+            "description": "Configure, build (RelWithDebInfo) and package natively on Linux ARM64 with Clang",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "linux_clang_arm64"
+                },
+                {
+                    "type": "build",
+                    "name": "linux_clang_arm64"
+                },
+                {
+                    "type": "package",
+                    "name": "linux_clang_arm64_package"
                 }
             ]
         }
