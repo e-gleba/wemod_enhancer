@@ -32,9 +32,10 @@
 //     so every full-span row reads as one control language.
 //   - Status line, then Settings as a collapsing header (collapsed
 //     by default, full width - Python / patcher / version.dll).
-//   - Log fills the rest. Copy output / Clear output / Report bug
-//     share one equal-width full-span row; Copied! left and the
-//     version centered on the footer line under it.
+//   - Console section: muted label, then the log filling the rest.
+//     Copy output / Clear output / Report bug share one equal-width
+//     full-span row; Copied! left and the version centered on the
+//     footer line under it.
 //   - Window size is a fraction of the usable display (clamped) so
 //     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
 //     every font-size-derived widget.
@@ -1133,10 +1134,16 @@ void draw_ui(app_state& state)
         ImGui::Unindent();
     }
 
-    // --- Log: fills the rest of the window ----------------------------
+    // --- Console: live stdout/stderr, fills the rest of the window ----
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
+
+    field_label("Console");
+    help_marker(
+        "Live stdout and stderr from the patcher, the Python probe, "
+        "and Download WeMod. Copy it below if something fails.",
+        "https://github.com/e-gleba/wemod_enhancer/issues/new");
 
     const float line_height{ImGui::GetTextLineHeightWithSpacing()};
     const float toolbar_h{row_h + line_height + (style.ItemSpacing.y * 3.0F)};
