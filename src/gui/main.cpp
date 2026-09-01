@@ -24,24 +24,19 @@
 // CMake), one frame = poll the background command + draw the UI.
 //
 // Layout (default imgui theme, untouched - hierarchy comes from
-// alignment, not colors):
-//   - One table with a single logical row: a stretching content
-//     column (folder field + status) and a fixed-width action
-//     column. Every button shares one width (the widest label), so
-//     Browse / Patch / Restore / Download WeMod form a single
-//     aligned stack on the right - the settings-page habit: aligned
-//     controls read as one group, and the primary action always
-//     sits in the same spot.
-//   - The stack order is the workflow: pick the folder, patch,
-//     restore; Download WeMod appears only while the folder is
-//     unresolved.
-//   - Below the table, full window width: the separator, the
-//     Settings collapsing header and its inputs. TableNextColumn()
-//     selects the FIRST cell of a new row - it never spans both
-//     columns - so these sections live outside the table, like the
-//     log and the bottom toolbar.
-//   - The bottom toolbar holds the secondary utilities (Copy
-//     output, Report bug) left, the version pinned right.
+// alignment and scale, not colors):
+//   - Top toolbar: Settings opens a floating window (Python,
+//     patcher, version.dll); the build version is pinned right.
+//   - WeMod folder field with Browse on the same row.
+//   - Full-width action row under the path: Patch / Restore, plus
+//     Download WeMod only while the folder is unresolved. The
+//     buttons share the row equally and use a taller frame so they
+//     are easy hit targets at any DPI.
+//   - Status line, then the log filling the rest, then Copy output
+//     / Report bug on the bottom toolbar.
+//   - Window size is a fraction of the usable display (clamped) so
+//     FHD / 1440p / 4K all open comfortably; FontScaleDpi scales
+//     every font-size-derived widget.
 //
 // C++ Core Guidelines, applied where they cost nothing:
 //   - No owning raw pointers, no new/delete, no C casts; const and
@@ -179,19 +174,28 @@ constexpr std::size_t log_budget{512 * 1024};
 constexpr std::string_view default_python{
     is_windows ? std::string_view("python") : std::string_view("python3")};
 
-// Window logical size; SDL keeps the physical size constant across
-// DPIs, and style.FontScaleDpi scales every font-size-derived widget.
-constexpr std::int32_t window_width{720};
-constexpr std::int32_t window_height{480};
+// Fallback logical window size when the display cannot be queried.
+// pick_window_size() uses a fraction of the usable display so FHD /
+// 1440p / 4K all get a comfortable default; FontScaleDpi then scales
+// every font-size-derived widget. SDL keeps the physical size
+// constant across DPIs because the window is created at logical size.
+constexpr std::int32_t window_width_fallback{960};
+constexpr std::int32_t window_height_fallback{640};
+constexpr std::int32_t window_min_width{800};
+constexpr std::int32_t window_min_height{560};
+constexpr std::int32_t window_max_width{1600};
+constexpr std::int32_t window_max_height{1000};
 constexpr std::int32_t log_lines_reserved{8};
 
-// Action buttons share ONE width: the widest label plus padding.
-// Equal-width buttons in a vertical stack form a clean alignment
-// axis (the settings-page habit); per-label widths would read as a
-// ragged list and the eye would re-find the edge for every row.
-constexpr std::string_view widest_button{"Download WeMod"};
+// Extra horizontal padding on the Browse button so it matches the
+// path field's visual weight. Action buttons ignore this - they
+// stretch to share the full row.
 constexpr float button_padding{24.0F};
-constexpr float section_indent{16.0F};
+
+// Action row: taller than the default frame so Patch / Restore are
+// easy hit targets. Font-size derived via GetFrameHeight().
+constexpr float action_height_scale{1.8F};
+
 constexpr ImVec4 clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 
 // Status colors (replacing the magic-number literals).
@@ -234,6 +238,7 @@ struct app_state final
     bool has_run{false};
     std::int32_t last_exit_code{0};
     float copied_flash{0.0F}; // seconds left of "Copied!" feedback
+    bool settings_open{false}; // floating Settings window
     // --- filesystem probe cache (see probe_filesystem) ---
     std::string probed_install_dir; // field text the last resolve ran on
     std::string probed_script_path; // ditto, for the script probe
@@ -328,7 +333,7 @@ void append_log(app_state& state, const std::string_view text)
 
 // Quote one argument for the shell that runs our background commands:
 // cmd.exe on Windows (double quotes, "" escapes a quote), /bin/sh
-// elsewhere (single quotes, '"' escapes a quote).
+// elsewhere (single quotes, '"''"'"' escapes a quote).
 [[nodiscard]] std::string shell_quote(const std::string_view arg)
 {
     if constexpr (is_windows) {
@@ -830,18 +835,46 @@ void report_bug(app_state& state)
     }
 }
 
-// --- layout helpers (font-size derived, DPI-correct) ------------------
-
-// Aligned action button: the shared width, default height. Every
-// caller passes the same `width`, so the stack forms one clean
-// vertical axis. Returns true when clicked.
-bool action_button(const char* label, const float width)
+// Comfortable logical window size: a fraction of the usable display,
+// clamped so laptops stay usable and 4K does not open a postage stamp.
+// HiDPI is FontScaleDpi's job - this only picks the window.
+[[nodiscard]] std::pair<std::int32_t, std::int32_t> pick_window_size()
 {
-    Expects(label != nullptr);
-    return ImGui::Button(label, ImVec2(width, 0.0F));
+    SDL_Rect usable{};
+    if (!SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) ||
+        usable.w <= 0 || usable.h <= 0) {
+        return {window_width_fallback, window_height_fallback};
+    }
+    const std::int32_t width{std::clamp(usable.w / 2, window_min_width,
+                                        window_max_width)};
+    const std::int32_t height{std::clamp((usable.h * 3) / 5,
+                                         window_min_height,
+                                         window_max_height)};
+    return {width, height};
 }
 
-// Small utility button sized to its label, for the bottom toolbar
+// --- layout helpers (font-size derived, DPI-correct) ------------------
+
+// Action / Browse button at an explicit size. Height 0 keeps the
+// default frame height (path row). Returns true when clicked.
+bool action_button(const char* label, const float width, const float height)
+{
+    Expects(label != nullptr);
+    return ImGui::Button(label, ImVec2(width, height));
+}
+
+// Equal slice of the current row for `count` sibling buttons, gaps
+// included. Stretch-to-fill: the action row always spans the window.
+[[nodiscard]] float equal_button_width(const int count)
+{
+    Expects(count > 0);
+    const ImGuiStyle& style{ImGui::GetStyle()};
+    const float avail{ImGui::GetContentRegionAvail().x};
+    const float gaps{style.ItemSpacing.x * static_cast<float>(count - 1)};
+    return std::max((avail - gaps) / static_cast<float>(count), 1.0F);
+}
+
+// Small utility button sized to its label, for the toolbar rows
 // where buttons sit in one horizontal row. Returns true when clicked.
 bool fit_button(const char* label)
 {
@@ -912,9 +945,60 @@ void help_marker(const char* text, const char* url)
     return {};
 }
 
-// The whole window: table with the folder field + the aligned action
-// stack, then full-width sections below - separator, Settings, the
-// scrolling log and the bottom toolbar. One frame = one draw call.
+// Floating Settings window body: patcher / Python / version.dll.
+// Inputs stretch to the window; Dummy below sets a DPI-safe min width.
+void draw_settings(app_state& state, const bool script_ok)
+{
+    ImGui::Dummy(ImVec2(ImGui::GetFontSize() * 34.0F, 0.0F));
+
+    field_label("Patcher");
+    help_marker(
+        "wemod_enhancer.py + version.dll ship inside this package, "
+        "next to the executable - no download, no update step. If the "
+        "script is reported missing, re-download the GUI package.",
+        "https://github.com/e-gleba/wemod_enhancer/releases/latest");
+    ImGui::SameLine();
+    if (script_ok) {
+        text_colored(color_ok, "ready");
+        ImGui::SameLine();
+        text_disabled(state.script_path);
+    } else {
+        text_colored(color_err, "missing next to the exe");
+    }
+
+    ImGui::Spacing();
+
+    field_label("Python command");
+    help_marker(
+        "The interpreter that runs the patcher. Default: python on "
+        "Windows, python3 elsewhere. Point it at a full path if "
+        "Python is not on PATH.",
+        "https://www.python.org/downloads/");
+    ImGui::SameLine();
+    if (state.python_ok == probe_state::works) {
+        text_colored(color_ok, state.python_version);
+    } else if (state.python_ok == probe_state::failed) {
+        text_colored(color_err, "not working");
+    }
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputText("##python", &state.python);
+
+    ImGui::Spacing();
+
+    field_label("version.dll");
+    help_marker(
+        "The proxy DLL the patcher drops next to WeMod. Leave empty "
+        "to use the copy bundled next to the executable.",
+        "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::InputTextWithHint("##version_dll",
+                             "auto: next to the exe",
+                             &state.version_dll);
+}
+
+// The whole window: toolbar, path+Browse, equal-width action row,
+// status, scrolling log, bottom utilities. Settings is a floating
+// window opened from the toolbar. One frame = one draw call.
 void draw_ui(app_state& state)
 {
     const ImGuiViewport* viewport{ImGui::GetMainViewport()};
@@ -930,42 +1014,39 @@ void draw_ui(app_state& state)
 
     const ImGuiStyle& style{ImGui::GetStyle()};
 
-    // Shared width of every action button: the widest label plus
-    // padding, computed from the font size so nothing clips at any
-    // DPI. One width for all actions = one alignment axis.
-    const float buttons_width{ImGui::CalcTextSize(widest_button.data()).x +
-                              style.FramePadding.x * 2.0F +
-                              button_padding};
-
-    // One table for the folder row: a stretching content column plus a
-    // fixed action column - the settings-page arrangement. ImGui
-    // sizes button columns from the cell TEXT, not the widget, so the
-    // action column gets an explicit width hint; every button in it
-    // is drawn at exactly that width. The table ends with that row:
-    // everything below (Settings, log, toolbar) spans the full
-    // window width.
-    ImGui::BeginTable("layout", 2,
-                      ImGuiTableFlags_SizingStretchProp |
-                          ImGuiTableFlags_NoSavedSettings);
-    ImGui::TableSetupColumn("content", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("actions", ImGuiTableColumnFlags_WidthFixed,
-                            buttons_width);
-
-    ImGui::TableNextRow();
-    ImGui::TableNextColumn();
-
-    // title bar already says "WeMod Enhancer" - no duplicate title here.
-
-    // --- WeMod folder: the only thing a user must provide -----------
-    // Validity is an invariant of the current field text, re-probed on
-    // edits and on the reprobe timer (never every frame - the resolve
-    // walks directories). Patch normalizes the field to the resolved
-    // dir so the log always shows the exact folder used.
     probe_filesystem(state);
     const fs::path& resolved_dir{state.resolved_install_dir};
     const bool install_ok{!resolved_dir.empty()};
     const bool script_ok{state.script_present};
 
+    // --- Toolbar: Settings (floating window) + version ----------------
+    if (fit_button("Settings")) {
+        state.settings_open = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        tooltip_text("Python, patcher path, version.dll");
+    }
+    {
+        const std::string version_text{std::format("v{}", gui_version)};
+        const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x +
+                        ImGui::GetCursorPosX() - text_width);
+        ImGui::TextDisabled("%s", version_text.c_str());
+        if (ImGui::IsItemHovered()) {
+            tooltip_text(std::string(SDL_GetPlatform()) + " " +
+                         std::string(target_arch));
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // --- WeMod folder + Browse on one row -----------------------------
+    // Validity is an invariant of the current field text, re-probed on
+    // edits and on the reprobe timer (never every frame - the resolve
+    // walks directories). Patch normalizes the field to the resolved
+    // dir so the log always shows the exact folder used.
     field_label("WeMod folder");
     help_marker(
         "The app-x.y.z folder with resources/app.asar inside. Pick the "
@@ -979,24 +1060,81 @@ void draw_ui(app_state& state)
                      install_ok ? "ok" : "not a WeMod install");
     }
 
-    // Valid path = quiet green tint on the field itself.
+    const float browse_w{ImGui::CalcTextSize("Browse...").x +
+                         style.FramePadding.x * 2.0F + button_padding};
+    const float path_w{std::max(ImGui::GetContentRegionAvail().x - browse_w -
+                                    style.ItemSpacing.x,
+                                ImGui::GetFontSize() * 8.0F)};
+
     if (install_ok) {
         ImGui::PushStyleColor(ImGuiCol_FrameBg, field_ok_bg);
     }
-    ImGui::SetNextItemWidth(-FLT_MIN);
+    ImGui::SetNextItemWidth(path_w);
     ImGui::InputTextWithHint("##install_dir", "path to WeMod",
                              &state.install_dir);
     if (install_ok) {
         ImGui::PopStyleColor();
     }
+    ImGui::SameLine();
+    if (action_button("Browse...", browse_w, 0.0F)) {
+        SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
+                                 state.install_dir.empty()
+                                     ? nullptr
+                                     : state.install_dir.c_str(),
+                                 false);
+    }
 
-    // The resolved app-x.y.z dir when it differs from the field text.
     if (install_ok && resolved_dir.string() != state.install_dir) {
         text_disabled(resolved_dir.string());
     }
 
+    // --- Actions: equal-width row, full span under the path -----------
+    // Count = 2 (Patch, Restore) or 3 (+ Download WeMod while the
+    // folder is unresolved). Every button gets the same slice so the
+    // row is one alignment axis, whatever the labels.
+    ImGui::Spacing();
+    const int action_count{install_ok ? 2 : 3};
+    const float action_w{equal_button_width(action_count)};
+    const float action_h{ImGui::GetFrameHeight() * action_height_scale};
+
+    const char* block_reason{patch_block_reason(install_ok, script_ok)};
+    const bool blocked{state.running || block_reason != nullptr};
+    ImGui::BeginDisabled(blocked);
+    if (action_button("Patch", action_w, action_h)) {
+        // Normalize the field to the resolved dir: the log then shows
+        // the exact folder the patcher ran against.
+        state.install_dir = resolved_dir.string();
+        start_run(state, "patch");
+    }
+    ImGui::EndDisabled();
+    if (block_reason != nullptr &&
+        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        tooltip_text(block_reason);
+    }
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(state.running);
+    if (action_button("Restore", action_w, action_h)) {
+        start_run(state, "restore");
+    }
+    ImGui::EndDisabled();
+
+    if (!install_ok) {
+        ImGui::SameLine();
+        if (action_button("Download WeMod", action_w, action_h)) {
+            start_wemod_download(state);
+        }
+        if (ImGui::IsItemHovered()) {
+            tooltip_text(is_windows
+                             ? "Download the official WeMod installer into "
+                               "your Downloads folder and run it"
+                             : "Clone wemod-launcher into ~/wemod-launcher "
+                               "and open the setup tutorial");
+        }
+    }
+
     // --- Status -------------------------------------------------------
-    // One line under the folder: what is running, how the last run
+    // One line under the actions: what is running, how the last run
     // ended, or the initial hint. Detail lives in the log below.
     ImGui::Spacing();
     if (state.running) {
@@ -1010,117 +1148,6 @@ void draw_ui(app_state& state)
         }
     } else {
         text_disabled("Patch, then launch WeMod.");
-    }
-
-    // --- Actions: one aligned stack, right column --------------------
-    // Every button shares the width computed above, so the stack
-    // forms a single vertical alignment axis - the primary action
-    // always sits in the same spot, whatever the labels or the state.
-    // Stack order = workflow order: pick the folder, patch, restore;
-    // Download WeMod appears only while the folder is unresolved.
-    ImGui::TableNextColumn();
-
-    if (action_button("Browse...", buttons_width)) {
-        SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
-                                 state.install_dir.empty()
-                                     ? nullptr
-                                     : state.install_dir.c_str(),
-                                 false);
-    }
-
-    const char* block_reason{patch_block_reason(install_ok, script_ok)};
-    const bool blocked{state.running || block_reason != nullptr};
-    ImGui::BeginDisabled(blocked);
-    if (action_button("Patch", buttons_width)) {
-        // Normalize the field to the resolved dir: the log then shows
-        // the exact folder the patcher ran against.
-        state.install_dir = resolved_dir.string();
-        start_run(state, "patch");
-    }
-    ImGui::EndDisabled();
-    if (block_reason != nullptr &&
-        ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        tooltip_text(block_reason);
-    }
-
-    ImGui::BeginDisabled(state.running);
-    if (action_button("Restore", buttons_width)) {
-        start_run(state, "restore");
-    }
-    ImGui::EndDisabled();
-
-    if (!install_ok) {
-        if (action_button("Download WeMod", buttons_width)) {
-            start_wemod_download(state);
-        }
-        if (ImGui::IsItemHovered()) {
-            tooltip_text(is_windows
-                             ? "Download the official WeMod installer into "
-                               "your Downloads folder and run it"
-                             : "Clone wemod-launcher into ~/wemod-launcher "
-                               "and open the setup tutorial");
-        }
-    }
-
-    // The folder/action pair is the only row: end the table here.
-    // TableNextColumn() selects the FIRST cell of a new row - it does
-    // not span both columns - so the sections below live outside the
-    // table and cover the full window width.
-    ImGui::EndTable();
-
-    // --- Settings (collapsed by default), full window width ---------
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    if (ImGui::CollapsingHeader("Settings")) {
-        ImGui::Indent(section_indent);
-
-        field_label("Patcher");
-        help_marker(
-            "wemod_enhancer.py + version.dll ship inside this package, "
-            "next to the executable - no download, no update step. If the "
-            "script is reported missing, re-download the GUI package.",
-            "https://github.com/e-gleba/wemod_enhancer/releases/latest");
-        ImGui::SameLine();
-        if (script_ok) {
-            text_colored(color_ok, "ready");
-            ImGui::SameLine();
-            text_disabled(state.script_path);
-        } else {
-            text_colored(color_err, "missing next to the exe");
-        }
-
-        ImGui::Spacing();
-
-        field_label("Python command");
-        help_marker(
-            "The interpreter that runs the patcher. Default: python on "
-            "Windows, python3 elsewhere. Point it at a full path if "
-            "Python is not on PATH.",
-            "https://www.python.org/downloads/");
-        ImGui::SameLine();
-        if (state.python_ok == probe_state::works) {
-            text_colored(color_ok, state.python_version);
-        } else if (state.python_ok == probe_state::failed) {
-            text_colored(color_err, "not working");
-        }
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputText("##python", &state.python);
-
-        ImGui::Spacing();
-
-        field_label("version.dll");
-        help_marker(
-            "The proxy DLL the patcher drops next to WeMod. Leave empty "
-            "to use the copy bundled next to the executable.",
-            "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        ImGui::InputTextWithHint("##version_dll",
-                                 "auto: next to the exe",
-                                 &state.version_dll);
-
-        ImGui::Unindent();
     }
 
     // --- Log: fills the rest of the window ----------------------------
@@ -1153,7 +1180,7 @@ void draw_ui(app_state& state)
     }
     ImGui::EndChild();
 
-    // --- Bottom toolbar: secondary utilities left, version right ------
+    // --- Bottom toolbar: Copy output / Report bug ---------------------
     ImGui::Spacing();
     if (fit_button("Copy output")) {
         copy_output(state);
@@ -1174,19 +1201,18 @@ void draw_ui(app_state& state)
         text_colored(color_ok, "Copied!");
     }
 
-    // Build version pinned to the right end of the bottom toolbar row:
-    // the CMake project version, injected at compile time - the GUI
-    // can never show a version that differs from its package.
-    {
-        const std::string version_text{std::format("v{}", gui_version)};
-        const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x +
-                        ImGui::GetCursorPosX() - text_width);
-        ImGui::TextDisabled("%s", version_text.c_str());
-        if (ImGui::IsItemHovered()) {
-            tooltip_text(std::string(SDL_GetPlatform()) + " " +
-                         std::string(target_arch));
+    // --- Floating Settings --------------------------------------------
+    if (state.settings_open) {
+        ImGui::SetNextWindowPos(
+            ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5F,
+                   viewport->WorkPos.y + viewport->WorkSize.y * 0.5F),
+            ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
+        if (ImGui::Begin("Settings", &state.settings_open,
+                         ImGuiWindowFlags_AlwaysAutoResize |
+                             ImGuiWindowFlags_NoCollapse)) {
+            draw_settings(state, script_ok);
         }
+        ImGui::End();
     }
 
     ImGui::End();
@@ -1207,16 +1233,19 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
         return SDL_APP_FAILURE;
     }
 
+    const auto [win_w, win_h]{pick_window_size()};
+
     SDL_Window* window{nullptr};
     SDL_Renderer* renderer{nullptr};
     if (!SDL_CreateWindowAndRenderer(
-            "WeMod Enhancer", window_width, window_height,
+            "WeMod Enhancer", win_w, win_h,
             SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window,
             &renderer)) {
         sdl_log_error(std::string("SDL_CreateWindowAndRenderer: ") +
                       SDL_GetError());
         return SDL_APP_FAILURE;
     }
+    SDL_SetWindowMinimumSize(window, window_min_width, window_min_height);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
