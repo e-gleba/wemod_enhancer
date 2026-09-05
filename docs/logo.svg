@@ -1,31 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="weTitle weDesc">
 <title id="weTitle">WeMod Enhancer</title>
-<desc id="weDesc">WeMod-style rounded W on cyan-to-blue gradient, patched with a beige medical bandage with white gauze pad.</desc>
+<desc id="weDesc">Stylized white W like the WeMod icon on a purple-to-cyan gradient, patched with a beige medical bandage.</desc>
 <defs>
 <linearGradient id="weBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
-<stop offset="0" stop-color="#0e1626"/>
-<stop offset="0.55" stop-color="#101d33"/>
-<stop offset="1" stop-color="#0a1220"/>
-</linearGradient>
-<linearGradient id="weW" x1="52" y1="52" x2="204" y2="204" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#22d3ee"/>
-<stop offset="0.5" stop-color="#38bdf8"/>
-<stop offset="1" stop-color="#6366f1"/>
+<stop offset="0.45" stop-color="#3b82f6"/>
+<stop offset="1" stop-color="#7c3aed"/>
 </linearGradient>
-<linearGradient id="wePatch" x1="120" y1="120" x2="216" y2="216" gradientUnits="userSpaceOnUse">
+<linearGradient id="wePatch" x1="128" y1="150" x2="222" y2="208" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#f6dfb6"/>
 <stop offset="1" stop-color="#ecbd85"/>
 </linearGradient>
 </defs>
 <rect width="256" height="256" rx="56" fill="url(#weBg)"/>
-<path d="M52 84 L78 172 L104 104 L128 172 L154 104 L180 172 L204 84" fill="none" stroke="url(#weW)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
-<g transform="rotate(-18 168 168)">
-<rect x="118" y="146" width="100" height="44" rx="22" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.25" stroke-width="2"/>
-<rect x="150" y="154" width="36" height="28" rx="7" fill="#ffffff" opacity="0.95"/>
-<circle cx="134" cy="168" r="2.4" fill="#0a1220" opacity="0.22"/>
-<circle cx="144" cy="168" r="2.4" fill="#0a1220" opacity="0.22"/>
-<circle cx="202" cy="168" r="2.4" fill="#0a1220" opacity="0.22"/>
-<circle cx="192" cy="168" r="2.4" fill="#0a1220" opacity="0.22"/>
+<path d="M48 88 C48 78 58 72 66 78 L92 118 L104 92 C108 82 120 82 124 92 L136 118 L162 78 C170 72 180 78 180 88 L152 180 C148 192 132 192 128 180 L114 142 L100 180 C96 192 80 192 76 180 Z" fill="#ffffff"/>
+<g transform="rotate(-18 176 184)">
+<rect x="126" y="162" width="100" height="44" rx="22" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
+<rect x="158" y="170" width="36" height="28" rx="7" fill="#ffffff" opacity="0.95"/>
+<circle cx="142" cy="184" r="2.4" fill="#0a1220" opacity="0.22"/>
+<circle cx="152" cy="184" r="2.4" fill="#0a1220" opacity="0.22"/>
+<circle cx="210" cy="184" r="2.4" fill="#0a1220" opacity="0.22"/>
+<circle cx="200" cy="184" r="2.4" fill="#0a1220" opacity="0.22"/>
 </g>
-<text x="128" y="214" text-anchor="middle" font-family="Menlo,Consolas,monospace" font-size="13" letter-spacing="2" fill="#ffffff">0x57 0x45 0x50 0x52 0x4F</text>
 </svg>
