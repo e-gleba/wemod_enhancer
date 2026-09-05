@@ -63,6 +63,8 @@ cd wemod_enhancer
 
 # 3. Launch your game once through the launcher, then patch the WeMod install
 python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+# Or launch the GUI
+./bin/wemod_enhancer_gui.elf
 ```
 
 > **Important:** `wemod_bin` only appears **after** you launch a game through wemod-launcher at least once and log in to your WeMod account. The launcher downloads the WeMod client into `~/wemod-launcher/wemod_data/wemod_bin` on first run — patch only after that folder exists. See the [wemod-launcher tutorial](https://github.com/DeckCheatz/wemod-launcher#quick-guide) for the full setup (Proton, launch options, first login).
@@ -96,6 +98,8 @@ $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
          Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
          Select-Object -First 1
 python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
+# Or launch GUI
+.\bin\wemod_enhancer_gui.exe
 ```
 
 > `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
