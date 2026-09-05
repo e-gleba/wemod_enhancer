@@ -42,7 +42,11 @@ jobs:
             - name: install pytest
               run: python -m pip install --upgrade pytest
 
-            - name: run patcher tests
+            - name: check install.sh is executable
+              if: runner.os != 'Windows'
+              run: test -x scripts/install.sh
+
+            - name: run tests
               run: python -m pytest tests/ -q
 
             - name: patcher CLI smoke test
