@@ -16,24 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import wemod_enhancer as we
 
 
-def _bundle(tmp: Path, name: str, body: str) -> Path:
-    p = tmp / name
-    p.write_text(body, "utf-8")
-    return p
-
-
-def _minimal_asar_header() -> dict:
-    return {
-        "files": {
-            "index.js": {
-                "size": 3,
-                "offset": "0",
-                "integrity": we.integrity.__wrapped__ if hasattr(we.integrity, "__wrapped__") else None,
-            }
-        }
-    }
-
-
 def test_required_patches_have_markers():
     """Every required patch declares a marker (idempotency + status)."""
     for patch in we.PATCHES:
@@ -52,9 +34,7 @@ def test_pro_account_rewrite():
 
 def test_double_match_fails_closed(tmp_path: Path):
     """Two anchor hits = unsupported client, raise, change nothing."""
-    (tmp_path / "index.js").write_text(
-        'a.whenReady().then(1);b.whenReady().then(2);', "utf-8"
-    )
+    (tmp_path / "index.js").write_text("a.whenReady().then(1);b.whenReady().then(2);", "utf-8")
     with pytest.raises(RuntimeError, match="devtools-f12"):
         we.patch_bundles(tmp_path, only={"devtools-f12"})
 
