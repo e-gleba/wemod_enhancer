@@ -30,6 +30,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+$MinPython = [version]'3.11.0'
 $PackageName = 'wemod_enhancer-windows-msvc-amd64.zip'
 $ReleaseBase = 'https://github.com/e-gleba/wemod_enhancer/releases'
 $WorkDir = Join-Path $env:USERPROFILE 'Downloads\wemod_enhancer'
@@ -50,21 +51,54 @@ function Find-WeModInstall {
   return $apps | Select-Object -First 1
 }
 
-function Ensure-Python {
-  # Returns a working `python` command. Installs 3.13 via winget once,
-  # then refreshes PATH in this session so the next line just works.
+function Test-PythonVersion {
+  param([string]$Command)
+
+  # `python --version` prints "Python 3.13.5" (stdout or stderr).
+  # Accept only interpreters meeting the 3.11+ floor the patcher needs.
   try {
-    $found = & python --version 2>&1
-    Write-Host "Found $found." -ForegroundColor Green
-    return 'python'
+    $raw = & $Command --version 2>&1 | Out-String
   } catch {
-    Write-Host 'No Python found, installing 3.13 via winget (one-time setup)...' -ForegroundColor Yellow
-    winget install --silent Python.Python.3.13 --accept-source-agreements --accept-package-agreements
-    $machine = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $user = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = "$machine;$user"
+    return $null
+  }
+  $match = [regex]::Match($raw, 'Python\s+(\d+)\.(\d+)\.(\d+)')
+  if (-not $match.Success) {
+    return $null
+  }
+  $found = [version]$match.Groups[0].Value.Replace('Python ', '')
+  if ($found -ge $MinPython) {
+    return $Command
+  }
+  return $null
+}
+
+function Ensure-Python {
+  # Returns a working `python` command at 3.11+. Installs 3.13 via winget
+  # once, then re-checks: PATH may still point at an older interpreter.
+  $ok = Test-PythonVersion -Command 'python'
+  if ($ok) {
+    Write-Host "Found $(& python --version 2>&1)." -ForegroundColor Green
     return 'python'
   }
+  $py = Get-Command 'py' -ErrorAction SilentlyContinue
+  if ($py) {
+    $launcher = Test-PythonVersion -Command 'py -3'
+    if ($launcher) {
+      Write-Host "Found $(& py -3 --version 2>&1) via the py launcher." -ForegroundColor Green
+      return 'py -3'
+    }
+  }
+  Write-Host 'Need Python 3.11+, installing 3.13 via winget (one-time setup)...' -ForegroundColor Yellow
+  winget install --silent Python.Python.3.13 --accept-source-agreements --accept-package-agreements
+  $machine = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+  $user = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+  $env:Path = "$machine;$user"
+  $ok = Test-PythonVersion -Command 'python'
+  if ($ok) {
+    return 'python'
+  }
+  Write-Host 'Python 3.11+ is still missing after install. Install it from https://www.python.org/downloads/ (tick "Add to PATH"), reopen PowerShell, re-run.' -ForegroundColor Red
+  exit 1
 }
 
 function Install-Package {
