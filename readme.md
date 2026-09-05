@@ -50,6 +50,9 @@ WeMod has no Linux build — [wemod-launcher](https://github.com/DeckCheatz/wemo
 
 ```sh
 # 1. Install the launcher
+git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
+chmod +x "$HOME/wemod-launcher/wemod"
+...
 (follow steps in tutorial https://github.com/DeckCheatz/wemod-launcher)
 (Launch any game though wemod, authorize in wemod)
 
