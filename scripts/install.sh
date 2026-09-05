@@ -75,6 +75,16 @@ find_patcher() {
   fi
 }
 
+finish() {
+  # Completion line matches what actually ran: only patch unlocks Pro.
+  case "$ACTION" in
+    patch) say "Done. Launch WeMod, Pro is active." ;;
+    restore) say "Done. Original WeMod files are back." ;;
+    status) say "Done. See patch state above." ;;
+    doctor) say "Done. See diagnosis above." ;;
+  esac
+}
+
 # --- run -------------------------------------------------------------------
 
 check_action
@@ -93,6 +103,5 @@ if [ "$ACTION" = "patch" ] && [ ! -f "$INSTALL_DIR/resources/app.asar" ]; then
 fi
 
 python3 "$PATCHER" "$ACTION" --install-dir "$INSTALL_DIR"
-
-say "Done ($ACTION). Launch WeMod, Pro is active."
+finish
 echo "Steam launch options: WINEDLLOVERRIDES=\"version=n,b\" \"\$HOME/wemod-launcher/wemod\" %command%"
