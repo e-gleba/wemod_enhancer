@@ -1,25 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="weTitle weDesc">
-  <title id="weTitle">WeMod Enhancer</title>
-  <desc id="weDesc">Dark terminal window: traffic-light controls, white W prompt with amber block cursor, green patch status lines.</desc>
-  <defs>
-    <filter id="weCursor" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="4" result="b"/>
-      <feMerge>
-        <feMergeNode in="b"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-  </defs>
-  <rect width="256" height="256" rx="56" fill="#0d1117"/>
-  <rect x="1.5" y="1.5" width="253" height="253" rx="54.5" fill="none" stroke="#30363d" stroke-width="3"/>
-  <circle cx="44" cy="40" r="8" fill="#ff5f56"/>
-  <circle cx="68" cy="40" r="8" fill="#ebbd2d"/>
-  <circle cx="92" cy="40" r="8" fill="#27c93f"/>
-  <text x="116" y="45" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace" font-size="14" fill="#8b949e">wemod.sh</text>
-  <line x1="24" y1="64" x2="232" y2="64" stroke="#21262d" stroke-width="2"/>
-  <text x="52" y="90" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace" font-size="12" fill="#484f58" opacity="0.55" letter-spacing="3">0x50 0x52 0x4F</text>
-  <polyline points="64,100 88,164 112,112 136,164 160,100" fill="none" stroke="#f0f6fc" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="172" y="106" width="22" height="54" rx="5" fill="#e3b341" filter="url(#weCursor)"/>
-  <text x="64" y="198" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace" font-size="15"><tspan fill="#3fb950" font-weight="bold">$</tspan><tspan fill="#8b949e"> patch --pro</tspan></text>
-  <text x="64" y="220" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace" font-size="15" font-weight="bold"><tspan fill="#3fb950">[ok]</tspan><tspan fill="#f0f6fc"> PRO unlocked</tspan></text>
+<title id="weTitle">WeMod Enhancer</title>
+<desc id="weDesc">GitHub-dark terminal window. White W glyph, amber block cursor, green patch status lines. Prompt reads patch --pro, result reads PRO unlocked.</desc>
+<rect width="256" height="256" rx="56" fill="#0d1117"/>
+<rect x="2" y="2" width="252" height="252" rx="54" fill="none" stroke="#30363d" stroke-width="3"/>
+<circle cx="44" cy="40" r="8" fill="#ff5f56"/>
+<circle cx="68" cy="40" r="8" fill="#ebbd2d"/>
+<circle cx="92" cy="40" r="8" fill="#27c93f"/>
+<line x1="24" y1="62" x2="232" y2="62" stroke="#21262d" stroke-width="2"/>
+<polyline points="60,86 84,150 108,100 132,150 156,86" fill="none" stroke="#f0f6fc" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="168" y="92" width="20" height="52" rx="4" fill="#e3b341"/>
+<text x="56" y="186" font-family="Menlo,Consolas,monospace" font-size="16"><tspan fill="#3fb950" font-weight="bold">$</tspan><tspan fill="#8b949e"> patch --pro</tspan></text>
+<text x="56" y="212" font-family="Menlo,Consolas,monospace" font-size="16" font-weight="bold"><tspan fill="#3fb950">[ok]</tspan><tspan fill="#f0f6fc"> PRO unlocked</tspan></text>
 </svg>
