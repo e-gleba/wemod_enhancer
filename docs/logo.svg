@@ -1,159 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="wmTitle wmDesc">
+  <title id="wmTitle">WeMod Enhancer</title>
+  <desc id="wmDesc">Dark squircle shield with a white W fused with a gold lightning bolt; three dots below mark Steam Deck, Linux and Windows support.</desc>
   <defs>
-    <!-- Background gradient: deep navy → near-black -->
-    <linearGradient id="bgGrad" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1a1a2e"/>
-      <stop offset="0.6" stop-color="#12121f"/>
-      <stop offset="1" stop-color="#0a0a12"/>
+    <linearGradient id="wmBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1b2540"/>
+      <stop offset="0.55" stop-color="#111a30"/>
+      <stop offset="1" stop-color="#0a0f1e"/>
     </linearGradient>
-
-    <!-- Primary accent gradient: teal → blue (patcher theme) -->
-    <linearGradient id="accentGrad" x1="32" y1="32" x2="224" y2="224" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00e6c3"/>
-      <stop offset="0.4" stop-color="#00b894"/>
-      <stop offset="0.7" stop-color="#0984e3"/>
-      <stop offset="1" stop-color="#0652DD"/>
+    <linearGradient id="wmAccent" x1="50" y1="30" x2="206" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="0.55" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#3b82f6"/>
     </linearGradient>
-
-    <!-- Secondary gradient for inner elements: lighter teal-cyan -->
-    <linearGradient id="innerGrad" x1="48" y1="48" x2="208" y2="208" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#00e6c3"/>
-      <stop offset="1" stop-color="#0abde3"/>
+    <linearGradient id="wmBolt" x1="108" y1="78" x2="146" y2="168" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="0.6" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#f97316"/>
     </linearGradient>
-
-    <!-- Text gradient: white → silver -->
-    <linearGradient id="textGrad" x1="48" y1="90" x2="208" y2="160" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="0.5" stop-color="#f0f4f8"/>
-      <stop offset="1" stop-color="#dfe6e9"/>
-    </linearGradient>
-
-    <!-- Glow filter for hexagon and text -->
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <!-- Soft glow for circuit nodes -->
-    <filter id="nodeGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-
-    <!-- Inner shadow for depth on background -->
-    <filter id="innerShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="8"/>
-      <feOffset dy="2"/>
-      <feComposite in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="shadowDiff"/>
-      <feFlood flood-color="#000" flood-opacity="0.5"/>
-      <feComposite in2="shadowDiff" operator="in"/>
-      <feMerge>
-        <feMergeNode/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
+    <radialGradient id="wmSheen" cx="0.5" cy="0.18" r="0.75" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-
-  <!-- Background rounded square with subtle inner shadow -->
-  <rect width="256" height="256" rx="48" fill="url(#bgGrad)"/>
-  <rect x="4" y="4" width="248" height="248" rx="44" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.05"/>
-
-  <!-- Outer hexagon ring (shield outline) -->
-  <path d="M128 24 L216 74 L216 182 L128 232 L40 182 L40 74 Z"
-        stroke="url(#accentGrad)" stroke-width="5" fill="none"
-        stroke-linejoin="round" filter="url(#glow)"/>
-
-  <!-- Inner hexagon (filled, semi-transparent) -->
-  <path d="M128 44 L198 82 L198 174 L128 212 L58 174 L58 82 Z"
-        fill="url(#accentGrad)" fill-opacity="0.06"
-        stroke="url(#innerGrad)" stroke-width="1.5" stroke-linejoin="round"/>
-
-  <!-- Hexagon vertex dots (circuit nodes at each corner) -->
-  <g fill="url(#accentGrad)" filter="url(#nodeGlow)">
-    <circle cx="128" cy="24" r="4"/>
-    <circle cx="216" cy="74" r="4"/>
-    <circle cx="216" cy="182" r="4"/>
-    <circle cx="128" cy="232" r="4"/>
-    <circle cx="40" cy="182" r="4"/>
-    <circle cx="40" cy="74" r="4"/>
+  <rect width="256" height="256" rx="56" fill="url(#wmBg)"/>
+  <rect width="256" height="256" rx="56" fill="url(#wmSheen)"/>
+  <rect x="1" y="1" width="254" height="254" rx="55" fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="2"/>
+  <path d="M128 30 L206 75 V148 C206 189 171 213 128 230 C85 213 50 189 50 148 V75 Z"
+        fill="#2dd4bf" fill-opacity="0.07"
+        stroke="url(#wmAccent)" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M128 44 L192 81 V146 C192 180 163 201 128 215 C93 201 64 180 64 146 V81 Z"
+        fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+  <path d="M80 102 L104 164 L128 118 L152 164 L176 102"
+        fill="none" stroke="#f8fafc" stroke-width="17"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M136 78 L108 132 L124 132 L116 168 L146 118 L130 118 Z"
+        fill="url(#wmBolt)" stroke="#0a0f1e" stroke-width="4" stroke-linejoin="round"/>
+  <g>
+    <circle cx="108" cy="192" r="5" fill="#2dd4bf"/>
+    <circle cx="128" cy="192" r="5" fill="#60a5fa"/>
+    <circle cx="148" cy="192" r="5" fill="#f8fafc" fill-opacity="0.92"/>
   </g>
-
-  <!-- Circuit/patch traces emanating from hexagon vertices -->
-  <g stroke="url(#accentGrad)" stroke-width="2" stroke-linecap="round" fill="none" opacity="0.45">
-    <!-- Top vertex → up -->
-    <path d="M128 24 L128 8"/>
-    <circle cx="128" cy="8" r="2.5" fill="url(#accentGrad)"/>
-
-    <!-- Top-right → right -->
-    <path d="M216 74 L232 66 L240 66"/>
-    <circle cx="240" cy="66" r="2.5" fill="url(#accentGrad)"/>
-
-    <!-- Bottom-right → right -->
-    <path d="M216 182 L232 190 L240 190"/>
-    <circle cx="240" cy="190" r="2.5" fill="url(#accentGrad)"/>
-
-    <!-- Bottom vertex → down -->
-    <path d="M128 232 L128 248"/>
-    <circle cx="128" cy="248" r="2.5" fill="url(#accentGrad)"/>
-
-    <!-- Bottom-left → left -->
-    <path d="M40 182 L24 190 L16 190"/>
-    <circle cx="16" cy="190" r="2.5" fill="url(#accentGrad)"/>
-
-    <!-- Top-left → left -->
-    <path d="M40 74 L24 66 L16 66"/>
-    <circle cx="16" cy="66" r="2.5" fill="url(#accentGrad)"/>
-  </g>
-
-  <!-- Inner circuit traces (represents ASAR-fuse proxy patching) -->
-  <g stroke="url(#innerGrad)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.3">
-    <!-- Horizontal seam through center -->
-    <path d="M58 128 L198 128" stroke-dasharray="4 4"/>
-    <!-- Vertical trace -->
-    <path d="M128 44 L128 82" stroke-dasharray="3 3"/>
-    <path d="M128 174 L128 212" stroke-dasharray="3 3"/>
-  </g>
-
-  <!-- Patch/seam stitch marks on horizontal line (represents binary patching) -->
-  <g fill="url(#accentGrad)" opacity="0.6">
-    <rect x="72" y="126" width="3" height="4" rx="1"/>
-    <rect x="92" y="126" width="3" height="4" rx="1"/>
-    <rect x="112" y="126" width="3" height="4" rx="1"/>
-    <rect x="141" y="126" width="3" height="4" rx="1"/>
-    <rect x="161" y="126" width="3" height="4" rx="1"/>
-    <rect x="181" y="126" width="3" height="4" rx="1"/>
-  </g>
-
-  <!-- WE monogram text -->
-  <text x="128" y="112" text-anchor="middle" dominant-baseline="central"
-        font-family="'Segoe UI', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
-        font-size="68" font-weight="800" letter-spacing="-2"
-        fill="url(#textGrad)" filter="url(#glow)">
-    WE
-  </text>
-
-  <!-- Enhancer subtitle bar -->
-  <rect x="76" y="152" width="104" height="2.5" rx="1.25" fill="url(#accentGrad)" opacity="0.7"/>
-
-  <!-- ENHANCER text -->
-  <text x="128" y="172" text-anchor="middle" dominant-baseline="central"
-        font-family="'Segoe UI', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
-        font-size="15" font-weight="700" letter-spacing="5"
-        fill="url(#innerGrad)">
-    ENHANCER
-  </text>
-
-  <!-- Bottom tagline -->
-  <text x="128" y="196" text-anchor="middle" dominant-baseline="central"
-        font-family="'Segoe UI', 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
-        font-size="9" font-weight="500" letter-spacing="2"
-        fill="#ffffff" opacity="0.3">
-    ASAR · PROXY · PATCH
-  </text>
 </svg>
