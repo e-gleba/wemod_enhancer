@@ -24,11 +24,10 @@ PS1_URL = "https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts
 SH_URL = "https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.sh"
 
 
-def test_scripts_exist_and_executable():
-    """Both one-liners exist; the shell one has +x and a shebang."""
+def test_scripts_exist_with_shebang():
+    """Both one-liners exist; the shell one declares bash (+x is a CI job)."""
     assert PS1.is_file() and SH.is_file()
     assert SH.read_text().startswith("#!/usr/bin/env bash")
-    assert SH.stat().st_mode & 0o111, "install.sh must stay executable"
 
 
 def test_sh_bash_syntax():
@@ -38,11 +37,11 @@ def test_sh_bash_syntax():
 
 
 def test_sh_shellcheck_clean():
-    """shellcheck SC2086/SC2164/SC2181-free when the binary exists."""
+    """shellcheck warning-free when the binary exists (CI runs it too)."""
     if shutil.which("shellcheck") is None:
         pytest.skip("shellcheck not installed")
     proc = subprocess.run(
-        ["shellcheck", "-S", "warning", "-e", "SC1091", str(SH)],
+        ["shellcheck", "-S", "warning", str(SH)],
         capture_output=True,
         text=True,
     )
@@ -117,6 +116,14 @@ def test_installers_pin_releases():
     assert "PACKAGE_URL=" in sh and "releases/latest/download" in sh
 
 
+def test_ps1_enforces_python_floor():
+    """install.ps1 accepts 3.11+ only and rechecks after winget."""
+    text = PS1.read_text()
+    assert "$MinPython" in text and "3.11.0" in text
+    assert "Test-PythonVersion" in text
+    assert "still missing after install" in text
+
+
 def test_installers_fail_with_fixits():
     """Missing WeMod / tools produce copy-pasteable next steps."""
     ps1 = PS1.read_text()
@@ -124,6 +131,18 @@ def test_installers_fail_with_fixits():
     sh = SH.read_text()
     assert "wemod_bin appears after first login" in sh
     assert "preinstalled on SteamOS" in sh
+
+
+def test_completion_messages_match_action():
+    """Only patch claims Pro; restore/status/doctor get their own lines."""
+    assert "Original WeMod files are back" in PS1.read_text()
+    sh = SH.read_text()
+    assert "Launch WeMod, Pro is active" in sh
+    assert "Original WeMod files are back" in sh
+    assert "See patch state above" in sh
+    assert "See diagnosis above" in sh
+    # Pro-active appears exactly once: inside the patch branch.
+    assert sh.count("Pro is active") == 1
 
 
 def test_sh_actions_match_patcher():
