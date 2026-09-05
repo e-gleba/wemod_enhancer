@@ -21,6 +21,24 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 </div>
 
+## One-liner
+
+Close WeMod first, then paste one line. The script downloads the latest package, auto-detects the newest WeMod install, and patches it. `--install-dir` is optional everywhere.
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.ps1 | iex
+```
+
+Linux / Steam Deck:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.sh | bash
+```
+
+> No `python3` on Deck/Linux? It's preinstalled on SteamOS — otherwise install 3.11+ with your package manager. No `python` on Windows? The script installs Python 3.13 via `winget` automatically.
+
 ## What you get
 
 | Feature | How |
@@ -48,6 +66,8 @@ Everything ships inside the package — nothing is downloaded at runtime: the GU
 
 WeMod has no Linux build — [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton. WeMod Enhancer unlocks Pro on top of it.
 
+Prefer the [one-liner](#one-liner) above. Manual equivalent:
+
 ```sh
 # 1. Install the launcher
 git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
@@ -56,15 +76,12 @@ chmod +x "$HOME/wemod-launcher/wemod"
 # 2. Get WeMod Enhancer (prebuilt version.dll included — Python is all you need)
 curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
 mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz -C wemod_enhancer
-cd wemod_enhancer
 
-# 3. Launch your game once through the launcher, then patch the WeMod install
-python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+# 3. Launch your game once through the launcher, then patch (auto-detects wemod_bin)
+python3 wemod_enhancer/bin/wemod_enhancer.py patch
 ```
 
 > **Important:** `wemod_bin` only appears **after** you launch a game through wemod-launcher at least once and log in to your WeMod account. The launcher downloads the WeMod client into `~/wemod-launcher/wemod_data/wemod_bin` on first run — patch only after that folder exists. See the [wemod-launcher tutorial](https://github.com/DeckCheatz/wemod-launcher#quick-guide) for the full setup (Proton, launch options, first login).
-
-> No `python3`? It's preinstalled on SteamOS and most distros — otherwise install it with your package manager (3.11+).
 
 Steam launch options for the game:
 
@@ -78,24 +95,38 @@ Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cle
 
 ## Windows
 
-Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
+Prefer the [one-liner](#one-liner) above. Manual equivalent — open **PowerShell**, make sure WeMod is closed, then paste:
 
 ```powershell
-# 1. Download + extract WeMod Enhancer (prebuilt version.dll included)
 cd $env:USERPROFILE\Downloads
 Invoke-WebRequest -Uri "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip" -OutFile "wemod_enhancer.zip"
 Expand-Archive wemod_enhancer.zip -DestinationPath wemod_enhancer -Force
 cd wemod_enhancer
-
-# 2. Auto-detect the newest WeMod install (the app-* folder with resources\app.asar) and patch it
-$wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
-         Where-Object { Test-Path "$_\resources\app.asar" } |
-         Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
-         Select-Object -First 1
-python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
+python bin\wemod_enhancer.py patch
 ```
 
-> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
+> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. The one-liner does this for you.
+
+Explicit install dir (only when auto-detect picks the wrong copy):
+
+```powershell
+python bin\wemod_enhancer.py patch --install-dir "$env:LOCALAPPDATA\WeMod\app-10.2.3"
+```
+
+## CLI
+
+`--install-dir` is optional on every command — the newest `app-*` holding `resources/app.asar` is used automatically.
+
+```sh
+python wemod_enhancer.py patch                 # patch auto-detected install
+python wemod_enhancer.py patch --dry-run       # check only, change nothing
+python wemod_enhancer.py patch --only devtools-f12 disable-updates
+python wemod_enhancer.py status                # patch state, no changes
+python wemod_enhancer.py doctor                # env + install health check
+python wemod_enhancer.py list-patches          # what --only accepts
+python wemod_enhancer.py restore               # revert from automatic backup
+python wemod_enhancer.py patch --json          # machine-readable report
+```
 
 ## Restore
 
@@ -103,11 +134,13 @@ Originals are backed up automatically. One command reverts everything:
 
 ```sh
 # Linux
-python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+python3 bin/wemod_enhancer.py restore
 
-# Windows (PowerShell, same session as above)
-python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
+# Windows (PowerShell)
+python bin\wemod_enhancer.py restore
 ```
+
+Pass `--install-dir` only when you patched an explicit folder.
 
 ## vs Wand-Enhancer
 
@@ -120,17 +153,20 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
 | **Build from source** | `cmake --workflow --preset windows_llvm_mingw_amd64_full` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
-| **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
+| **Interface** | CLI + optional GUI — scriptable, one-liner installs | WPF GUI — click-through wizard |
 | **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
 | **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
-| **Pro activation** | Intercepts `/v3/account` responses | Same |
-| **DevTools** | F12 hotkey hook | Not available |
-| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` → no-op | Not available |
-| **Disable mobile pairing** | `requestRemoteAuthCode()` → reject | Not available |
+| **Pro activation** | Intercepts `/v3/account` responses (+ reducer + language + brand variants) | Same core + reducer variant |
+| **DevTools** | F12 hotkey hook | Same |
+| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` → no-op | Same |
+| **Disable mobile pairing** | `requestRemoteAuthCode()` → reject | Same |
 | **Remote web panel** | Not included | Built-in LAN HTTP/WebSocket server |
-| **Custom script injection** | Not included | Bundled `.js` injection at patch time |
-| **Fail-safe** | Fails closed on mismatched patches | — |
+| **Custom script injection** | Not included (use `--only` to pick patches) | Bundled `.js` injection at patch time |
+| **Auto-detect install** | Yes — newest `app-*`, launcher `wemod_bin`, one-liners | Manual folder pick in the wizard |
+| **Dry-run / status / doctor** | Yes — `patch --dry-run`, `status`, `doctor --json` | Per-patch toggles in the GUI |
+| **Fail-safe** | Fails closed on mismatched patches, idempotent re-runs | — |
 | **Backup & restore** | Automatic, one-command restore | — |
+| **Tests** | `pytest tests/` — regex sanity + ASAR round-trip | Web + desktop patch-state checks in `build.cmd` |
 | **License** | MIT | Apache-2.0 |
 
 > WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
