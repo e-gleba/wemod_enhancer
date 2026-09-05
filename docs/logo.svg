@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="weTitle weDesc">
 <title id="weTitle">WeMod Enhancer</title>
-<desc id="weDesc">Compressed white double-W with single small bottom-center valley on purple-blue gradient, long thin bandage backslash on outer right leg. Mark scaled up 15 percent.</desc>
+<desc id="weDesc">Compressed white double-W with single small bottom-center valley on purple-blue gradient, bandage backslash scaled up 15 percent on outer right leg.</desc>
 <defs>
 <linearGradient id="weBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#22d3ee"/>
@@ -13,15 +13,13 @@
 </linearGradient>
 </defs>
 <rect width="256" height="256" rx="56" fill="url(#weBg)"/>
-<g transform="translate(128 128) scale(1.15) translate(-128 -128)">
 <path d="M62 88 L86 178 L110 118 L128 162 L146 118 L170 178 L194 88" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-<g transform="rotate(45 184 108)">
+<g transform="rotate(45 184 108) translate(184 108) scale(1.15) translate(-184 -108)">
 <rect x="109" y="82" width="150" height="52" rx="26" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
 <rect x="164" y="92" width="40" height="32" rx="8" fill="#ffffff" opacity="0.95"/>
 <circle cx="125" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
 <circle cx="136" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
 <circle cx="232" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
 <circle cx="243" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
-</g>
 </g>
 </svg>
