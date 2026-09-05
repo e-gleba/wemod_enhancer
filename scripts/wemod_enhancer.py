@@ -24,7 +24,7 @@ import shutil
 import struct
 import sys
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
@@ -36,6 +36,15 @@ BLOCK_SIZE = 4 * 1024 * 1024
 BACKUP_SUFFIX = ".backup"
 DLL_BACKUP_SUFFIX = ".wemod-enhancer-backup"
 PRO_MARKER = 'period:"yearly",state:"active"'
+
+# Per-patch idempotency markers. Each one is a distinct substring of that
+# patch's own replacement text, so status detection never confuses one
+# Pro patch for another (a shared marker would report every Pro patch
+# applied after any single rewrite).
+MARKER_PRO_ACCOUNT = 'name:"/v3/account",collectMetrics:0'
+MARKER_PRO_LANGUAGE = 'response&&"object"==typeof response&&(response.subscription='
+MARKER_PRO_REDUCER = "{...account,subscription:"
+MARKER_PRO_BRAND = '/v3/account/brand_experience_wand").then(response=>{response.subscription='
 
 Replacement = str | Callable[[re.Match[str]], str]
 
@@ -99,7 +108,7 @@ PATCHES: tuple[Patch, ...] = (
             r"getUserAccount\(\)\{.*?return\s+this\.#(?P<s>[\w$]+)\.fetch\(\{.*?\}\)\}",
         ),
         replacement=_pro_account,
-        marker=PRO_MARKER,
+        marker=MARKER_PRO_ACCOUNT,
     ),
     Patch(
         name="activate-pro-language",
@@ -109,7 +118,7 @@ PATCHES: tuple[Patch, ...] = (
             r"(?P<e>this\.#\w+\.post\(\"/v3/account/language\",\{[^}]*\}\))\s*;?\s*\}",
         ),
         replacement=_pro_language,
-        marker=PRO_MARKER,
+        marker=MARKER_PRO_LANGUAGE,
     ),
     Patch(
         name="activate-pro-reducer",
@@ -117,15 +126,17 @@ PATCHES: tuple[Patch, ...] = (
         patterns=(
             # Wand-Enhancer pro-account-reducer shape:
             # account:((account)=>account&&"object"==typeof account?{...}:account)(X)
-            r"account:\(\((?P<v>\w+)\)=>\2&&\"object\"==typeof \2\?\{\.\.\.\2,"
-            r"subscription:\{period:\"yearly\",state:\"active\"\}\}:\2\)\((?P<src>[^)]+)\)",
+            # NOTE: (?P=v) backreferences group "v"; \2 would wrongly
+            # point at group "src" and fail compilation of the pattern.
+            r"account:\(\((?P<v>\w+)\)=>(?P=v)&&\"object\"==typeof (?P=v)\?\{\.\.\.(?P=v),"
+            r"subscription:\{period:\"yearly\",state:\"active\"\}\}:(?P=v)\)\((?P<src>[^)]+)\)",
         ),
         replacement=(
             'account:((account)=>account&&"object"==typeof account'
             '?{...account,subscription:{period:"yearly",state:"active"}}:account)(\\g<src>)'
         ),
         optional=True,
-        marker=PRO_MARKER,
+        marker=MARKER_PRO_REDUCER,
     ),
     Patch(
         name="activate-pro-brand",
@@ -136,7 +147,7 @@ PATCHES: tuple[Patch, ...] = (
         ),
         replacement=_pro_brand,
         optional=True,
-        marker=PRO_MARKER,
+        marker=MARKER_PRO_BRAND,
     ),
     Patch(
         name="disable-native-pairing",
@@ -262,9 +273,42 @@ def integrity(path: Path) -> dict:
     }
 
 
+def sync_unpacked(out: Path, staged: list[tuple[Path, str]]) -> None:
+    """Publish patched unpacked entries next to the repacked ASAR.
+
+    Electron loads `app.asar.unpacked/<rel>` directly from disk, so a
+    repack that only refreshes header metadata would leave stale bytes
+    on disk. The merged tree is built in `<name>.new` (old entries
+    preserved, patched ones overwritten) and swapped atomically.
+    """
+    if not staged:
+        return
+    live = Path(str(out) + ".unpacked")
+    new = live.parent / (live.name + ".new")
+    old = live.parent / (live.name + ".old")
+    if new.exists():
+        shutil.rmtree(new)
+    if live.is_dir():
+        shutil.copytree(live, new, symlinks=True)
+    else:
+        new.mkdir(parents=True)
+    for src, rel in staged:
+        dst = safe(new, rel)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    if old.exists():
+        shutil.rmtree(old)
+    if live.exists():
+        live.rename(old)
+    new.rename(live)
+    if old.exists():
+        shutil.rmtree(old)
+
+
 def pack_asar(root: Path, out: Path, header: dict) -> None:
     """Repack root/ into out, refresh sizes + integrity, verify size."""
     packed: list[Path] = []
+    unpacked_staged: list[tuple[Path, str]] = []
     offset = 0
     for rel, meta in entries(header):
         if "link" in meta:
@@ -276,6 +320,7 @@ def pack_asar(root: Path, out: Path, header: dict) -> None:
         meta["integrity"] = integrity(src)
         if meta.get("unpacked"):
             meta.pop("offset", None)
+            unpacked_staged.append((src, rel))
             continue
         meta["offset"] = str(offset)
         packed.append(src)
@@ -298,6 +343,7 @@ def pack_asar(root: Path, out: Path, header: dict) -> None:
     if tmp.stat().st_size != expected:
         raise RuntimeError("ASAR verification failed: archive size mismatch")
     tmp.replace(out)
+    sync_unpacked(out, unpacked_staged)
 
 
 # --------------------------------------------------------------- patches ---
@@ -512,18 +558,21 @@ def do_patch(
     if dry_run:
         with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
             work = Path(tmp)
-            header = extract_asar(paths.asar, work)
+            extract_asar(paths.asar, work)
             applied = patch_bundles(work, only=only, dry_run=True)
         return {"install": str(install), "dry_run": True, "applied": applied}
 
+    # Validate the DLL before touching anything: a bad --version-dll must
+    # fail while the install is still pristine, never after the backup
+    # was already rotated back into place.
+    dll = resolve_dll(dll)
+    pe_x64(dll)
     if not paths.backup.exists():
         shutil.copy2(paths.asar, paths.backup)
     else:
         shutil.copy2(paths.backup, paths.asar)
     if paths.target_dll.exists() and not paths.dll_backup.exists():
         shutil.copy2(paths.target_dll, paths.dll_backup)
-    dll = resolve_dll(dll)
-    pe_x64(dll)
     try:
         with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
             work = Path(tmp)
@@ -653,8 +702,6 @@ def build_parser() -> argparse.ArgumentParser:
             cmd.add_argument("--version-dll", type=Path, default=None)
             cmd.add_argument("--dry-run", action="store_true", help="check only, change nothing.")
             cmd.add_argument("--only", nargs="+", default=None, metavar="PATCH", help="apply a subset (see list-patches).")
-        if name in ("status", "doctor", "patch"):
-            pass  # --json is global; kept here for discoverability in --help.
 
     sub.add_parser("list-patches", help="list available JS patches.")
     return parser
