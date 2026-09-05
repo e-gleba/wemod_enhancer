@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: patcher-tests
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "scripts/**"
+            - "tests/**"
+            - ".github/workflows/patcher-tests.yml"
+    pull_request:
+        branches: [main]
+        paths:
+            - "scripts/**"
+            - "tests/**"
+            - ".github/workflows/patcher-tests.yml"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    pytest:
+        name: pytest ${{ matrix.python }} (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, windows-latest]
+                python: ["3.11", "3.13"]
+        steps:
+            - name: checkout
+              uses: actions/checkout@v7
+
+            - name: setup python
+              uses: actions/setup-python@v7
+              with:
+                  python-version: ${{ matrix.python }}
+
+            - name: run patcher tests
+              run: python -m pytest tests/ -q
+
+            - name: patcher CLI smoke test
+              run: python scripts/wemod_enhancer.py list-patches
