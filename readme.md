@@ -44,16 +44,16 @@ One self-contained folder, no terminal. Grab the artifact for your OS from the [
 
 Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
-## Linux / Steam Deck
+## Linux / Steam Deck (CLI)
 
 WeMod has no Linux build — [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton. WeMod Enhancer unlocks Pro on top of it.
 
 ```sh
 # 1. Install the launcher
-git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
-chmod +x "$HOME/wemod-launcher/wemod"
+(follow steps in tutorial https://github.com/DeckCheatz/wemod-launcher)
+(Launch any game though wemod, authorize in wemod)
 
-# 2. Get WeMod Enhancer (prebuilt version.dll included — Python is all you need)
+# 2. Get WeMod Enhancer
 curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
 mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz -C wemod_enhancer
 cd wemod_enhancer
@@ -69,16 +69,16 @@ python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_da
 Steam launch options for the game:
 
 ```sh
-WINEDLLOVERRIDES="version=n,b" "$HOME/wemod-launcher/wemod" %command%
+WINEDLLOVERRIDES="version=n,b" WEMOD_LOG="$HOME/wemod-launcher/wemod.log" "$HOME/wemod-launcher/wemod" %command%
 ```
 
 > `version=n,b` forces native-first DLL loading — without it Wine uses its builtin `version.dll` and Electron rejects the patched ASAR.
 
 Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cleanup: [docs/linux.md](docs/linux.md).
 
-## Windows
+## Windows (CLI)
 
-Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
+Install WeMod, authorize. Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
 
 ```powershell
 # 1. Download + extract WeMod Enhancer (prebuilt version.dll included)
