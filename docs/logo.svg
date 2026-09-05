@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="weTitle weDesc">
 <title id="weTitle">WeMod Enhancer</title>
-<desc id="weDesc">Horizontally compressed white double-W with low inner valleys on purple-blue gradient, large bandage backslash on outer right leg.</desc>
+<desc id="weDesc">Horizontally compressed white double-W with raised inner peaks on purple-blue gradient, large bandage backslash on outer right leg.</desc>
 <defs>
 <linearGradient id="weBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#22d3ee"/>
@@ -13,7 +13,7 @@
 </linearGradient>
 </defs>
 <rect width="256" height="256" rx="56" fill="url(#weBg)"/>
-<path d="M62 88 L86 178 L110 142 L128 178 L146 142 L170 178 L194 88" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M62 88 L86 178 L110 118 L128 178 L146 118 L170 178 L194 88" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
 <g transform="rotate(45 192 108)">
 <rect x="132" y="82" width="120" height="52" rx="26" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
 <rect x="172" y="92" width="40" height="32" rx="8" fill="#ffffff" opacity="0.95"/>
