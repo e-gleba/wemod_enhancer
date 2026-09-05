@@ -24,9 +24,30 @@ set(PROJECT_LICENSE "MIT") # SPDX identifier
 set(PROJECT_GROUP "System")
 
 # ─── Resource files ────────────────────────────────────────────────
-set(PROJECT_ICON_FILE "${CMAKE_CURRENT_LIST_DIR}/logo.png")
+# Canonical branding asset is docs/logo.svg. A PNG render is produced
+# at configure time for tooling that requires raster icons (CPack
+# desktop entries, freedesktop pixmaps).
+set(PROJECT_LOGO_SVG "${PROJECT_SOURCE_DIR}/docs/logo.svg")
+set(PROJECT_ICON_FILE "${CMAKE_CURRENT_BINARY_DIR}/logo.png")
 set(PROJECT_LICENSE_FILE "${PROJECT_SOURCE_DIR}/license.md")
 set(PROJECT_README_FILE "${PROJECT_SOURCE_DIR}/readme.md")
+
+find_program(RSVG_CONVERT_EXECUTABLE NAMES rsvg-convert)
+if(RSVG_CONVERT_EXECUTABLE AND EXISTS "${PROJECT_LOGO_SVG}")
+    add_custom_command(
+        OUTPUT "${PROJECT_ICON_FILE}"
+        COMMAND
+            "${RSVG_CONVERT_EXECUTABLE}" -w 256 -h 256
+            "${PROJECT_LOGO_SVG}" -o "${PROJECT_ICON_FILE}"
+        DEPENDS "${PROJECT_LOGO_SVG}"
+        COMMENT "Rendering PNG application icon from docs/logo.svg")
+    add_custom_target(project_logo_png DEPENDS "${PROJECT_ICON_FILE}")
+else()
+    message(
+        NOTICE
+        "rsvg-convert not found - packaging falls back to docs/logo.svg; install librsvg for raster icons (fedora: rsvg-convert, ubuntu: librsvg2-bin, macos: brew install librsvg, windows: choco install rsvg-convert)"
+    )
+endif()
 
 # ─── CPack core configuration ─────────────────────────────────────
 set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
@@ -65,8 +86,8 @@ License:  ${PROJECT_LICENSE}
 ")
 
 # ─── CPack icon ────────────────────────────────────────────────────
-if(EXISTS "${PROJECT_ICON_FILE}")
-    set(CPACK_PACKAGE_ICON "${PROJECT_ICON_FILE}")
+if(EXISTS "${PROJECT_LOGO_SVG}")
+    set(CPACK_PACKAGE_ICON "${PROJECT_LOGO_SVG}")
 endif()
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -108,19 +129,33 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     endblock()
 
     # ── Application icon ───────────────────────────────────
-    if(EXISTS "${PROJECT_ICON_FILE}")
-        install(
-            FILES "${PROJECT_ICON_FILE}"
-            DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/pixmaps"
-            RENAME "${PROJECT_NAME}.png"
-            COMPONENT runtime)
-        install(
-            FILES "${PROJECT_ICON_FILE}"
-            DESTINATION
-                "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps"
-            RENAME "${PROJECT_NAME}.png"
-            COMPONENT runtime)
-    endif()
+    # Prefer the configure-time PNG render; fall back to the SVG so
+    # installs never reference a checked-in binary.
+    foreach(app_icon IN ITEMS "${PROJECT_ICON_FILE}" "${PROJECT_LOGO_SVG}")
+        if(EXISTS "${app_icon}")
+            if(app_icon MATCHES "\\.svg$")
+                install(
+                    FILES "${app_icon}"
+                    DESTINATION
+                        "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/scalable/apps"
+                    RENAME "${PROJECT_NAME}.svg"
+                    COMPONENT runtime)
+            else()
+                install(
+                    FILES "${app_icon}"
+                    DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/pixmaps"
+                    RENAME "${PROJECT_NAME}.png"
+                    COMPONENT runtime)
+                install(
+                    FILES "${app_icon}"
+                    DESTINATION
+                        "${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps"
+                    RENAME "${PROJECT_NAME}.png"
+                    COMPONENT runtime)
+            endif()
+            break()
+        endif()
+    endforeach()
 endif()
 
 # ─── Package file naming: <os>_<compiler>_<arch> ───────────────────
