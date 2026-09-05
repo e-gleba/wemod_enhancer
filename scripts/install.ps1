@@ -7,11 +7,12 @@
 
     irm https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.ps1 | iex
 
-  The script downloads the latest release into Downloads\wemod_enhancer,
-  finds your newest WeMod install, and runs the patcher. Safe to re-run:
-  patching starts from the automatic backup, so it never stacks changes.
+  What happens:
+    1. Latest release is downloaded into Downloads\wemod_enhancer.
+    2. Your newest WeMod install is found automatically.
+    3. The patcher runs (backup first, so re-runs never stack changes).
 
-  Variants (download the file first, then run one of these):
+  Variants (save the file first, then run one of these):
 
     .\install.ps1 -Action patch     # default: unlock Pro
     .\install.ps1 -Action restore   # undo: put the original files back
@@ -67,7 +68,10 @@ function Ensure-Python {
 }
 
 function Install-Package {
-  param([string]$Url, [string]$Destination)
+  param(
+    [string]$Url,
+    [string]$Destination
+  )
 
   $zipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'wemod_enhancer.zip'
   Write-Host 'Downloading WeMod Enhancer...'
@@ -80,18 +84,36 @@ function Install-Package {
   Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
 }
 
+function Find-Patcher {
+  param([string]$Root)
+
+  $binPath = Join-Path $Root 'bin\wemod_enhancer.py'
+  if (Test-Path $binPath) {
+    return $binPath
+  }
+  $flatPath = Join-Path $Root 'wemod_enhancer.py'
+  if (Test-Path $flatPath) {
+    return $flatPath
+  }
+  return $null
+}
+
 # --- run -------------------------------------------------------------------
 
 Write-Host "WeMod Enhancer ($Action)" -ForegroundColor Cyan
 
-if ($Action -eq 'patch') {
-  $weMod = Find-WeModInstall
-  if (-not $weMod) {
-    Write-Host 'No WeMod install found.' -ForegroundColor Red
-    Write-Host 'Fix: install WeMod from https://www.wemod.com/download, run it once, log in, then re-run this script.'
-    exit 1
-  }
-  Write-Host "WeMod: $($weMod.FullName)" -ForegroundColor Green
+# Resolve the target first: explicit folder wins, newest install second,
+# patcher auto-detect last. Restore works even when the folder moved,
+# because the patcher scans the same locations on its own.
+$installDir = Find-WeModInstall
+if ($installDir) {
+  Write-Host "WeMod: $($installDir.FullName)" -ForegroundColor Green
+} elseif ($Action -eq 'patch') {
+  Write-Host 'No WeMod install found.' -ForegroundColor Red
+  Write-Host 'Fix: install WeMod from https://www.wemod.com/download, run it once, log in, then re-run this script.'
+  exit 1
+} else {
+  Write-Host 'No WeMod folder found, letting the patcher auto-detect it...' -ForegroundColor Yellow
 }
 
 Install-Package -Url (Get-PackageUrl) -Destination $WorkDir
@@ -99,23 +121,23 @@ Set-Location $WorkDir
 
 $python = Ensure-Python
 
-$patcher = Join-Path $WorkDir 'bin\wemod_enhancer.py'
-if (-not (Test-Path $patcher)) {
-  $patcher = Join-Path $WorkDir 'wemod_enhancer.py'
-}
-if (-not (Test-Path $patcher)) {
+$patcher = Find-Patcher -Root $WorkDir
+if (-not $patcher) {
   Write-Host "Patcher not found inside $WorkDir (bad download?). Delete the folder and re-run." -ForegroundColor Red
   exit 1
 }
 
-if ($Action -eq 'patch') {
-  & $python $patcher patch --install-dir $weMod.FullName
+if ($installDir) {
+  & $python $patcher $Action --install-dir $installDir.FullName
 } else {
-  # Restore auto-detects too: pass the folder only when patch did.
-  & $python $patcher restore --install-dir $weMod.FullName
+  & $python $patcher $Action
 }
 if ($LASTEXITCODE -ne 0) {
   exit $LASTEXITCODE
 }
 
-Write-Host 'Done. Launch WeMod, Pro is active.' -ForegroundColor Green
+if ($Action -eq 'patch') {
+  Write-Host 'Done. Launch WeMod, Pro is active.' -ForegroundColor Green
+} else {
+  Write-Host 'Done. Original WeMod files are back.' -ForegroundColor Green
+}
