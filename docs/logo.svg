@@ -1,25 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="weTitle weDesc">
 <title id="weTitle">WeMod Enhancer</title>
-<desc id="weDesc">Simple centered white double-W stroke on purple-blue gradient, small bandage patch diagonal in top-right corner.</desc>
+<desc id="weDesc">Centered white double-W with tall inner valleys on purple-blue gradient, large bandage across the middle.</desc>
 <defs>
 <linearGradient id="weBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#22d3ee"/>
 <stop offset="0.45" stop-color="#3b82f6"/>
 <stop offset="1" stop-color="#7c3aed"/>
 </linearGradient>
-<linearGradient id="wePatch" x1="168" y1="28" x2="232" y2="72" gradientUnits="userSpaceOnUse">
+<linearGradient id="wePatch" x1="76" y1="106" x2="180" y2="150" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#f6dfb6"/>
 <stop offset="1" stop-color="#ecbd85"/>
 </linearGradient>
 </defs>
 <rect width="256" height="256" rx="56" fill="url(#weBg)"/>
-<path d="M46 92 L74 176 L102 110 L128 176 L154 110 L182 176 L210 92" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-<g transform="rotate(24 200 52)">
-<rect x="164" y="32" width="72" height="32" rx="16" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
-<rect x="188" y="38" width="24" height="20" rx="5" fill="#ffffff" opacity="0.95"/>
-<circle cx="176" cy="48" r="1.8" fill="#0a1220" opacity="0.22"/>
-<circle cx="183" cy="48" r="1.8" fill="#0a1220" opacity="0.22"/>
-<circle cx="216" cy="48" r="1.8" fill="#0a1220" opacity="0.22"/>
-<circle cx="209" cy="48" r="1.8" fill="#0a1220" opacity="0.22"/>
+<path d="M42 88 L72 178 L102 104 L128 178 L154 104 L184 178 L214 88" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+<g transform="rotate(-14 128 128)">
+<rect x="76" y="106" width="104" height="46" rx="23" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
+<rect x="110" y="114" width="36" height="30" rx="7" fill="#ffffff" opacity="0.95"/>
+<circle cx="90" cy="129" r="2.4" fill="#0a1220" opacity="0.22"/>
+<circle cx="100" cy="129" r="2.4" fill="#0a1220" opacity="0.22"/>
+<circle cx="166" cy="129" r="2.4" fill="#0a1220" opacity="0.22"/>
+<circle cx="156" cy="129" r="2.4" fill="#0a1220" opacity="0.22"/>
 </g>
 </svg>
