@@ -1,0 +1,14 @@
+# WeMod Enhancer one-liner (Windows PowerShell 5.1+).
+# Paste this single line, no manual steps:
+#
+#   irm https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.ps1 | iex
+#
+# Variants:
+#   irm .../install.ps1 | iex                                              # patch (default)
+#   $s = irm .../install.ps1; & ([scriptblock]::Create($s)) -Action restore # restore
+#   $s = irm .../install.ps1; & ([scriptblock]::Create($s)) -Action status  # (status via CLI below)
+#
+# Close WeMod first. If `python` is missing it is installed via winget.
+# To restore later, from the extracted folder:
+#   python bin\wemod_enhancer.py restore
+# (no --install-dir needed: the newest WeMod install is auto-detected).
