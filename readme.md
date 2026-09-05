@@ -23,9 +23,7 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 ## One-liner
 
-Close WeMod first, then paste one line. The script downloads the latest package, auto-detects the newest WeMod install, and patches it. `--install-dir` is optional everywhere.
-
-Windows (PowerShell):
+Close WeMod first, then paste one line. `irm` streams the installer straight into PowerShell — nothing is saved, nothing to mistype. It downloads the latest package, finds your newest WeMod install, and patches it. `--install-dir` is optional everywhere.
 
 ```powershell
 irm https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.ps1 | iex
@@ -37,7 +35,8 @@ Linux / Steam Deck:
 curl -fsSL https://raw.githubusercontent.com/e-gleba/wemod_enhancer/main/scripts/install.sh | bash
 ```
 
-> No `python3` on Deck/Linux? It's preinstalled on SteamOS — otherwise install 3.11+ with your package manager. No `python` on Windows? The script installs Python 3.13 via `winget` automatically.
+> The one-liners always fetch `main`, so you get the reviewed scripts plus the latest patcher in one go — no separate download step to get wrong. Release archives come from `releases/latest/download`, so the package itself is a fixed build artifact, not a moving branch.
+> No `python3` on Deck/Linux? It's preinstalled on SteamOS — otherwise install 3.11+ with your package manager. No `python` on Windows? The script installs Python 3.13 via `winget` automatically (and verifies it is 3.11+ before running anything).
 
 ## What you get
 
@@ -115,28 +114,30 @@ python bin\wemod_enhancer.py patch --install-dir "$env:LOCALAPPDATA\WeMod\app-10
 
 ## CLI
 
-`--install-dir` is optional on every command — the newest `app-*` holding `resources/app.asar` is used automatically.
+Paths below assume the extracted package root (`bin/` holds the patcher). `--install-dir` is optional on every command — the newest `app-*` holding `resources/app.asar` is used automatically.
 
 ```sh
-python wemod_enhancer.py patch                 # patch auto-detected install
-python wemod_enhancer.py patch --dry-run       # check only, change nothing
-python wemod_enhancer.py patch --only devtools-f12 disable-updates
-python wemod_enhancer.py status                # patch state, no changes
-python wemod_enhancer.py doctor                # env + install health check
-python wemod_enhancer.py list-patches          # what --only accepts
-python wemod_enhancer.py restore               # revert from automatic backup
-python wemod_enhancer.py patch --json          # machine-readable report
+python bin/wemod_enhancer.py patch                 # patch auto-detected install
+python bin/wemod_enhancer.py patch --dry-run       # check only, change nothing
+python bin/wemod_enhancer.py patch --only devtools-f12 disable-updates
+python bin/wemod_enhancer.py status                # patch state, no changes
+python bin/wemod_enhancer.py doctor                # env + install health check
+python bin/wemod_enhancer.py list-patches          # what --only accepts
+python bin/wemod_enhancer.py restore               # revert from automatic backup
+python bin/wemod_enhancer.py patch --json          # machine-readable report
 ```
+
+From a source checkout the same commands run as `python scripts/wemod_enhancer.py …`.
 
 ## Restore
 
 Originals are backed up automatically. One command reverts everything:
 
 ```sh
-# Linux
+# Linux (package root)
 python3 bin/wemod_enhancer.py restore
 
-# Windows (PowerShell)
+# Windows (PowerShell, package root)
 python bin\wemod_enhancer.py restore
 ```
 
@@ -166,7 +167,7 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 | **Dry-run / status / doctor** | Yes — `patch --dry-run`, `status`, `doctor --json` | Per-patch toggles in the GUI |
 | **Fail-safe** | Fails closed on mismatched patches, idempotent re-runs | — |
 | **Backup & restore** | Automatic, one-command restore | — |
-| **Tests** | `pytest tests/` — regex sanity + ASAR round-trip | Web + desktop patch-state checks in `build.cmd` |
+| **Tests** | `pytest tests/` — regex sanity + ASAR round-trip + installer checks | Web + desktop patch-state checks in `build.cmd` |
 | **License** | MIT | Apache-2.0 |
 
 > WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
