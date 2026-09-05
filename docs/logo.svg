@@ -2,6 +2,6 @@
 <title id="weTitle">WeMod Enhancer</title>
 <desc id="weDesc">Minimal centered WxE wordmark with white hex addresses below.</desc>
 <rect width="256" height="256" rx="56" fill="#0d1117"/>
-<text x="128" y="140" text-anchor="middle" font-family="Menlo,Consolas,monospace" font-size="52" font-weight="bold" letter-spacing="1" fill="#ffffff">WxE</text>
-<text x="128" y="190" text-anchor="middle" font-family="Menlo,Consolas,monospace" font-size="13" letter-spacing="2" fill="#ffffff">0x57 0x45 0x50 0x52 0x4F</text>
+<text x="128" y="158" text-anchor="middle" font-family="Menlo,Consolas,monospace" font-size="84" font-weight="bold" letter-spacing="0" fill="#ffffff">WxE</text>
+<text x="128" y="200" text-anchor="middle" font-family="Menlo,Consolas,monospace" font-size="13" letter-spacing="2" fill="#ffffff">0x57 0x45 0x50 0x52 0x4F</text>
 </svg>
