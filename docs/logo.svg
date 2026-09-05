@@ -1,25 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="weTitle weDesc">
 <title id="weTitle">WeMod Enhancer</title>
-<desc id="weDesc">Compressed white double-W with single small bottom-center valley on purple-blue gradient, tall thin bandage backslash on outer right leg.</desc>
+<desc id="weDesc">Compressed white double-W with single small bottom-center valley on purple-blue gradient, long thin bandage backslash on outer right leg.</desc>
 <defs>
 <linearGradient id="weBg" x1="0" y1="0" x2="256" y2="256" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#22d3ee"/>
 <stop offset="0.45" stop-color="#3b82f6"/>
 <stop offset="1" stop-color="#7c3aed"/>
 </linearGradient>
-<linearGradient id="wePatch" x1="132" y1="60" x2="252" y2="156" gradientUnits="userSpaceOnUse">
+<linearGradient id="wePatch" x1="109" y1="82" x2="259" y2="134" gradientUnits="userSpaceOnUse">
 <stop offset="0" stop-color="#f6dfb6"/>
 <stop offset="1" stop-color="#ecbd85"/>
 </linearGradient>
 </defs>
 <rect width="256" height="256" rx="56" fill="url(#weBg)"/>
 <path d="M62 88 L86 178 L110 118 L128 162 L146 118 L170 178 L194 88" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
-<g transform="rotate(45 192 108)">
-<rect x="132" y="60" width="120" height="78" rx="39" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
-<rect x="172" y="79" width="40" height="40" rx="9" fill="#ffffff" opacity="0.95"/>
-<circle cx="148" cy="99" r="2.6" fill="#0a1220" opacity="0.22"/>
-<circle cx="159" cy="99" r="2.6" fill="#0a1220" opacity="0.22"/>
-<circle cx="225" cy="99" r="2.6" fill="#0a1220" opacity="0.22"/>
-<circle cx="236" cy="99" r="2.6" fill="#0a1220" opacity="0.22"/>
+<g transform="rotate(45 184 108)">
+<rect x="109" y="82" width="150" height="52" rx="26" fill="url(#wePatch)" stroke="#0a1220" stroke-opacity="0.22" stroke-width="2"/>
+<rect x="164" y="92" width="40" height="32" rx="8" fill="#ffffff" opacity="0.95"/>
+<circle cx="125" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
+<circle cx="136" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
+<circle cx="232" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
+<circle cx="243" cy="108" r="2.6" fill="#0a1220" opacity="0.22"/>
 </g>
 </svg>
