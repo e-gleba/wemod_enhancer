@@ -9,6 +9,7 @@
 #include <array>
 #include <charconv>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <system_error>
 
@@ -115,7 +116,7 @@ run_result run_process_argv(const std::vector<const char*>& args)
     return result;
 }
 
-std::vector<std::int32_t> version_parts(std::string_view name) noexcept
+std::vector<std::int32_t> version_parts(std::string_view name)
 {
     constexpr std::string_view prefix{"app-"};
     if (name.starts_with(prefix)) {
@@ -182,7 +183,7 @@ SDL_EnumerationResult SDLCALL on_dir_entry(void* userdata, const char* dirname,
 
 } // namespace
 
-fs::path newest_app_dir(const fs::path& root) noexcept
+fs::path newest_app_dir(const fs::path& root)
 {
     try {
         app_scan scan;
@@ -230,6 +231,25 @@ fs::path exe_dir()
     return fs::temp_directory_path(ec) / "wemod_enhancer";
 }
 
+std::string downloads_dir()
+{
+    // SDL_GetUserFolder returns SDL-owned memory - do not free.
+    if (const char* downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)}) {
+        return {downloads};
+    }
+    log_error(std::string{"SDL_GetUserFolder: "} + sdl_err());
+    return {};
+}
+
+std::string home_dir()
+{
+    if (const char* home{SDL_GetEnvironmentVariable(SDL_GetEnvironment(),
+                                                    "HOME")}) {
+        return {home};
+    }
+    return {};
+}
+
 std::string url_encode(std::string_view text)
 {
     constexpr std::string_view unreserved{
@@ -252,43 +272,63 @@ std::string url_encode(std::string_view text)
 std::string pick_folder(void* window_handle, const std::string& current)
 {
     SDL_Window* window{static_cast<SDL_Window*>(window_handle)};
-    // Async callback -> sync result: the dialog promise is set exactly once.
+    // Async callback -> sync result. The SDL dialog callback may fire on
+    // another thread and (on cancel/error paths) may fire after this
+    // function returns: shared ownership keeps the state alive until
+    // the callback runs, instead of a stack struct that dangles.
     struct choice final
     {
         std::mutex mutex;
         std::string path;
         bool done{false};
     };
-    choice result;
+    auto result{std::make_shared<choice>()};
+    // Copies the shared_ptr so the callback holds one ref too.
     const auto callback = [](void* userdata, const char* const* filelist,
                              int) {
-        auto* out{static_cast<choice*>(userdata)};
-        std::lock_guard lock{out->mutex};
+        // Takes over the heap box holding the shared_ptr copy.
+        const std::unique_ptr<std::shared_ptr<choice>> owned{
+            static_cast<std::shared_ptr<choice>*>(userdata)};
+        auto& out{**owned};
+        std::lock_guard lock{out.mutex};
         if (filelist != nullptr && filelist[0] != nullptr) {
-            out->path = filelist[0];
+            out.path = filelist[0];
         }
-        out->done = true;
+        out.done = true;
     };
-    SDL_ShowOpenFolderDialog(callback, &result, window,
+    // Heap box: SDL takes a raw void*; the callback deletes exactly it.
+    auto* boxed{new std::shared_ptr<choice>(result)};
+    SDL_ShowOpenFolderDialog(callback, boxed, window,
                              current.empty() ? nullptr : current.c_str(), false);
     // Modal dialog pumps its own loop; poll until the callback fires.
-    // ~3 min budget: browsing takes a while, but a headless failure
-    // (callback never fires) must not hang the app forever.
+    // Timeout only abandons the wait - the shared state still outlives
+    // a late callback instead of dangling.
+    std::string picked;
     for (int spins{0}; spins < 36000; ++spins) {
         {
-            std::lock_guard lock{result.mutex};
-            if (result.done) {
-                return result.path;
+            std::lock_guard lock{result->mutex};
+            if (result->done) {
+                picked = result->path;
+                break;
             }
         }
         SDL_Delay(5);
         SDL_PumpEvents();
     }
-    log_error("SDL_ShowOpenFolderDialog: timed out waiting for selection");
-    return {};
+    if (picked.empty()) {
+        std::lock_guard lock{result->mutex};
+        if (!result->done) {
+            // Late callback still owns its boxed ref and will free it.
+            log_error("SDL_ShowOpenFolderDialog: timed out waiting for "
+                      "selection");
+            return {};
+        }
+        picked = result->path;
+    }
+    return picked;
 }
 
-bool set_clipboard_text(const std::string& text) noexcept
+bool set_clipboard_text(const std::string& text)
 {
     if (!SDL_SetClipboardText(text.c_str())) {
         log_error(std::string{"SDL_SetClipboardText: "} + sdl_err());
@@ -309,13 +349,13 @@ bool open_url(const char* url) noexcept
     return true;
 }
 
-std::string platform_name() noexcept
+std::string platform_name()
 {
     const char* name{SDL_GetPlatform()};
     return (name != nullptr) ? name : "unknown";
 }
 
-std::pair<std::int32_t, std::int32_t> pick_window_size() noexcept
+std::pair<std::int32_t, std::int32_t> pick_window_size()
 {
     SDL_Rect usable{};
     if (!SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) ||
@@ -355,7 +395,7 @@ window make_window()
 }
 
 bool begin_frame(SDL_Renderer* renderer, float scale_x, float scale_y, float r,
-                 float g, float b, float a) noexcept
+                 float g, float b, float a)
 {
     if (renderer == nullptr) {
         return false;
@@ -376,7 +416,7 @@ bool begin_frame(SDL_Renderer* renderer, float scale_x, float scale_y, float r,
     return true;
 }
 
-bool present_frame(SDL_Renderer* renderer) noexcept
+bool present_frame(SDL_Renderer* renderer)
 {
     if (!SDL_RenderPresent(renderer)) {
         log_error(std::string{"SDL_RenderPresent: "} + sdl_err());
