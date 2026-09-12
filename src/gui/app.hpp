@@ -1,5 +1,5 @@
 #pragma once
-// WeMod Enhancer - GUI contract (pure C++23, no SDL / no ImGui).
+// WeMod Enhancer - GUI contract (pure ISO C++23, std only).
 //
 // The ONLY channel between the SDL3 platform side and the Dear ImGui
 // view side. Neither side includes the other API:
@@ -7,13 +7,12 @@
 //   - imgui_view.cpp  includes <imgui.h>      + this header.
 //   - main.cpp        wires both (composition root, may know both).
 //
+// No ImGui types, no SDL types, no UI styling here: window sizes live
+// in sdl_platform.cpp, paddings/colors live in imgui_view.cpp.
 // Communication is data, not calls:
 //   view  reads app_state, writes frame_requests + outbox.
 //   main  executes requests via platform:: services + background_runner.
 //   jobs  run on a std::jthread worker, polled without blocking.
-//
-// C++23: std::format, std::ranges, std::jthread + std::stop_token,
-// chrono, filesystem with error_code, string_view.
 
 #include <algorithm>
 #include <array>
@@ -84,29 +83,6 @@ constexpr std::size_t kLogBudget{512UZ * 1024UZ};
 constexpr std::size_t kIssueLogBudget{3000};
 constexpr auto kReprobeInterval{std::chrono::milliseconds(500)};
 
-constexpr std::int32_t kWinFallbackW{1024};
-constexpr std::int32_t kWinFallbackH{680};
-constexpr std::int32_t kWinMinW{880};
-constexpr std::int32_t kWinMinH{600};
-constexpr std::int32_t kWinMaxW{1680};
-constexpr std::int32_t kWinMaxH{1050};
-
-constexpr float kButtonPadding{24.0F};
-constexpr float kSectionIndent{16.0F};
-constexpr float kRowHeightScale{1.55F};
-
-struct rgba final
-{
-    float r{0.0F};
-    float g{0.0F};
-    float b{0.0F};
-    float a{1.0F};
-};
-
-constexpr rgba kClearColor{0.10F, 0.10F, 0.12F, 1.00F};
-constexpr rgba kColorOk{0.35F, 0.85F, 0.45F, 1.00F};
-constexpr rgba kColorErr{0.90F, 0.30F, 0.30F, 1.00F};
-
 enum class run_kind : std::uint8_t { patcher, probe, wemod };
 enum class probe_state : std::uint8_t { unknown, failed, works };
 
@@ -122,7 +98,7 @@ struct alert_request final
     std::string message;
 };
 
-// Everything the view needs. No SDL / ImGui types.
+// Everything the view needs. No SDL / ImGui types, no UI styling.
 struct app_state final
 {
     std::string install_dir;
@@ -148,11 +124,15 @@ struct app_state final
     std::string platform_detail;
     std::string platform_name;
     std::string exe_dir_text;
-    // outbox: view writes, platform drains.
+    // outbox: view writes on the UI thread, platform drains on the UI
+    // thread, except picked_folder which the SDL dialog callback writes
+    // from its own thread (guarded by outbox_mutex).
     bool want_browse{false};
     std::optional<std::string> want_open_url;
     std::optional<std::string> want_clipboard;
     std::optional<alert_request> want_alert;
+    std::mutex outbox_mutex;
+    std::optional<std::string> picked_folder;
 };
 
 // One frame of view intents. Main executes them after draw.
@@ -183,7 +163,7 @@ running_status(const run_kind kind) noexcept
     return {};
 }
 
-[[nodiscard]] constexpr const char*
+[[nodiscard]] constexpr std::string_view
 run_block_reason(const bool install_ok, const bool script_ok) noexcept
 {
     if (!install_ok && !script_ok) {
@@ -195,7 +175,7 @@ run_block_reason(const bool install_ok, const bool script_ok) noexcept
     if (!script_ok) {
         return "Patcher script missing - open Settings";
     }
-    return nullptr;
+    return {};
 }
 
 [[nodiscard]] inline std::string url_encode(const std::string_view text)
@@ -279,7 +259,10 @@ version_parts(std::string name)
     std::error_code ec;
     std::vector<fs::path> apps;
     for (const auto& entry : fs::directory_iterator(root, ec)) {
-        if (entry.is_directory(ec) &&
+        if (ec) {
+            break;
+        }
+        if (entry.is_directory(ec) && !ec &&
             entry.path().filename().string().starts_with("app-")) {
             apps.push_back(entry.path());
         }
@@ -399,7 +382,6 @@ class background_runner final
         run_kind kind{run_kind::patcher};
         std::string shown;
         run_result result;
-        std::function<void(const run_result&)> on_done;
     };
 
     [[nodiscard]] bool busy() const noexcept
@@ -408,8 +390,7 @@ class background_runner final
         return busy_;
     }
 
-    void launch(run_kind kind, std::string shown, std::string command,
-                std::function<void(const run_result&)> on_done)
+    void launch(run_kind kind, std::string shown, std::string command)
     {
         {
             const std::lock_guard lock{mutex_};
@@ -418,23 +399,22 @@ class background_runner final
             }
             busy_ = true;
         }
-        // Join the previous idle worker outside the lock.
         if (worker_.joinable()) {
             worker_.request_stop();
             worker_.join();
         }
         worker_ = std::jthread(
             [this, kind, shown = std::move(shown),
-             command = std::move(command),
-             on_done = std::move(on_done)](const std::stop_token token) {
+             command = std::move(command)](const std::stop_token token) {
                 run_result result{run_capture(command, token)};
                 if (token.stop_requested()) {
+                    const std::lock_guard idle_lock{mutex_};
+                    busy_ = false;
                     return;
                 }
                 const std::lock_guard done_lock{mutex_};
-                finished_.push(finished_job{kind, std::move(shown),
-                                            std::move(result),
-                                            std::move(on_done)});
+                finished_.push(
+                    finished_job{kind, std::move(shown), std::move(result)});
             });
     }
 
@@ -510,10 +490,13 @@ namespace view
 namespace platform
 {
 // Opaque window/renderer handles: the header never names SDL types.
+// dialog_default keeps the folder-dialog default path alive while the
+// async SDL dialog is open (the field may be edited meanwhile).
 struct context final
 {
     void* window{nullptr};
     void* renderer{nullptr};
+    std::string dialog_default;
 };
 
 [[nodiscard]] std::pair<std::int32_t, std::int32_t>
@@ -521,7 +504,7 @@ preferred_size() noexcept;
 bool init(context& ctx, app_state& state);
 void drain_outbox(context& ctx, app_state& state, float delta_seconds);
 void begin_frame(context& ctx, float scale_x, float scale_y,
-                 const rgba& clear);
+                 const std::array<float, 4>& clear);
 void end_frame(context& ctx);
 void shutdown(context& ctx);
 void fatal(std::string_view title, std::string_view message) noexcept;
