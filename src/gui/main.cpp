@@ -29,6 +29,13 @@ using wemod::gui::backend::show_error;
     return static_cast<AppState*>(appstate);
 }
 
+// Non-fatal per-frame check: [[nodiscard]] result is consumed by the
+// (void) cast, failure still logs (and boxes when parented).
+void check_frame(bool ok, const char* what) noexcept
+{
+    (void)check(ok, what, nullptr, false);
+}
+
 } // namespace
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
@@ -59,10 +66,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     }
     SDL_SetWindowMinimumSize(window, wemod::gui::window_min_width,
                              wemod::gui::window_min_height);
-    if (!check(SDL_SetRenderVSync(renderer, 1) == 0, "SDL_SetRenderVSync",
-                nullptr, false)) {
-        // Non-fatal: continue without vsync.
-    }
+    check_frame(SDL_SetRenderVSync(renderer, 1), "SDL_SetRenderVSync");
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -175,20 +179,20 @@ SDL_AppResult SDL_AppIterate(void* appstate)
     // HIGH_PIXEL_DENSITY framebuffer. The SDL_Renderer backend skips
     // its own clip-scale when a render scale is set, which also keeps
     // InputText hints from clipping.
+    // SDL3 bool API returns true on success (no `== 0` comparison).
     const ImGuiIO& io{ImGui::GetIO()};
-    check(SDL_SetRenderScale(state->renderer, io.DisplayFramebufferScale.x,
-                             io.DisplayFramebufferScale.y) == 0,
-          "SDL_SetRenderScale", nullptr, false);
+    check_frame(SDL_SetRenderScale(state->renderer,
+                                   io.DisplayFramebufferScale.x,
+                                   io.DisplayFramebufferScale.y),
+                "SDL_SetRenderScale");
     const ImVec4& clear{wemod::gui::view::frame_clear_color()};
-    check(SDL_SetRenderDrawColorFloat(state->renderer, clear.x, clear.y,
-                                      clear.z, clear.w) == 0,
-          "SDL_SetRenderDrawColorFloat", nullptr, false);
-    check(SDL_RenderClear(state->renderer) == 0, "SDL_RenderClear",
-          nullptr, false);
+    check_frame(SDL_SetRenderDrawColorFloat(state->renderer, clear.x,
+                                            clear.y, clear.z, clear.w),
+                "SDL_SetRenderDrawColorFloat");
+    check_frame(SDL_RenderClear(state->renderer), "SDL_RenderClear");
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),
                                           state->renderer);
-    check(SDL_RenderPresent(state->renderer) == 0, "SDL_RenderPresent",
-          nullptr, false);
+    check_frame(SDL_RenderPresent(state->renderer), "SDL_RenderPresent");
     return SDL_APP_CONTINUE;
 }
 
