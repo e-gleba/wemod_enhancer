@@ -3,8 +3,8 @@
 // one frame = poll background jobs, draw view, execute frame_requests,
 // drain SDL outbox, present.
 //
-// C++23: std::format, std::ranges not needed here, std::jthread worker
-// lives in background_runner (app.hpp). No detached threads.
+// C++23: std::format, std::jthread worker lives in background_runner
+// (app.hpp). No detached threads.
 
 #include "app.hpp"
 
@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <string>
+#include <system_error>
 
 namespace wemod::gui
 {
@@ -43,22 +44,21 @@ void start_command(app& app, const run_kind kind, const std::string& shown,
     if (kind == run_kind::patcher) {
         app.state.has_run = true;
     }
-    // Capture `command` by value: the worker owns its string.
     app.jobs.launch(kind, shown, command, [](const run_result&) {});
 }
 
 void start_run(app& app, const char* subcommand)
 {
     const std::string sub{subcommand};
-    const std::string shown{app.state.python + " -u " + app.state.script_path +
-                            " " + sub + " --install-dir " +
-                            app.state.install_dir};
+    std::string shown{app.state.python + " -u " + app.state.script_path +
+                      " " + sub + " --install-dir " +
+                      app.state.install_dir};
     std::string command{shell_quote(app.state.python) + " -u " +
                         shell_quote(app.state.script_path) + " " + sub +
                         " --install-dir " +
                         shell_quote(app.state.install_dir)};
     if (sub == "patch" && !app.state.version_dll.empty()) {
-        shown + " --version-dll " + app.state.version_dll;
+        shown += " --version-dll " + app.state.version_dll;
         command += " --version-dll " + shell_quote(app.state.version_dll);
     }
     start_command(app, run_kind::patcher, shown, command);
@@ -131,7 +131,6 @@ void poll_jobs(app& app)
         append_log(app.state,
                    std::format("[exit code: {}]\n\n", result.exit_code));
         app.state.last_exit_code = result.exit_code;
-        app.state.running = app.jobs.busy();
         app.state.scroll_to_bottom = true;
         switch (finished->kind) {
         case run_kind::wemod:
@@ -234,10 +233,8 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     if (!wemod::gui::platform::init(boxed->platform, boxed->state)) {
         return SDL_APP_FAILURE;
     }
-    auto* window =
-        static_cast<SDL_Window*>(boxed->platform.window);
-    auto* renderer =
-        static_cast<SDL_Renderer*>(boxed->platform.renderer);
+    auto* window = static_cast<SDL_Window*>(boxed->platform.window);
+    auto* renderer = static_cast<SDL_Renderer*>(boxed->platform.renderer);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -331,15 +328,13 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 void SDL_AppQuit(void* appstate, SDL_AppResult result)
 {
     (void)result;
-    const std::unique_ptr<app> boxed{static_cast<app*>(appstate)};
+    std::unique_ptr<app> boxed{static_cast<app*>(appstate)};
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
     if (boxed) {
         wemod::gui::platform::persist_log(boxed->state);
-        // Order: destroy SDL objects before SDL_Quit (inside shutdown).
-        wemod::gui::platform::shutdown(
-            const_cast<wemod::gui::platform::context&>(boxed->platform));
+        wemod::gui::platform::shutdown(boxed->platform);
     } else {
         wemod::gui::platform::context empty;
         wemod::gui::platform::shutdown(empty);
