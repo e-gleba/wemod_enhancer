@@ -32,6 +32,14 @@ inline constexpr std::string_view target_arch{"arm64"};
 inline constexpr std::string_view target_arch{"unknown"};
 #endif
 
+// What the current background command is, so poll_run() can react to
+// completion: record the Python probe result, narrate the WeMod fetch,
+// hint after a failed patch.
+enum class run_kind : std::uint8_t { patcher, probe, wemod };
+
+// Python probe tri-state: unknown / failed / works.
+enum class probe_state : std::uint8_t { unknown, failed, works };
+
 // CMake installs gui + script + dll into the same bindir.
 inline constexpr std::string_view patcher_script_name{"wemod_enhancer.py"};
 inline constexpr std::string_view version_dll_name{"version.dll"};

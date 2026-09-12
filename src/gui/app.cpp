@@ -47,8 +47,6 @@
 
 namespace wemod::gui
 {
-namespace
-{
 
 namespace fs = std::filesystem;
 
@@ -58,19 +56,13 @@ constexpr float clear_g{0.10F};
 constexpr float clear_b{0.12F};
 constexpr float clear_a{1.00F};
 
+// SDL_App* passes this back verbatim; app.cpp owns it via unique_ptr.
 struct app final
 {
     window win;
     std::unique_ptr<app_state> state;
 };
 
-[[nodiscard]] app_state& state_of(void* appstate) noexcept
-{
-    // SDL guarantees appstate past successful SDL_AppInit.
-    return *static_cast<app_state*>(appstate);
-}
-
-} // namespace
 } // namespace wemod::gui
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
@@ -99,8 +91,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 
     // Density only: default dark colors stay. Padding stays 1x in window
     // coordinates; SDL_SetRenderScale (DisplayFramebufferScale) maps those
-    // onto the HiDPI framebuffer every frame. Baking FontScaleDpi /
-    // ScaleAllSizes on top double-counts (~2x too big).
+    // onto the HiDPI framebuffer every frame.
     ImGuiStyle& style{ImGui::GetStyle()};
     style.WindowPadding = ImVec2(16.0F, 14.0F);
     style.FramePadding = ImVec2(14.0F, 8.0F);
@@ -110,15 +101,15 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     style.GrabMinSize = 14.0F;
 
     if (!ImGui_ImplSDL3_InitForSDLRenderer(win.handle, win.renderer)) {
-        fatal_message(
-            "WeMod Enhancer",
-            std::string{"ImGui_ImplSDL3_InitForSDLRenderer: "} + SDL_GetError());
+        fatal_message("WeMod Enhancer",
+                      std::string{"ImGui_ImplSDL3_InitForSDLRenderer: "} +
+                          SDL_GetError());
         return SDL_APP_FAILURE;
     }
     if (!ImGui_ImplSDLRenderer3_Init(win.renderer)) {
-        fatal_message(
-            "WeMod Enhancer",
-            std::string{"ImGui_ImplSDLRenderer3_Init: "} + SDL_GetError());
+        fatal_message("WeMod Enhancer",
+                      std::string{"ImGui_ImplSDLRenderer3_Init: "} +
+                          SDL_GetError());
         return SDL_APP_FAILURE;
     }
 
@@ -137,22 +128,24 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     if (const fs::path detected{resolve_wemod_dir(state.install_dir)};
         !detected.empty()) {
         state.install_dir = detected.string();
-        append_log(state, "auto-detected WeMod install: " + state.install_dir +
-                              "\n\n");
+        append_log(state,
+                   "auto-detected WeMod install: " + state.install_dir +
+                       "\n\n");
     }
 
     // The patcher ships next to the exe: state the fact, good or bad,
     // then probe Python - nothing else runs before Patch.
     if (fs::is_regular_file(state.script_path)) {
-        append_log(state, "using bundled patcher: " + state.script_path + "\n\n");
+        append_log(state,
+                   "using bundled patcher: " + state.script_path + "\n\n");
     } else {
         append_log(state,
                    "error: wemod_enhancer.py is missing next to the "
                    "exe:\n  " +
                        state.script_path +
-                       "\n  fix: re-download the GUI package from the GitHub "
-                       "releases and unpack the whole folder - it is "
-                       "self-contained.\n\n");
+                       "\n  fix: re-download the GUI package from the "
+                       "GitHub releases and unpack the whole folder - it "
+                       "is self-contained.\n\n");
     }
     start_probe(state);
 
@@ -163,18 +156,20 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
     Expects(event != nullptr);
+    (void)appstate;
     ImGui_ImplSDL3_ProcessEvent(event);
     if (event->type == SDL_EVENT_QUIT) {
         return SDL_APP_SUCCESS;
     }
-    (void)appstate;
     return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppIterate(void* appstate)
 {
     using namespace wemod::gui;
-    app_state& state{state_of(appstate)};
+    Expects(appstate != nullptr);
+    auto* holder{static_cast<app*>(appstate)};
+    app_state& state{*holder->state};
 
     poll_run(state);
 
@@ -186,15 +181,6 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 
     ImGui::Render();
     const ImGuiIO& io{ImGui::GetIO()};
-    SDL_Renderer* renderer{static_cast<app*>(nullptr)}; // placeholder guard
-    (void)renderer;
-    // Window handle round-trips through state as void*; recover it via the
-    // stored renderer owner. The app holder owns both; fetch renderer from
-    // the live window (never null past SDL_AppInit).
-    app* holder{nullptr};
-    // appstate is the holder allocated in SDL_AppInit (not app_state):
-    // re-derive it safely - SDL passes back exactly what we stored.
-    holder = static_cast<app*>(appstate);
     SDL_Renderer* ren{holder->win.renderer};
     if (!begin_frame(ren, io.DisplayFramebufferScale.x,
                      io.DisplayFramebufferScale.y, clear_r, clear_g, clear_b,

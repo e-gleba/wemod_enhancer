@@ -5,21 +5,20 @@
 //
 // SDL3 API refs (checked against SDL 3.4.x headers, bundled release-3.4.14):
 //   SDL_CreateProcessWithProperties / SDL_ReadProcess / SDL_WaitProcess /
-//   SDL_DestroyProcess - SDL_process.h, CategoryProcess; stderr merged via
-//   SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN so one ReadProcess
-//   captures both streams with no pipe-drain thread.
+//   SDL_DestroyProcess - SDL_process.h, CategoryProcess; stdout+stderr both
+//   set to SDL_PROCESS_STDIO_APP so one SDL_ReadProcess captures everything
+//   with no pipe-drain thread.
 //   SDL_ShowSimpleMessageBox - SDL_messagebox.h, CategoryMessagebox; callable
 //   before SDL_Init, falls back to SDL_Log when video is unavailable.
-//   SDL_EnumerateDirectory / SDL_GetPathInfo / SDL_GlobDirectory -
-//   SDL_filesystem.h, CategoryFilesystem: native directory scan, no
-//   std::filesystem walk, no throwing overloads.
+//   SDL_EnumerateDirectory / SDL_GetPathInfo - SDL_filesystem.h,
+//   CategoryFilesystem: native directory scan, no std::filesystem walk.
 //   SDL_GetBasePath / SDL_GetUserFolder / SDL_GetEnvironmentVariable -
 //   SDL_filesystem.h / SDL_stdinc.h: exe anchor, Downloads dir, env.
 //   SDL_SetClipboardText / SDL_OpenURL / SDL_GetPlatform - SDL_clipboard.h /
 //   SDL_misc.h / SDL_platform.h.
-//   SDL_CreateWindowAndRenderer / SDL_SetRenderVSync / SDL_GetDisplayUsable-
-//   Bounds / SDL_SetRenderScale / SDL_RenderClear / SDL_RenderPresent -
-//   SDL_render.h / SDL_video.h CategoryRender: window + frame + HiDPI knob.
+//   SDL_CreateWindowAndRenderer / SDL_SetRenderVSync /
+//   SDL_GetDisplayUsableBounds / SDL_SetRenderScale / SDL_RenderClear /
+//   SDL_RenderPresent - SDL_render.h / SDL_video.h: window + HiDPI knob.
 //   SDL_ShowOpenFolderDialog - SDL_dialog.h: native folder picker.
 #pragma once
 
@@ -40,14 +39,6 @@ namespace wemod::gui
 
 namespace fs = std::filesystem;
 
-// What the current background command is, so poll_run() can react to
-// completion: record the Python probe result, narrate the WeMod fetch,
-// hint after a failed patch.
-enum class run_kind : std::uint8_t { patcher, probe, wemod };
-
-// Python probe tri-state: unknown / failed / works.
-enum class probe_state : std::uint8_t { unknown, failed, works };
-
 // Fatal-error surface: native assert window + SDL_Log. Safe before
 // SDL_Init and on any thread; falls back to SDL_Log when video is down.
 void fatal_message(const char* title, const std::string& message) noexcept;
@@ -62,8 +53,8 @@ void log_error(const std::string& message) noexcept;
 // Empty output + exit -1 when the child cannot be spawned.
 [[nodiscard]] run_result run_process(const std::vector<std::string>& args);
 
-// Draft of `run_process` for call sites that already hold C strings
-// (probe one-liners). Same semantics, no copy beyond the argv table.
+// Draft of `run_process` for call sites that already hold C strings.
+// Same semantics, no copy beyond the argv table.
 [[nodiscard]] run_result run_process_argv(
     const std::vector<const char*>& args);
 

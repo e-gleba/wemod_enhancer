@@ -1,4 +1,4 @@
-// App state: everything the UI needs. Owned by main via unique_ptr,
+// App state: everything the UI needs. Owned by app.cpp via unique_ptr,
 // threaded through the SDL callbacks. No SDL types here (window handle
 // is void*): state.hpp must stay includable without SDL headers.
 #pragma once
@@ -10,16 +10,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace wemod::gui
 {
 
 namespace fs = std::filesystem;
-
-// (see platform.hpp for the why on each variant)
-enum class run_kind : std::uint8_t;
-
-enum class probe_state : std::uint8_t;
 
 struct app_state final
 {
