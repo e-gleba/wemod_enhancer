@@ -62,6 +62,8 @@ void text_disabled(const std::string_view text)
 }
 
 // Hover tooltip; the (?) markers and the version label share it.
+// Single string_view overload: string/const char* both convert,
+// so no ambiguity at call sites.
 void tooltip_text(const std::string_view text)
 {
     ImGui::BeginTooltip();
@@ -69,11 +71,6 @@ void tooltip_text(const std::string_view text)
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
     ImGui::PopTextWrapPos();
     ImGui::EndTooltip();
-}
-
-void tooltip_text(const std::string& text)
-{
-    tooltip_text(std::string_view{text});
 }
 
 // Button at an explicit size. Height 0 keeps the default frame
@@ -114,7 +111,7 @@ void help_marker(const char* text, const char* url)
     ImGui::SameLine();
     text_disabled("(?)");
     if (ImGui::IsItemHovered()) {
-        tooltip_text(text);
+        tooltip_text(std::string_view{text});
     }
     if (ImGui::IsItemClicked()) {
         open_url(url);
@@ -132,7 +129,7 @@ void field_fail_hover(const bool ok, const char* why)
 {
     Expects(why != nullptr);
     if (!ok && ImGui::IsItemHovered()) {
-        tooltip_text(why);
+        tooltip_text(std::string_view{why});
     }
 }
 
@@ -303,7 +300,7 @@ void draw_ui(app_state& state)
     ImGui::EndDisabled();
     if (block_reason != nullptr &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        tooltip_text(block_reason);
+        tooltip_text(std::string_view{block_reason});
     }
 
     ImGui::SameLine();
@@ -314,7 +311,7 @@ void draw_ui(app_state& state)
     ImGui::EndDisabled();
     if (block_reason != nullptr &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        tooltip_text(block_reason);
+        tooltip_text(std::string_view{block_reason});
     }
 
     if (!install_ok) {
@@ -325,11 +322,12 @@ void draw_ui(app_state& state)
         }
         ImGui::EndDisabled();
         if (!busy && ImGui::IsItemHovered()) {
-            tooltip_text(is_windows
-                             ? "Download the official WeMod installer into "
-                               "your Downloads folder and run it"
-                             : "Clone wemod-launcher into ~/wemod-launcher "
-                               "and open the setup tutorial");
+            tooltip_text(is_windows ? std::string_view{
+                                          "Download the official WeMod installer into "
+                                          "your Downloads folder and run it"}
+                                      : std::string_view{
+                                            "Clone wemod-launcher into ~/wemod-launcher "
+                                            "and open the setup tutorial"});
         }
     }
 
@@ -421,9 +419,12 @@ void draw_ui(app_state& state)
         tooltip_text("Open a pre-filled GitHub issue with the log attached");
     }
 
-    // Footer under the full-span row: Copied! left, version centered.
+    // Footer: current APIs only (content-region Min/Max are obsolete in
+    // the pinned imgui and break under IMGUI_DISABLE_OBSOLETE_FUNCTIONS).
+    // Origin + span are captured before Copied! moves the cursor.
     ImGui::Spacing();
-    const float footer_y{ImGui::GetCursorPosY()};
+    const ImVec2 content_start{ImGui::GetCursorScreenPos()};
+    const float content_span{ImGui::GetContentRegionAvail().x};
     if (state.copied_flash > 0.0F) {
         state.copied_flash -= ImGui::GetIO().DeltaTime;
         text_colored(color_ok, "Copied!");
@@ -431,13 +432,10 @@ void draw_ui(app_state& state)
     {
         const std::string version_text{std::format("v{}", gui_version)};
         const float text_width{ImGui::CalcTextSize(version_text.c_str()).x};
-        const float content_min{ImGui::GetWindowContentRegionMin().x};
-        const float content_max{ImGui::GetWindowContentRegionMax().x};
-        const float content_span{content_max - content_min};
-        const float version_x{content_min +
+        const float version_x{content_start.x +
                               ((content_span - text_width) * 0.5F)};
-        ImGui::SetCursorPos(ImVec2(version_x, footer_y));
-        text_disabled(version_text);
+        ImGui::SetCursorScreenPos(ImVec2(version_x, content_start.y));
+        ImGui::TextUnformatted(version_text.c_str());
         if (ImGui::IsItemHovered()) {
             tooltip_text(platform_name() + " " + std::string(target_arch));
         }
