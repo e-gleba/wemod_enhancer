@@ -3,8 +3,8 @@
 // Every SDL call with a failure return is checked at the call site via
 // check(): failures log through SDL_Log and, when fatal or parented,
 // also pop an SDL message box so a broken video driver, missing
-// Downloads folder, or clipboard/URL failure is visible instead of a
-// silent exit. All entry points are noexcept: SDL failures are values
+// Downloads folder, or clipboard/URL failure is visible instead of
+// a silent exit. All entry points are noexcept: SDL failures are values
 // (false / empty), never exceptions.
 
 #include "app.hpp"
@@ -129,12 +129,14 @@ bool open_url(const char* url, SDL_Window* parent) noexcept
     if (url == nullptr) {
         return false;
     }
-    return check(SDL_OpenURL(url) == 0, "SDL_OpenURL", parent, false);
+    // SDL3: bool SDL_OpenURL (true = success).
+    return check(SDL_OpenURL(url), "SDL_OpenURL", parent, false);
 }
 
 bool set_clipboard(const std::string& text, SDL_Window* parent) noexcept
 {
-    return check(SDL_SetClipboardText(text.c_str()) == 0,
+    // SDL3: bool SDL_SetClipboardText (true = success).
+    return check(SDL_SetClipboardText(text.c_str()),
                  "SDL_SetClipboardText", parent, false);
 }
 

@@ -8,8 +8,6 @@
 
 #include "app.hpp"
 
-#include "backend_sdl3_shim.hpp"
-
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -87,7 +85,7 @@ void JobRunner::launch(std::string command)
         std::promise<RunResult> promise;
         pending_ = promise.get_future();
         // Move both into the worker: UI thread never touches them
-        // again until try_take(). Previous jthread (if any) was
+        // again until try_take(). The previous jthread (if any) was
         // already joined, so assignment here never blocks on a
         // running job - active_ guards that.
         worker_ = std::jthread(
@@ -96,9 +94,7 @@ void JobRunner::launch(std::string command)
                 try {
                     pr.set_value(run_capture(cmd));
                 } catch (...) {
-                    // Allocation / promise failure inside the worker:
-                    // surface as a failed result, never let an
-                    // exception escape the thread.
+                    // Never let an exception escape the thread.
                     try {
                         pr.set_exception(std::current_exception());
                     } catch (...) {
@@ -212,7 +208,6 @@ void AppState::start_wemod_download()
     if constexpr (is_windows) {
         const fs::path downloads{backend::downloads_dir()};
         if (downloads.empty()) {
-            backend::log_error("SDL_GetUserFolder: no Downloads folder");
             backend::show_error("Download WeMod",
                                 "Could not locate the Downloads folder.",
                                 window);
@@ -237,9 +232,17 @@ void AppState::start_wemod_download()
         const fs::path dir{fs::path(home) / "wemod-launcher"};
         std::error_code ec;
         if (fs::is_directory(dir, ec)) {
-            state_install_dir(dir);
+            // Already cloned: aim the field at it - the resolver
+            // picks up wemod_data/wemod_bin once login happened.
+            install_dir = dir.string();
+            append_log("wemod-launcher already cloned: " + dir.string() +
+                       "\n  run it once and log in - wemod_data/wemod_bin "
+                       "appears after login, this field resolves to "
+                       "it.\n\n");
+            scroll_to_bottom = true;
             return;
         }
+        // Tutorial opens alongside the clone, per the readme flow.
         backend::open_url(std::string(launcher_repo_url).c_str(), window);
         const std::string command{"git clone " +
                                   std::string(launcher_clone_url) + " " +
