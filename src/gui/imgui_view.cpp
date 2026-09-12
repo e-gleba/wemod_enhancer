@@ -21,21 +21,21 @@ namespace
 {
 
 #if defined(__x86_64__) || defined(_M_X64)
-constexpr std::string_view kArch{"x86_64"};
+constexpr std::string_view arch{"x86_64"};
 #elif defined(__aarch64__) || defined(_M_ARM64)
-constexpr std::string_view kArch{"arm64"};
+constexpr std::string_view arch{"arm64"};
 #else
-constexpr std::string_view kArch{"unknown"};
+constexpr std::string_view arch{"unknown"};
 #endif
 
-constexpr float kButtonPadding{24.0F};
-constexpr float kSectionIndent{16.0F};
-constexpr float kRowHeightScale{1.55F};
+constexpr float button_padding{24.0F};
+constexpr float section_indent{16.0F};
+constexpr float row_height_scale{1.55F};
 
-constexpr std::array<float, 4> kFieldOk{0.14F, 0.32F, 0.16F, 0.70F};
-constexpr std::array<float, 4> kFieldErr{0.32F, 0.14F, 0.14F, 0.70F};
-constexpr std::array<float, 4> kColorOk{0.35F, 0.85F, 0.45F, 1.00F};
-constexpr std::array<float, 4> kColorErr{0.90F, 0.30F, 0.30F, 1.00F};
+constexpr std::array<float, 4> field_ok{0.14F, 0.32F, 0.16F, 0.70F};
+constexpr std::array<float, 4> field_error{0.32F, 0.14F, 0.14F, 0.70F};
+constexpr std::array<float, 4> color_ok{0.35F, 0.85F, 0.45F, 1.00F};
+constexpr std::array<float, 4> color_error{0.90F, 0.30F, 0.30F, 1.00F};
 
 [[nodiscard]] ImVec4 to_vec(const std::array<float, 4>& color)
 {
@@ -81,9 +81,9 @@ bool action_button(const char* label, const float width, const float height)
         return 1.0F;
     }
     const ImGuiStyle& style{ImGui::GetStyle()};
-    const float avail{ImGui::GetContentRegionAvail().x};
+    const float available{ImGui::GetContentRegionAvail().x};
     const float gaps{style.ItemSpacing.x * static_cast<float>(count - 1)};
-    return std::max((avail - gaps) / static_cast<float>(count), 1.0F);
+    return std::max((available - gaps) / static_cast<float>(count), 1.0F);
 }
 
 void field_label(const char* label)
@@ -110,7 +110,7 @@ void help_marker(app_state& state, const std::string_view text,
 void push_field_tint(const bool ok)
 {
     ImGui::PushStyleColor(ImGuiCol_FrameBg,
-                          to_vec(ok ? kFieldOk : kFieldErr));
+                          to_vec(ok ? field_ok : field_error));
 }
 
 void field_fail_hover(const bool ok, const std::string_view why)
@@ -120,16 +120,13 @@ void field_fail_hover(const bool ok, const std::string_view why)
     }
 }
 
-// Filesystem probe behind the field-validity invariant: edits re-probe
-// immediately, kReprobeInterval catches on-disk changes. error_code
-// overloads: a malformed path in the field must not throw.
 void probe_filesystem(app_state& state)
 {
     const auto now{std::chrono::steady_clock::now()};
     if (state.probed_install_dir == state.install_dir &&
         state.probed_script_path == state.script_path &&
         state.probed_version_dll == state.version_dll &&
-        (now - state.last_probe) < kReprobeInterval) {
+        (now - state.last_probe) < reprobe_interval) {
         return;
     }
     state.probed_install_dir = state.install_dir;
@@ -137,11 +134,12 @@ void probe_filesystem(app_state& state)
     state.probed_version_dll = state.version_dll;
     state.last_probe = now;
     state.resolved_install_dir = resolve_wemod_dir(state.install_dir);
-    std::error_code ec;
+    std::error_code error;
     state.script_present = !state.script_path.empty() &&
-        fs::is_regular_file(state.script_path, ec);
+        fs::is_regular_file(state.script_path, error);
+    error.clear();
     state.dll_present = !state.version_dll.empty() &&
-        fs::is_regular_file(state.version_dll, ec);
+        fs::is_regular_file(state.version_dll, error);
 }
 
 void draw_settings(app_state& state)
@@ -150,7 +148,7 @@ void draw_settings(app_state& state)
     help_marker(state,
                 "wemod_enhancer.py ships next to the executable. Re-download "
                 "the GUI package if the field stays red.",
-                kReleasesUrl);
+                releases_url);
     push_field_tint(state.script_present);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##script_path",
@@ -166,7 +164,7 @@ void draw_settings(app_state& state)
                 "The interpreter that runs the patcher. Default: python on "
                 "Windows, python3 elsewhere. Point it at a full path if "
                 "Python is not on PATH.",
-                kPythonUrl);
+                python_url);
     if (state.python_ok == probe_state::works) {
         ImGui::SameLine();
         text_disabled(state.python_version);
@@ -189,7 +187,7 @@ void draw_settings(app_state& state)
     help_marker(state,
                 "The proxy DLL the patcher drops next to WeMod. Default: the "
                 "copy next to the executable.",
-                kReadmeUrl);
+                readme_url);
     push_field_tint(state.dll_present);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##version_dll", "version.dll next to the exe",
@@ -200,8 +198,6 @@ void draw_settings(app_state& state)
 
 [[nodiscard]] bool resolve_for_run(app_state& state)
 {
-    // Normalize the field to the detected app-* dir so the log shows the
-    // exact folder the patcher runs against.
     if (state.resolved_install_dir.empty()) {
         return false;
     }
@@ -213,7 +209,7 @@ void draw_settings(app_state& state)
 
 frame_requests draw(app_state& state)
 {
-    frame_requests req;
+    frame_requests requests;
     const ImGuiViewport* viewport{ImGui::GetMainViewport()};
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
@@ -225,7 +221,7 @@ frame_requests draw(app_state& state)
     ImGui::Begin("##main", nullptr, flags);
 
     const ImGuiStyle& style{ImGui::GetStyle()};
-    const float row_h{ImGui::GetFrameHeight() * kRowHeightScale};
+    const float row_height{ImGui::GetFrameHeight() * row_height_scale};
 
     probe_filesystem(state);
     const fs::path& resolved{state.resolved_install_dir};
@@ -238,18 +234,19 @@ frame_requests draw(app_state& state)
                 "WeMod root and the newest version is used automatically. "
                 "Linux: the wemod-launcher clone works too - after the first "
                 "run + login its wemod_data/wemod_bin is picked up.",
-                kQuickstartUrl);
+                quickstart_url);
 
-    const float browse_w{ImGui::CalcTextSize("Browse...").x +
-                         (style.FramePadding.x * 2.0F) + kButtonPadding};
-    const float path_w{std::max(ImGui::GetContentRegionAvail().x - browse_w -
-                                    style.ItemSpacing.x,
-                                ImGui::GetFontSize() * 8.0F)};
+    const float browse_width{ImGui::CalcTextSize("Browse...").x +
+                             (style.FramePadding.x * 2.0F) + button_padding};
+    const float path_width{
+        std::max(ImGui::GetContentRegionAvail().x - browse_width -
+                     style.ItemSpacing.x,
+                 ImGui::GetFontSize() * 8.0F)};
     const bool tinted{!state.install_dir.empty()};
     if (tinted) {
         push_field_tint(install_ok);
     }
-    ImGui::SetNextItemWidth(path_w);
+    ImGui::SetNextItemWidth(path_width);
     ImGui::InputTextWithHint("##install_dir", "path to WeMod",
                              &state.install_dir);
     if (tinted) {
@@ -257,7 +254,7 @@ frame_requests draw(app_state& state)
         field_fail_hover(install_ok, "Not a WeMod install");
     }
     ImGui::SameLine();
-    if (action_button("Browse...", browse_w, 0.0F)) {
+    if (action_button("Browse...", browse_width, 0.0F)) {
         state.want_browse = true;
     }
     if (install_ok && resolved.string() != state.install_dir) {
@@ -266,13 +263,14 @@ frame_requests draw(app_state& state)
 
     ImGui::Spacing();
     const int action_count{install_ok ? 2 : 3};
-    const float action_w{equal_button_width(action_count)};
+    const float action_width{equal_button_width(action_count)};
     const std::string_view block_reason{
         run_block_reason(install_ok, script_ok)};
     const bool patch_blocked{state.running || !block_reason.empty()};
     ImGui::BeginDisabled(patch_blocked);
-    if (action_button("Patch", action_w, row_h) && resolve_for_run(state)) {
-        req.patch = true;
+    if (action_button("Patch", action_width, row_height) &&
+        resolve_for_run(state)) {
+        requests.patch = true;
     }
     ImGui::EndDisabled();
     if (!block_reason.empty() &&
@@ -281,8 +279,9 @@ frame_requests draw(app_state& state)
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(patch_blocked);
-    if (action_button("Restore", action_w, row_h) && resolve_for_run(state)) {
-        req.restore = true;
+    if (action_button("Restore", action_width, row_height) &&
+        resolve_for_run(state)) {
+        requests.restore = true;
     }
     ImGui::EndDisabled();
     if (!block_reason.empty() &&
@@ -292,13 +291,13 @@ frame_requests draw(app_state& state)
     if (!install_ok) {
         ImGui::SameLine();
         ImGui::BeginDisabled(state.running);
-        if (action_button("Download WeMod", action_w, row_h)) {
-            req.download = true;
+        if (action_button("Download WeMod", action_width, row_height)) {
+            requests.download = true;
         }
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             tooltip_text(
-                kIsWindows
+                is_windows
                     ? std::string_view{"Download the official WeMod installer "
                                        "into your Downloads folder and run it"}
                     : std::string_view{"Clone wemod-launcher into "
@@ -312,10 +311,10 @@ frame_requests draw(app_state& state)
         text_disabled(running_status(state.kind));
     } else if (state.has_run) {
         if (state.last_exit_code == 0) {
-            text_colored(kColorOk, "Done. Launch WeMod - Pro is active.");
+            text_colored(color_ok, "Done. Launch WeMod - Pro is active.");
         } else {
-            text_colored(kColorErr, std::format("Failed (exit code {})",
-                                               state.last_exit_code));
+            text_colored(color_error, std::format("Failed (exit code {})",
+                                                  state.last_exit_code));
         }
     } else {
         text_disabled("Patch, then launch WeMod.");
@@ -325,9 +324,9 @@ frame_requests draw(app_state& state)
     ImGui::Separator();
     ImGui::Spacing();
     if (ImGui::CollapsingHeader("Settings")) {
-        ImGui::Indent(kSectionIndent);
+        ImGui::Indent(section_indent);
         draw_settings(state);
-        ImGui::Unindent(kSectionIndent);
+        ImGui::Unindent(section_indent);
     }
 
     ImGui::Spacing();
@@ -337,13 +336,15 @@ frame_requests draw(app_state& state)
     help_marker(state,
                 "Live stdout and stderr from the patcher, the Python probe, "
                 "and Download WeMod. Copy it below if something fails.",
-                kIssuesUrl);
+                issue_new_url);
 
-    const float line_h{ImGui::GetTextLineHeightWithSpacing()};
-    const float toolbar_h{row_h + line_h + (style.ItemSpacing.y * 3.0F)};
-    const float log_h{std::max(ImGui::GetContentRegionAvail().y - toolbar_h,
-                               line_h * 4.0F)};
-    ImGui::BeginChild("##log", ImVec2(0.0F, log_h),
+    const float line_height{ImGui::GetTextLineHeightWithSpacing()};
+    const float toolbar_height{row_height + line_height +
+                               (style.ItemSpacing.y * 3.0F)};
+    const float log_height{
+        std::max(ImGui::GetContentRegionAvail().y - toolbar_height,
+                 line_height * 4.0F)};
+    ImGui::BeginChild("##log", ImVec2(0.0F, log_height),
                       ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
     if (state.log.empty()) {
@@ -362,25 +363,25 @@ frame_requests draw(app_state& state)
     ImGui::EndChild();
 
     ImGui::Spacing();
-    const float util_w{equal_button_width(3)};
-    if (action_button("Copy output", util_w, row_h)) {
-        req.copy = true;
+    const float utility_width{equal_button_width(3)};
+    if (action_button("Copy output", utility_width, row_height)) {
+        requests.copy = true;
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Copy the log and environment info to the clipboard");
     }
     ImGui::SameLine();
     ImGui::BeginDisabled(state.log.empty());
-    if (action_button("Clear output", util_w, row_h)) {
-        req.clear = true;
+    if (action_button("Clear output", utility_width, row_height)) {
+        requests.clear = true;
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         tooltip_text("Clear the log");
     }
     ImGui::SameLine();
-    if (action_button("Report bug", util_w, row_h)) {
-        req.report = true;
+    if (action_button("Report bug", utility_width, row_height)) {
+        requests.report = true;
     }
     if (ImGui::IsItemHovered()) {
         tooltip_text("Open a pre-filled GitHub issue with the log attached");
@@ -389,22 +390,24 @@ frame_requests draw(app_state& state)
     ImGui::Spacing();
     const float footer_y{ImGui::GetCursorPosY()};
     if (state.copied_flash > 0.0F) {
-        text_colored(kColorOk, "Copied!");
+        text_colored(color_ok, "Copied!");
     }
     {
-        const std::string version{std::format("v{}", kGuiVersion)};
-        const float text_w{ImGui::CalcTextSize(version.c_str()).x};
-        const float cmin{ImGui::GetWindowContentRegionMin().x};
-        const float cmax{ImGui::GetWindowContentRegionMax().x};
+        const std::string version{std::format("v{}", gui_version)};
+        const float text_width{ImGui::CalcTextSize(version.c_str()).x};
+        const float content_min{ImGui::GetWindowContentRegionMin().x};
+        const float content_max{ImGui::GetWindowContentRegionMax().x};
         ImGui::SetCursorPos(
-            ImVec2(cmin + ((cmax - cmin - text_w) * 0.5F), footer_y));
+            ImVec2(content_min +
+                       ((content_max - content_min - text_width) * 0.5F),
+                   footer_y));
         text_disabled(version);
         if (ImGui::IsItemHovered()) {
-            tooltip_text(std::format("{} {}", state.platform_name, kArch));
+            tooltip_text(std::format("{} {}", state.platform_name, arch));
         }
     }
     ImGui::End();
-    return req;
+    return requests;
 }
 
 } // namespace wemod::gui::view
