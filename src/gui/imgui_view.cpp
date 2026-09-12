@@ -1,7 +1,7 @@
 // WeMod Enhancer - Dear ImGui view side (ImGui + app.hpp only).
-// No SDL headers here. Reads app_state, draws the window, returns
-// frame_requests; side effects leave via state outbox (want_browse /
-// want_open_url) for the SDL platform side to drain.
+// No SDL headers here, no UI constants in the header. Reads
+// app_state, draws the window, returns frame_requests; side effects
+// leave via the state outbox for the SDL platform side to drain.
 
 #include "app.hpp"
 
@@ -9,6 +9,7 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
+#include <array>
 #include <cfloat>
 #include <format>
 #include <string_view>
@@ -27,12 +28,24 @@ constexpr std::string_view kArch{"arm64"};
 constexpr std::string_view kArch{"unknown"};
 #endif
 
-constexpr ImVec4 kFieldOk{0.14F, 0.32F, 0.16F, 0.70F};
-constexpr ImVec4 kFieldErr{0.32F, 0.14F, 0.14F, 0.70F};
+constexpr float kButtonPadding{24.0F};
+constexpr float kSectionIndent{16.0F};
+constexpr float kRowHeightScale{1.55F};
 
-void text_colored(const ImVec4& color, const std::string_view text)
+constexpr std::array<float, 4> kFieldOk{0.14F, 0.32F, 0.16F, 0.70F};
+constexpr std::array<float, 4> kFieldErr{0.32F, 0.14F, 0.14F, 0.70F};
+constexpr std::array<float, 4> kColorOk{0.35F, 0.85F, 0.45F, 1.00F};
+constexpr std::array<float, 4> kColorErr{0.90F, 0.30F, 0.30F, 1.00F};
+
+[[nodiscard]] ImVec4 to_vec(const std::array<float, 4>& color)
 {
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
+    return {color[0], color[1], color[2], color[3]};
+}
+
+void text_colored(const std::array<float, 4>& color,
+                  const std::string_view text)
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, to_vec(color));
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
     ImGui::PopStyleColor();
 }
@@ -49,11 +62,12 @@ void text_disabled(const std::string_view text)
 
 void tooltip_text(const std::string_view text)
 {
-    ImGui::BeginTooltip();
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0F);
-    ImGui::TextUnformatted(text.data(), text.data() + text.size());
-    ImGui::PopTextWrapPos();
-    ImGui::EndTooltip();
+    if (ImGui::BeginTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0F);
+        ImGui::TextUnformatted(text.data(), text.data() + text.size());
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
 }
 
 bool action_button(const char* label, const float width, const float height)
@@ -63,6 +77,9 @@ bool action_button(const char* label, const float width, const float height)
 
 [[nodiscard]] float equal_button_width(const int count)
 {
+    if (count <= 0) {
+        return 1.0F;
+    }
     const ImGuiStyle& style{ImGui::GetStyle()};
     const float avail{ImGui::GetContentRegionAvail().x};
     const float gaps{style.ItemSpacing.x * static_cast<float>(count - 1)};
@@ -92,7 +109,8 @@ void help_marker(app_state& state, const std::string_view text,
 
 void push_field_tint(const bool ok)
 {
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ok ? kFieldOk : kFieldErr);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg,
+                          to_vec(ok ? kFieldOk : kFieldErr));
 }
 
 void field_fail_hover(const bool ok, const std::string_view why)
@@ -238,15 +256,16 @@ frame_requests draw(app_state& state)
     ImGui::Spacing();
     const int action_count{install_ok ? 2 : 3};
     const float action_w{equal_button_width(action_count)};
-    const char* block_reason{run_block_reason(install_ok, script_ok)};
-    const bool blocked{state.running || block_reason != nullptr};
+    const std::string_view block_reason{
+        run_block_reason(install_ok, script_ok)};
+    const bool blocked{state.running || !block_reason.empty()};
     ImGui::BeginDisabled(blocked);
     if (action_button("Patch", action_w, row_h)) {
-        state.install_dir = resolved.string();
+        state.install_dir = state.resolved_install_dir.string();
         req.patch = true;
     }
     ImGui::EndDisabled();
-    if (block_reason != nullptr &&
+    if (!block_reason.empty() &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         tooltip_text(block_reason);
     }
@@ -256,7 +275,7 @@ frame_requests draw(app_state& state)
         req.restore = true;
     }
     ImGui::EndDisabled();
-    if (block_reason != nullptr &&
+    if (!block_reason.empty() &&
         ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
         tooltip_text(block_reason);
     }
@@ -268,10 +287,11 @@ frame_requests draw(app_state& state)
         if (ImGui::IsItemHovered()) {
             tooltip_text(
                 kIsWindows
-                    ? "Download the official WeMod installer into your "
-                      "Downloads folder and run it"
-                    : "Clone wemod-launcher into ~/wemod-launcher and open "
-                      "the setup tutorial");
+                    ? std::string_view{"Download the official WeMod installer "
+                                       "into your Downloads folder and run it"}
+                    : std::string_view{"Clone wemod-launcher into "
+                                       "~/wemod-launcher and open the setup "
+                                       "tutorial"});
         }
     }
 
@@ -280,12 +300,10 @@ frame_requests draw(app_state& state)
         text_disabled(running_status(state.kind));
     } else if (state.has_run) {
         if (state.last_exit_code == 0) {
-            text_colored({kColorOk.r, kColorOk.g, kColorOk.b, kColorOk.a},
-                         "Done. Launch WeMod - Pro is active.");
+            text_colored(kColorOk, "Done. Launch WeMod - Pro is active.");
         } else {
-            text_colored({kColorErr.r, kColorErr.g, kColorErr.b, kColorErr.a},
-                         std::format("Failed (exit code {})",
-                                     state.last_exit_code));
+            text_colored(kColorErr, std::format("Failed (exit code {})",
+                                               state.last_exit_code));
         }
     } else {
         text_disabled("Patch, then launch WeMod.");
@@ -297,7 +315,7 @@ frame_requests draw(app_state& state)
     if (ImGui::CollapsingHeader("Settings")) {
         ImGui::Indent(kSectionIndent);
         draw_settings(state);
-        ImGui::Unindent();
+        ImGui::Unindent(kSectionIndent);
     }
 
     ImGui::Spacing();
@@ -359,16 +377,15 @@ frame_requests draw(app_state& state)
     ImGui::Spacing();
     const float footer_y{ImGui::GetCursorPosY()};
     if (state.copied_flash > 0.0F) {
-        text_colored({kColorOk.r, kColorOk.g, kColorOk.b, kColorOk.a},
-                     "Copied!");
+        text_colored(kColorOk, "Copied!");
     }
     {
         const std::string version{std::format("v{}", kGuiVersion)};
-        const float tw{ImGui::CalcTextSize(version.c_str()).x};
+        const float text_w{ImGui::CalcTextSize(version.c_str()).x};
         const float cmin{ImGui::GetWindowContentRegionMin().x};
         const float cmax{ImGui::GetWindowContentRegionMax().x};
         ImGui::SetCursorPos(
-            ImVec2(cmin + ((cmax - cmin - tw) * 0.5F), footer_y));
+            ImVec2(cmin + ((cmax - cmin - text_w) * 0.5F), footer_y));
         text_disabled(version);
         if (ImGui::IsItemHovered()) {
             tooltip_text(std::format("{} {}", state.platform_name, kArch));
