@@ -2,15 +2,15 @@
 // No ImGui headers here. Services: window/renderer lifecycle,
 // async folder dialog, URL / clipboard / alert outbox, SDL file
 // locations, log persistence via SDL IOStream, fatal message box.
+// The header stays std-only: the SDL_Window* never leaks out, the
+// view talks to this side through app_state data only.
 
 #include "app.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
-#include <cfloat>
-#include <format>
-#include <memory>
+#include <system_error>
 
 namespace wemod::gui::platform
 {
@@ -18,26 +18,43 @@ namespace wemod::gui::platform
 namespace
 {
 
+constexpr std::int32_t kWinFallbackW{1024};
+constexpr std::int32_t kWinFallbackH{680};
+constexpr std::int32_t kWinMinW{880};
+constexpr std::int32_t kWinMinH{600};
+constexpr std::int32_t kWinMaxW{1680};
+constexpr std::int32_t kWinMaxH{1050};
+
 using sdl_str = std::unique_ptr<char, decltype(&SDL_free)>;
 
-[[nodiscard]] sdl_str adopt(char* p) noexcept { return {p, &SDL_free}; }
-
-void box(const context& ctx, const Uint32 flags, const std::string_view title,
-         const std::string_view message) noexcept
+[[nodiscard]] sdl_str adopt(char* owned) noexcept
 {
-    const std::string t{title};
-    const std::string m{message};
-    SDL_ShowSimpleMessageBox(flags, t.c_str(), m.c_str(),
-                             static_cast<SDL_Window*>(ctx.window));
+    return {owned, &SDL_free};
 }
 
+void box(SDL_Window* window, const Uint32 flags,
+         const std::string_view title,
+         const std::string_view message) noexcept
+{
+    // SDL copies the strings synchronously.
+    const std::string title_text{title};
+    const std::string message_text{message};
+    SDL_ShowSimpleMessageBox(flags, title_text.c_str(),
+                             message_text.c_str(), window);
+}
+
+// SDL may invoke this on its own thread: touch only the mutex-guarded
+// picked_folder handoff, never the live field text.
 void SDLCALL on_folder(void* userdata, const char* const* filelist,
                        int /*filter*/)
 {
     auto* state = static_cast<app_state*>(userdata);
-    if (state != nullptr && filelist != nullptr &&
-        filelist[0] != nullptr) {
-        state->install_dir = filelist[0];
+    if (state == nullptr) {
+        return;
+    }
+    const std::lock_guard lock{state->outbox_mutex};
+    if (filelist != nullptr && filelist[0] != nullptr) {
+        state->picked_folder = filelist[0];
     }
 }
 
@@ -47,7 +64,12 @@ void SDLCALL on_folder(void* userdata, const char* const* filelist,
     if (pref == nullptr) {
         return {};
     }
-    return (fs::path(pref.get()) / name).string();
+    std::error_code ec;
+    const fs::path file{fs::path(pref.get()) / name};
+    std::error_code dir_ec;
+    fs::create_directories(file.parent_path(), dir_ec);
+    (void)ec;
+    return file.string();
 }
 
 } // namespace
@@ -65,9 +87,9 @@ std::pair<std::int32_t, std::int32_t> preferred_size() noexcept
 
 std::string exe_dir()
 {
-    sdl_str base{adopt(SDL_GetBasePath())};
-    if (base != nullptr) {
-        return {base.get()};
+    // SDL-owned internal memory (cached): must NOT be freed.
+    if (const char* base{SDL_GetBasePath()}) {
+        return {base};
     }
     std::error_code ec;
     return (fs::temp_directory_path(ec) / "wemod_enhancer").string();
@@ -104,6 +126,7 @@ bool init(context& ctx, app_state& state)
                                          SDL_WINDOW_HIGH_PIXEL_DENSITY,
                                      &window, &renderer)) {
         fatal("Cannot create window", SDL_GetError());
+        SDL_Quit();
         return false;
     }
     SDL_SetWindowMinimumSize(window, kWinMinW, kWinMinH);
@@ -117,17 +140,29 @@ bool init(context& ctx, app_state& state)
 
 void drain_outbox(context& ctx, app_state& state, const float delta_seconds)
 {
+    auto* window = static_cast<SDL_Window*>(ctx.window);
     if (state.copied_flash > 0.0F) {
         state.copied_flash =
             std::max(0.0F, state.copied_flash - delta_seconds);
     }
+    // Dialog result first: the field keeps user edits, the dialog only
+    // delivers the picked path through the mutex handoff.
+    {
+        const std::lock_guard lock{state.outbox_mutex};
+        if (state.picked_folder.has_value()) {
+            state.install_dir = std::move(*state.picked_folder);
+            state.picked_folder.reset();
+        }
+    }
     if (state.want_browse) {
         state.want_browse = false;
-        SDL_ShowOpenFolderDialog(on_folder, &state,
-                                static_cast<SDL_Window*>(ctx.window),
-                                state.install_dir.empty()
+        // Keep the default path alive while the async dialog is open:
+        // the field may be edited meanwhile, SDL only reads the pointer.
+        ctx.dialog_default = state.install_dir;
+        SDL_ShowOpenFolderDialog(on_folder, &state, window,
+                                ctx.dialog_default.empty()
                                     ? nullptr
-                                    : state.install_dir.c_str(),
+                                    : ctx.dialog_default.c_str(),
                                 false);
     }
     if (state.want_open_url.has_value()) {
@@ -149,16 +184,19 @@ void drain_outbox(context& ctx, app_state& state, const float delta_seconds)
     if (state.want_alert.has_value()) {
         alert_request alert{std::move(*state.want_alert)};
         state.want_alert.reset();
-        box(ctx, SDL_MESSAGEBOX_WARNING, alert.title, alert.message);
+        box(window, SDL_MESSAGEBOX_WARNING, alert.title, alert.message);
     }
 }
 
 void begin_frame(context& ctx, const float scale_x, const float scale_y,
-                 const rgba& clear)
+                 const std::array<float, 4>& clear)
 {
+    // Single DPI knob: map imgui window coords onto the
+    // HIGH_PIXEL_DENSITY framebuffer. Layout stays 1x.
     auto* renderer = static_cast<SDL_Renderer*>(ctx.renderer);
     SDL_SetRenderScale(renderer, scale_x, scale_y);
-    SDL_SetRenderDrawColorFloat(renderer, clear.r, clear.g, clear.b, clear.a);
+    SDL_SetRenderDrawColorFloat(renderer, clear[0], clear[1], clear[2],
+                               clear[3]);
     SDL_RenderClear(renderer);
 }
 
@@ -183,11 +221,10 @@ void shutdown(context& ctx)
 void fatal(const std::string_view title,
            const std::string_view message) noexcept
 {
-    const std::string t{title};
-    const std::string m{message};
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, t.c_str(), m.c_str(),
-                             nullptr);
-    SDL_Log("%s: %s", t.c_str(), m.c_str());
+    box(nullptr, SDL_MESSAGEBOX_ERROR, title, message);
+    const std::string title_text{title};
+    const std::string message_text{message};
+    SDL_Log("%s: %s", title_text.c_str(), message_text.c_str());
 }
 
 void persist_log(const app_state& state)
@@ -201,12 +238,13 @@ void persist_log(const app_state& state)
                                                   kLogBudget)
                                : state.log};
     const std::string body{tail + "\n" + env_info(state)};
-    SDL_IOStream* io{SDL_IOFromFile(path.c_str(), "w")};
-    if (io == nullptr) {
-        return;
+    if (SDL_IOStream* io{SDL_IOFromFile(path.c_str(), "w")};
+        io != nullptr) {
+        SDL_WriteIO(io, body.data(), body.size());
+        if (!SDL_CloseIO(io)) {
+            SDL_Log("SDL_CloseIO: %s", SDL_GetError());
+        }
     }
-    SDL_WriteIO(io, body.data(), body.size());
-    SDL_CloseIO(io);
 }
 
 } // namespace wemod::gui::platform
