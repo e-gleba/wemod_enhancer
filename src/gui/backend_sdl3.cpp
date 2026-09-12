@@ -11,6 +11,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <string>
 
 namespace wemod::gui::backend
