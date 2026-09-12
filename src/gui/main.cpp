@@ -2,9 +2,6 @@
 // SDL3 and Dear ImGui). Wires platform:: + view:: through app.hpp:
 // one frame = poll background jobs, draw view, execute frame_requests,
 // drain SDL outbox, present.
-//
-// C++23: std::format, std::jthread worker lives in background_runner
-// (app.hpp). No detached threads.
 
 #include "app.hpp"
 
@@ -15,6 +12,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 
+#include <array>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -24,6 +22,8 @@ namespace wemod::gui
 
 namespace
 {
+
+constexpr std::array<float, 4> kClearColor{0.10F, 0.10F, 0.12F, 1.00F};
 
 struct app final
 {
@@ -35,7 +35,7 @@ struct app final
 void start_command(app& app, const run_kind kind, const std::string& shown,
                    const std::string& command)
 {
-    if (command.empty() || app.jobs.busy()) {
+    if (command.empty() || shown.empty() || app.jobs.busy()) {
         return;
     }
     append_log(app.state, "$ " + shown + "\n");
@@ -44,22 +44,26 @@ void start_command(app& app, const run_kind kind, const std::string& shown,
     if (kind == run_kind::patcher) {
         app.state.has_run = true;
     }
-    app.jobs.launch(kind, shown, command, [](const run_result&) {});
+    app.jobs.launch(kind, shown, command);
 }
 
-void start_run(app& app, const char* subcommand)
+void start_run(app& app, const std::string_view subcommand)
 {
+    if (subcommand != "patch" && subcommand != "restore") {
+        return;
+    }
     const std::string sub{subcommand};
-    std::string shown{app.state.python + " -u " + app.state.script_path +
-                      " " + sub + " --install-dir " +
-                      app.state.install_dir};
-    std::string command{shell_quote(app.state.python) + " -u " +
-                        shell_quote(app.state.script_path) + " " + sub +
-                        " --install-dir " +
-                        shell_quote(app.state.install_dir)};
-    if (sub == "patch" && !app.state.version_dll.empty()) {
-        shown += " --version-dll " + app.state.version_dll;
-        command += " --version-dll " + shell_quote(app.state.version_dll);
+    std::string shown{std::format("{} -u {} {} --install-dir {}",
+                                  app.state.python, app.state.script_path, sub,
+                                  app.state.install_dir)};
+    std::string command{std::format("{} -u {} {} --install-dir {}",
+                                    shell_quote(app.state.python),
+                                    shell_quote(app.state.script_path), sub,
+                                    shell_quote(app.state.install_dir))};
+    if (subcommand == "patch" && !app.state.version_dll.empty()) {
+        shown += std::format(" --version-dll {}", app.state.version_dll);
+        command +=
+            std::format(" --version-dll {}", shell_quote(app.state.version_dll));
     }
     start_command(app, run_kind::patcher, shown, command);
 }
@@ -73,13 +77,11 @@ void start_wemod_download(app& app)
             return;
         }
         const fs::path installer{fs::path(downloads) / "wemod_setup.exe"};
-        const std::string command{
-            "powershell -NoProfile -ExecutionPolicy Bypass -Command \""\
-            "$ProgressPreference='SilentlyContinue'; "\
-            "Invoke-WebRequest -Uri '" +
-            std::string{kInstallerUrl} + "' -OutFile '" +
-            installer.string() + "'; Start-Process '" +
-            installer.string() + "'\""};
+        const std::string command{std::format(
+            "powershell -NoProfile -ExecutionPolicy Bypass -Command "
+            "\"$ProgressPreference='SilentlyContinue'; Invoke-WebRequest "
+            "-Uri '{}' -OutFile '{}'; Start-Process '{}'\"",
+            kInstallerUrl, installer.string(), installer.string())};
         start_command(app, run_kind::wemod, command, command);
     } else {
         const char* home{
@@ -87,6 +89,9 @@ void start_wemod_download(app& app)
         if (home == nullptr) {
             append_log(app.state, "error: HOME is not set - cannot clone "
                                   "wemod-launcher.\n\n");
+            app.state.want_alert =
+                alert_request{"Cannot download",
+                              "HOME is not set - cannot clone wemod-launcher."};
             return;
         }
         const fs::path dir{fs::path(home) / "wemod-launcher"};
@@ -102,22 +107,23 @@ void start_wemod_download(app& app)
             return;
         }
         app.state.want_open_url = std::string{kLauncherGuideUrl};
-        const std::string command{"git clone " +
-                                  std::string{kLauncherCloneUrl} + " " +
-                                  shell_quote(dir.string())};
+        const std::string command{std::format("git clone {} {}",
+                                              kLauncherCloneUrl,
+                                              shell_quote(dir.string()))};
         start_command(app, run_kind::wemod, command, command);
     }
 }
 
 void start_probe(app& app)
 {
-    const std::string shown{app.state.python +
-                            " -c \"import sys,platform;print(sys.version." \
-                            "split()[0]);print(platform.platform())\""};
+    constexpr std::string_view probe{
+        "import sys,platform;print(sys.version.split()[0]);"
+        "print(platform.platform())"};
+    const std::string shown{
+        std::format("{} -c \"{}\"", app.state.python, probe)};
     start_command(app, run_kind::probe, shown,
-                  shell_quote(app.state.python) +
-                      " -c \"import sys,platform;print(sys.version.split()[0" \
-                      "]);print(platform.platform())\"");
+                  std::format("{} -c \"{}\"", shell_quote(app.state.python),
+                              probe));
 }
 
 void poll_jobs(app& app)
@@ -316,8 +322,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
                                        io.DeltaTime);
     wemod::gui::platform::begin_frame(boxed->platform,
                                       io.DisplayFramebufferScale.x,
-                                      io.DisplayFramebufferScale.y,
-                                      wemod::gui::kClearColor);
+                                      io.DisplayFramebufferScale.y, kClearColor);
     ImGui_ImplSDLRenderer3_RenderDrawData(
         ImGui::GetDrawData(),
         static_cast<SDL_Renderer*>(boxed->platform.renderer));
@@ -328,7 +333,7 @@ SDL_AppResult SDL_AppIterate(void* appstate)
 void SDL_AppQuit(void* appstate, SDL_AppResult result)
 {
     (void)result;
-    std::unique_ptr<app> boxed{static_cast<app*>(appstate)};
+    const std::unique_ptr<app> boxed{static_cast<app*>(appstate)};
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
