@@ -6,12 +6,19 @@
 // Downloads folder, or clipboard/URL failure is visible instead of
 // a silent exit. All entry points are noexcept: SDL failures are values
 // (false / empty), never exceptions.
+//
+// Folder dialog handoff: SDL may invoke the dialog callback on an OS
+// thread and after AppState is gone, so the callback never touches
+// AppState. It stages the picked path in a mutex-guarded slot that
+// the UI thread harvests via take_pending_folder().
 
 #include "app.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <mutex>
+#include <optional>
 #include <string>
 
 namespace wemod::gui::backend
@@ -20,19 +27,23 @@ namespace wemod::gui::backend
 namespace
 {
 
-// SDL dialog callback: may run on another thread; it only writes a
-// std::string the UI thread reads next frame - safe in practice
-// because the dialog is modal and the field is not edited meanwhile.
+std::mutex folder_mutex;
+std::optional<std::string> pending_folder;
+
+// May run on an OS thread and may outlive AppState: copy the path
+// under a lock, touch nothing else. userdata is always nullptr.
 void SDLCALL on_folder_chosen(void* userdata,
                               const char* const* filelist,
                               int /*filter*/)
 {
-    auto* state{static_cast<AppState*>(userdata)};
-    if (state == nullptr) {
+    (void)userdata;
+    if (filelist == nullptr || filelist[0] == nullptr) {
         return;
     }
-    if (filelist != nullptr && filelist[0] != nullptr) {
-        state->install_dir = filelist[0];
+    try {
+        const std::lock_guard<std::mutex> lock{folder_mutex};
+        pending_folder = filelist[0];
+    } catch (...) {
     }
 }
 
@@ -145,8 +156,25 @@ void show_folder_dialog(AppState& state) noexcept
 {
     const char* current{state.install_dir.empty() ? nullptr
                                                   : state.install_dir.c_str()};
-    SDL_ShowOpenFolderDialog(on_folder_chosen, &state, state.window,
+    // nullptr userdata: the callback stages the path in pending_folder
+    // and never touches AppState, so a dialog outliving shutdown is safe.
+    SDL_ShowOpenFolderDialog(on_folder_chosen, nullptr, state.window,
                              current, false);
+}
+
+bool take_pending_folder(std::string& out) noexcept
+{
+    try {
+        const std::lock_guard<std::mutex> lock{folder_mutex};
+        if (!pending_folder.has_value()) {
+            return false;
+        }
+        out = std::move(*pending_folder);
+        pending_folder.reset();
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 WindowSize pick_window_size() noexcept

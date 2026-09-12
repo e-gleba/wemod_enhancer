@@ -20,8 +20,9 @@
 //
 // Threading: one background job at a time behind JobRunner, powered
 // by std::jthread (RAII join, stop_token aware). The worker only
-// produces a RunResult; the UI thread owns all state. No atomics,
-// no detached threads, no data races by construction.
+// produces a RunResult; the UI thread owns all state. The folder
+// dialog hands its path through a mutex-guarded handoff polled on
+// the UI thread - the SDL callback never touches AppState.
 //
 // ASCII-only literals: imgui default font covers ASCII only.
 
@@ -126,6 +127,11 @@ class JobRunner final
 
     [[nodiscard]] bool running() const noexcept { return active_; }
     void launch(std::string command);
+    // Ask a stop-aware worker to bail early. The popen()-based worker
+    // ignores it while blocked on the child; the quit guard in
+    // main.cpp keeps the window open until the job completes instead
+    // of hiding the window behind a hung shutdown.
+    void request_stop() noexcept;
     // Non-blocking harvest. nullopt = still running or idle. Never
     // throws: a worker exception becomes RunResult{-1, ...}.
     [[nodiscard]] std::optional<RunResult> try_take() noexcept;
@@ -149,6 +155,10 @@ struct AppState final
     RunKind kind{RunKind::patcher};
     bool scroll_to_bottom{false};
     bool has_run{false};
+    // Set on first close request while a job runs; SDL_AppIterate
+    // quits once the job completes so shutdown never hides the
+    // window behind a blocked join.
+    bool quit_requested{false};
     std::int32_t last_exit_code{0};
     float copied_flash{0.0F};
     // Filesystem probe cache (throttled stat() round).
@@ -200,6 +210,9 @@ void show_error(const char* title,
 bool open_url(const char* url, SDL_Window* parent) noexcept;
 bool set_clipboard(const std::string& text, SDL_Window* parent) noexcept;
 void show_folder_dialog(AppState& state) noexcept;
+// Harvest the folder-dialog result on the UI thread. True = out set.
+// The SDL callback never touches AppState; it only stages the path.
+bool take_pending_folder(std::string& out) noexcept;
 
 struct WindowSize final
 {
@@ -218,8 +231,8 @@ namespace core
 [[nodiscard]] std::string url_encode(std::string_view text);
 [[nodiscard]] std::string shell_quote(std::string_view arg);
 // Parse "app-1.2.3" (or "1.2.3") into numeric parts for ordering.
-// Plain (non-constexpr): std::vector / from_chars are not constant
-// evaluable on all supported toolchains (notably MinGW libc++).
+// Plain (non-constexpr): std::vector is not constant evaluable on
+// all supported toolchains (notably MinGW libc++).
 [[nodiscard]] std::vector<std::int32_t> version_parts(
     std::string_view name);
 [[nodiscard]] fs::path newest_app_dir(const fs::path& root);
