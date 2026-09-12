@@ -13,12 +13,131 @@
 #include <imgui_impl_sdlrenderer3.h>
 
 #include <array>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <system_error>
 
+#ifndef _WIN32
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 namespace wemod::gui
 {
+
+// Killable capture: the ONLY popen/pclose site. A reader thread feeds
+// the pipe into a mutex-guarded string while the owner polls
+// waitpid(WNOHANG); stop_token kills the child, so request_stop()
+// never blocks on a silent process. Defined here (not app.hpp) so the
+// contract header stays pure ISO C++23 with no OS process APIs.
+run_result run_capture_impl(const std::string& command,
+                            const std::stop_token& token)
+{
+    run_result result;
+#ifdef _WIN32
+    // Windows: _popen has no child handle to kill. Poll the token
+    // between reads; a silent child still blocks shutdown there.
+    // Keep commands short-lived (patcher / probe / installer kick).
+    FILE* pipe{_popen(command.c_str(), "r")};
+    if (pipe == nullptr) {
+        result.output = std::format(
+            "error: failed to start the command ({})",
+            std::system_category().message(errno));
+        return result;
+    }
+    std::array<char, 4096> buffer{};
+    while (!token.stop_requested() &&
+           fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
+               nullptr) {
+        result.output += buffer.data();
+    }
+    result.exit_code = _pclose(pipe);
+    return result;
+#else
+    const std::string full{command + " 2>&1"};
+    int out_pipe[2]{-1, -1};
+    if (::pipe(out_pipe) != 0) {
+        result.output = std::format(
+            "error: failed to start the command ({})",
+            std::system_category().message(errno));
+        return result;
+    }
+    const pid_t pid{fork()};
+    if (pid < 0) {
+        const int err{errno};
+        ::close(out_pipe[0]);
+        ::close(out_pipe[1]);
+        result.output = std::format(
+            "error: failed to start the command ({})",
+            std::system_category().message(err));
+        return result;
+    }
+    if (pid == 0) {
+        ::dup2(out_pipe[1], STDOUT_FILENO);
+        ::dup2(out_pipe[1], STDERR_FILENO);
+        ::close(out_pipe[0]);
+        ::close(out_pipe[1]);
+        execl("/bin/sh", "sh", "-c", full.c_str(), nullptr);
+        _exit(127);
+    }
+    ::close(out_pipe[1]);
+    FILE* stream{fdopen(out_pipe[0], "r")};
+    if (stream == nullptr) {
+        ::close(out_pipe[0]);
+        ::kill(pid, SIGKILL);
+        int status{0};
+        while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+        result.exit_code = -1;
+        return result;
+    }
+    std::string captured;
+    std::mutex capture_mutex;
+    bool reader_done{false};
+    std::thread reader{[stream, &captured, &capture_mutex, &reader_done] {
+        std::array<char, 4096> buffer{};
+        while (fgets(buffer.data(), static_cast<int>(buffer.size()),
+                     stream) != nullptr) {
+            const std::lock_guard lock{capture_mutex};
+            captured += buffer.data();
+        }
+        const std::lock_guard lock{capture_mutex};
+        reader_done = true;
+    }};
+    int status{0};
+    int exit_code{-1};
+    while (true) {
+        if (token.stop_requested()) {
+            ::kill(pid, SIGKILL);
+        }
+        const pid_t waited{::waitpid(pid, &status, WNOHANG)};
+        if (waited == pid) {
+            exit_code =
+                WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            break;
+        }
+        if (waited < 0 && errno != EINTR) {
+            ::kill(pid, SIGKILL);
+            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+            }
+            exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    // Closing the stream unblocks the reader; join always terminates.
+    ::fclose(stream);
+    reader.join();
+    const std::lock_guard lock{capture_mutex};
+    result.output = std::move(captured);
+    result.exit_code = exit_code;
+    (void)reader_done;
+    return result;
+#endif
+}
 
 namespace
 {
@@ -30,6 +149,7 @@ struct app final
     platform::context platform;
     app_state state;
     background_runner jobs;
+    bool imgui_ready{false};
 };
 
 void start_command(app& app, const run_kind kind, const std::string& shown,
@@ -222,6 +342,24 @@ void style_once()
     style.GrabMinSize = 14.0F;
 }
 
+void teardown_imgui() noexcept
+{
+    // SDL still calls SDL_AppQuit after SDL_AppInit fails, before any
+    // context exists: guard every backend or ImGui asserts on null
+    // BackendPlatformUserData / BackendRendererUserData.
+    if (ImGui::GetCurrentContext() == nullptr) {
+        return;
+    }
+    const ImGuiIO& io{ImGui::GetIO()};
+    if (io.BackendRendererUserData != nullptr) {
+        ImGui_ImplSDLRenderer3_Shutdown();
+    }
+    if (io.BackendPlatformUserData != nullptr) {
+        ImGui_ImplSDL3_Shutdown();
+    }
+    ImGui::DestroyContext();
+}
+
 } // namespace
 
 } // namespace wemod::gui
@@ -248,6 +386,7 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
     wemod::gui::style_once();
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
+    boxed->imgui_ready = true;
 
     const std::string exe{wemod::gui::platform::exe_dir()};
     boxed->state.install_dir = wemod::gui::platform::default_install_dir();
@@ -301,7 +440,7 @@ SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 SDL_AppResult SDL_AppIterate(void* appstate)
 {
     auto* boxed{static_cast<app*>(appstate)};
-    if (boxed == nullptr) {
+    if (boxed == nullptr || !boxed->imgui_ready) {
         return SDL_APP_FAILURE;
     }
     poll_jobs(*boxed);
@@ -334,9 +473,9 @@ void SDL_AppQuit(void* appstate, SDL_AppResult result)
 {
     (void)result;
     const std::unique_ptr<app> boxed{static_cast<app*>(appstate)};
-    ImGui_ImplSDLRenderer3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
+    if (boxed && boxed->imgui_ready) {
+        teardown_imgui();
+    }
     if (boxed) {
         wemod::gui::platform::persist_log(boxed->state);
         wemod::gui::platform::shutdown(boxed->platform);
