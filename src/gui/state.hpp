@@ -28,6 +28,10 @@ struct app_state final
     std::string log;
     background_runner jobs;
     run_kind kind{run_kind::patcher};
+    // Kind used when the running job completes. Split from `kind` so
+    // probe/WeMod runs never clobber the patcher Done/Failed status
+    // and the bug-report exit code - only patcher results update those.
+    run_kind completion_kind{run_kind::patcher};
     bool scroll_to_bottom{false};
     bool has_run{false};
     std::int32_t last_exit_code{0};
@@ -58,9 +62,12 @@ void probe_filesystem(app_state& state);
 [[nodiscard]] fs::path resolve_wemod_dir(const std::string& dir);
 
 // Launch a background command; `shown` is the exact command line the
-// user sees in the log (no shorthand). No-op while a job runs.
-void start_command(app_state& state, run_kind kind, const std::string& shown,
-                   std::vector<std::string> argv);
+// user sees in the log (no shorthand). `kind` selects the live status
+// line while running, `completion_kind` selects the completion
+// narration - probe/WeMod must not touch patcher status. No-op while
+// a job runs.
+void start_command(app_state& state, run_kind kind, run_kind completion_kind,
+                   const std::string& shown, std::vector<std::string> argv);
 
 // Run the patcher with the current field values.
 void start_run(app_state& state, const char* subcommand);
