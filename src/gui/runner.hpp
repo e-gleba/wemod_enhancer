@@ -8,6 +8,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
@@ -27,6 +28,11 @@ public:
     background_runner() = default;
     background_runner(const background_runner&) = delete;
     background_runner& operator=(const background_runner&) = delete;
+    ~background_runner()
+    {
+        request_stop();
+        join();
+    }
 
     [[nodiscard]] bool running() const noexcept
     {
@@ -35,7 +41,8 @@ public:
     }
 
     // Start `task` on a fresh jthread. Returns false when busy.
-    // Previous thread is joined before replacement (jthread RAII).
+    // The finished thread is joined before replacement (jthread move
+    // assignment over a joinable thread would terminate).
     bool launch(std::function<run_result()> task)
     {
         {
@@ -46,6 +53,7 @@ public:
             active_ = true;
             ready_.reset();
         }
+        join();
         worker_ = std::jthread([this, task = std::move(task)](std::stop_token stop) {
             run_result result = task();
             if (stop.stop_requested()) {
@@ -74,7 +82,16 @@ public:
 
     void request_stop()
     {
-        worker_.request_stop_source().request_stop();
+        if (worker_.joinable()) {
+            worker_.request_stop();
+        }
+    }
+
+    void join()
+    {
+        if (worker_.joinable()) {
+            worker_.join();
+        }
     }
 
 private:
