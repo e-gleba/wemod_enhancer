@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <format>
+#include <string_view>
 
 namespace wemod::gui::view
 {
@@ -76,7 +77,8 @@ void field_label(const char* label)
     ImGui::PopStyleColor();
 }
 
-void help_marker(app_state& state, const char* text, const char* url)
+void help_marker(app_state& state, const std::string_view text,
+                 const std::string_view url)
 {
     ImGui::SameLine();
     text_disabled("(?)");
@@ -84,7 +86,7 @@ void help_marker(app_state& state, const char* text, const char* url)
         tooltip_text(text);
     }
     if (ImGui::IsItemClicked()) {
-        state.want_open_url = url;
+        state.want_open_url = std::string{url};
     }
 }
 
@@ -93,7 +95,7 @@ void push_field_tint(const bool ok)
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ok ? kFieldOk : kFieldErr);
 }
 
-void field_fail_hover(const bool ok, const char* why)
+void field_fail_hover(const bool ok, const std::string_view why)
 {
     if (!ok && ImGui::IsItemHovered()) {
         tooltip_text(why);
@@ -130,7 +132,7 @@ void draw_settings(app_state& state)
     help_marker(state,
                 "wemod_enhancer.py ships next to the executable. Re-download "
                 "the GUI package if the field stays red.",
-                std::string{kReleasesUrl}.c_str());
+                kReleasesUrl);
     push_field_tint(state.script_present);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##script_path",
@@ -146,7 +148,7 @@ void draw_settings(app_state& state)
                 "The interpreter that runs the patcher. Default: python on "
                 "Windows, python3 elsewhere. Point it at a full path if "
                 "Python is not on PATH.",
-                std::string{kPythonUrl}.c_str());
+                kPythonUrl);
     if (state.python_ok == probe_state::works) {
         ImGui::SameLine();
         text_disabled(state.python_version);
@@ -169,7 +171,7 @@ void draw_settings(app_state& state)
     help_marker(state,
                 "The proxy DLL the patcher drops next to WeMod. Default: the "
                 "copy next to the executable.",
-                std::string{kReadmeUrl}.c_str());
+                kReadmeUrl);
     push_field_tint(state.dll_present);
     ImGui::SetNextItemWidth(-FLT_MIN);
     ImGui::InputTextWithHint("##version_dll", "version.dll next to the exe",
@@ -207,7 +209,7 @@ frame_requests draw(app_state& state)
                 "WeMod root and the newest version is used automatically. "
                 "Linux: the wemod-launcher clone works too - after the first "
                 "run + login its wemod_data/wemod_bin is picked up.",
-                std::string{kQuickstartUrl}.c_str());
+                kQuickstartUrl);
 
     const float browse_w{ImGui::CalcTextSize("Browse...").x +
                          (style.FramePadding.x * 2.0F) + kButtonPadding};
@@ -305,7 +307,7 @@ frame_requests draw(app_state& state)
     help_marker(state,
                 "Live stdout and stderr from the patcher, the Python probe, "
                 "and Download WeMod. Copy it below if something fails.",
-                std::string{kIssuesUrl}.c_str());
+                kIssuesUrl);
 
     const float line_h{ImGui::GetTextLineHeightWithSpacing()};
     const float toolbar_h{row_h + line_h + (style.ItemSpacing.y * 3.0F)};
