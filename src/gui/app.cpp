@@ -87,7 +87,7 @@ fs::path newest_app_dir(const fs::path& root)
         candidates, {}, [](const fs::path& path) {
             return version_parts(path.filename().string());
         })};
-    return newest == candidates.end() ? fs::path{} : *newest;
+    return newest == candidates.end() ? fs::path{} : fs::path{*newest};
 }
 
 fs::path resolve_wemod_dir(const std::string_view dir)
@@ -97,7 +97,7 @@ fs::path resolve_wemod_dir(const std::string_view dir)
     }
 
     std::error_code error;
-    const fs::path picked{dir};
+    fs::path picked{dir};
     if (fs::is_regular_file(picked / "resources" / "app.asar", error)) {
         return picked;
     }
@@ -208,7 +208,8 @@ bool background_runner::launch(const run_kind kind, std::string command)
         worker_.join();
     }
     worker_ = std::jthread{
-        [this, kind, command = std::move(command)](std::stop_token token) {
+        [this, kind, command = std::move(command)](
+            const std::stop_token& token) {
             run_result result{run_capture(command, token)};
             const std::lock_guard lock{mutex_};
             if (token.stop_requested()) {

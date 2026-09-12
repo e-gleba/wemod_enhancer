@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -158,7 +159,7 @@ void append_log(app_state& state, std::string_view text);
 [[nodiscard]] std::string issue_url(const app_state& state);
 void parse_probe(app_state& state, std::string_view output);
 [[nodiscard]] run_result run_capture(std::string_view command,
-                                     std::stop_token token);
+                                     const std::stop_token& token);
 
 class background_runner final
 {
@@ -197,7 +198,7 @@ struct context final
 {
     void* window{nullptr};
     void* renderer{nullptr};
-    dialog_result* dialog{nullptr};
+    std::unique_ptr<dialog_result> dialog;
 };
 
 [[nodiscard]] std::pair<std::int32_t, std::int32_t>

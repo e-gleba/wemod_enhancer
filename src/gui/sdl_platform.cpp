@@ -7,6 +7,7 @@
 #include <gsl/narrow>
 
 #include <algorithm>
+#include <format>
 #include <system_error>
 
 namespace wemod::gui::platform
@@ -27,8 +28,17 @@ struct sdl_string final
     explicit sdl_string(char* owned) noexcept : value{owned} {}
     sdl_string(const sdl_string&) = delete;
     sdl_string& operator=(const sdl_string&) = delete;
+    sdl_string(sdl_string&&) = delete;
+    sdl_string& operator=(sdl_string&&) = delete;
     ~sdl_string() noexcept { SDL_free(value); }
 };
+
+void log_message(const std::string_view message) noexcept
+{
+    const std::string text{message};
+    SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_ERROR, "%s",
+                   text.c_str()); // NOLINT(cppcoreguidelines-pro-type-vararg)
+}
 
 void message_box(SDL_Window* window, const SDL_MessageBoxFlags flags,
                  const std::string_view title,
@@ -38,13 +48,15 @@ void message_box(SDL_Window* window, const SDL_MessageBoxFlags flags,
     const std::string message_text{message};
     if (!SDL_ShowSimpleMessageBox(flags, title_text.c_str(),
                                   message_text.c_str(), window)) {
-        SDL_Log("SDL_ShowSimpleMessageBox: %s", SDL_GetError());
+        log_message(std::format("SDL_ShowSimpleMessageBox: {}",
+                                SDL_GetError()));
     }
 }
 
 void SDLCALL on_folder(void* userdata, const char* const* file_list,
-                       int) noexcept
+                       int filter) noexcept
 {
+    (void)filter;
     auto* result{static_cast<dialog_result*>(userdata)};
     if (result == nullptr) {
         return;
@@ -67,8 +79,7 @@ void SDLCALL on_folder(void* userdata, const char* const* file_list,
 
 void log_error(const std::string_view operation) noexcept
 {
-    const std::string name{operation};
-    SDL_Log("%s: %s", name.c_str(), SDL_GetError());
+    log_message(std::format("{}: {}", operation, SDL_GetError()));
 }
 }
 
@@ -141,7 +152,7 @@ try {
 
     ctx.window = window;
     ctx.renderer = renderer;
-    ctx.dialog = new dialog_result{};
+    ctx.dialog = std::make_unique<dialog_result>();
 
     if (!SDL_SetWindowMinimumSize(window, window_min_width,
                                   window_min_height)) {
@@ -192,8 +203,8 @@ try {
             }
         }
         if (open) {
-            SDL_ShowOpenFolderDialog(on_folder, ctx.dialog, handles.window,
-                                     nullptr, false);
+            SDL_ShowOpenFolderDialog(on_folder, ctx.dialog.get(),
+                                     handles.window, nullptr, false);
         }
     }
     if (state.want_open_url) {
@@ -219,9 +230,9 @@ try {
                     alert.message);
     }
 } catch (const std::exception& error) {
-    SDL_Log("drain_outbox: %s", error.what());
+    log_message(std::format("drain_outbox: {}", error.what()));
 } catch (...) {
-    SDL_Log("drain_outbox: unknown error");
+    log_message("drain_outbox: unknown error");
 }
 
 void begin_frame(context& ctx, const float scale_x, const float scale_y,
@@ -252,6 +263,7 @@ void end_frame(context& ctx) noexcept
 
 void shutdown(context& ctx) noexcept
 {
+    ctx.dialog.reset();
     if (ctx.renderer != nullptr) {
         SDL_DestroyRenderer(static_cast<SDL_Renderer*>(ctx.renderer));
         ctx.renderer = nullptr;
@@ -267,9 +279,7 @@ void fatal(const std::string_view title,
            const std::string_view message) noexcept
 {
     message_box(nullptr, SDL_MESSAGEBOX_ERROR, title, message);
-    const std::string title_text{title};
-    const std::string message_text{message};
-    SDL_Log("%s: %s", title_text.c_str(), message_text.c_str());
+    log_message(std::format("{}: {}", title, message));
 }
 
 void persist_log(const app_state& state) noexcept
@@ -291,8 +301,8 @@ try {
         log_error("SDL_CloseIO");
     }
 } catch (const std::exception& error) {
-    SDL_Log("persist_log: %s", error.what());
+    log_message(std::format("persist_log: {}", error.what()));
 } catch (...) {
-    SDL_Log("persist_log: unknown error");
+    log_message("persist_log: unknown error");
 }
 }
