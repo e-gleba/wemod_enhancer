@@ -1,6 +1,6 @@
-add_executable(wemod_enhancer_gui WIN32 MACOSX_BUNDLE main.cpp
-                                                 sdl_platform.cpp
-                                                 imgui_view.cpp app.hpp)
+add_executable(
+    wemod_enhancer_gui WIN32 MACOSX_BUNDLE main.cpp app.cpp sdl_platform.cpp
+    imgui_view.cpp app.hpp platform.hpp)
 
 target_link_libraries(wemod_enhancer_gui PRIVATE imgui::sdl3_renderer
                                                  Microsoft.GSL::GSL)
@@ -28,5 +28,4 @@ endif()
 install(
     TARGETS wemod_enhancer_gui
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    BUNDLE DESTINATION . # required because MACOSX_BUNDLE is TRUE
-)
+    BUNDLE DESTINATION .)

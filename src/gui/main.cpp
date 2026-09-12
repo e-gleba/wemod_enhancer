@@ -1,9 +1,5 @@
-// WeMod Enhancer - composition root (the ONLY file that knows both
-// SDL3 and Dear ImGui). Wires platform:: + view:: through app.hpp:
-// one frame = poll background jobs, draw view, execute frame_requests,
-// drain SDL outbox, present.
-
 #include "app.hpp"
+#include "platform.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -12,14 +8,23 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_sdlrenderer3.h>
 
+#include <gsl/assert>
+#include <gsl/pointers>
+
 #include <array>
-#include <cstdio>
+#include <format>
 #include <memory>
 #include <string>
 #include <system_error>
 
-#ifndef _WIN32
-#include <signal.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+#else
+#include <cerrno>
+#include <csignal>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -27,122 +32,10 @@
 
 namespace wemod::gui
 {
-
-// Killable capture: the ONLY popen/pclose site. A reader thread feeds
-// the pipe into a mutex-guarded string while the owner polls
-// waitpid(WNOHANG); stop_token kills the child, so request_stop()
-// never blocks on a silent process. Defined here (not app.hpp) so the
-// contract header stays pure ISO C++23 with no OS process APIs.
-run_result run_capture_impl(const std::string& command,
-                            const std::stop_token& token)
-{
-    run_result result;
-#ifdef _WIN32
-    // Windows: _popen has no child handle to kill. Poll the token
-    // between reads; a silent child still blocks shutdown there.
-    // Keep commands short-lived (patcher / probe / installer kick).
-    FILE* pipe{_popen(command.c_str(), "r")};
-    if (pipe == nullptr) {
-        result.output = std::format(
-            "error: failed to start the command ({})",
-            std::system_category().message(errno));
-        return result;
-    }
-    std::array<char, 4096> buffer{};
-    while (!token.stop_requested() &&
-           fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) !=
-               nullptr) {
-        result.output += buffer.data();
-    }
-    result.exit_code = _pclose(pipe);
-    return result;
-#else
-    const std::string full{command + " 2>&1"};
-    int out_pipe[2]{-1, -1};
-    if (::pipe(out_pipe) != 0) {
-        result.output = std::format(
-            "error: failed to start the command ({})",
-            std::system_category().message(errno));
-        return result;
-    }
-    const pid_t pid{fork()};
-    if (pid < 0) {
-        const int err{errno};
-        ::close(out_pipe[0]);
-        ::close(out_pipe[1]);
-        result.output = std::format(
-            "error: failed to start the command ({})",
-            std::system_category().message(err));
-        return result;
-    }
-    if (pid == 0) {
-        ::dup2(out_pipe[1], STDOUT_FILENO);
-        ::dup2(out_pipe[1], STDERR_FILENO);
-        ::close(out_pipe[0]);
-        ::close(out_pipe[1]);
-        execl("/bin/sh", "sh", "-c", full.c_str(), nullptr);
-        _exit(127);
-    }
-    ::close(out_pipe[1]);
-    FILE* stream{fdopen(out_pipe[0], "r")};
-    if (stream == nullptr) {
-        ::close(out_pipe[0]);
-        ::kill(pid, SIGKILL);
-        int status{0};
-        while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
-        }
-        result.exit_code = -1;
-        return result;
-    }
-    std::string captured;
-    std::mutex capture_mutex;
-    bool reader_done{false};
-    std::thread reader{[stream, &captured, &capture_mutex, &reader_done] {
-        std::array<char, 4096> buffer{};
-        while (fgets(buffer.data(), static_cast<int>(buffer.size()),
-                     stream) != nullptr) {
-            const std::lock_guard lock{capture_mutex};
-            captured += buffer.data();
-        }
-        const std::lock_guard lock{capture_mutex};
-        reader_done = true;
-    }};
-    int status{0};
-    int exit_code{-1};
-    while (true) {
-        if (token.stop_requested()) {
-            ::kill(pid, SIGKILL);
-        }
-        const pid_t waited{::waitpid(pid, &status, WNOHANG)};
-        if (waited == pid) {
-            exit_code =
-                WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            break;
-        }
-        if (waited < 0 && errno != EINTR) {
-            ::kill(pid, SIGKILL);
-            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
-            }
-            exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-            break;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    // Closing the stream unblocks the reader; join always terminates.
-    ::fclose(stream);
-    reader.join();
-    const std::lock_guard lock{capture_mutex};
-    result.output = std::move(captured);
-    result.exit_code = exit_code;
-    (void)reader_done;
-    return result;
-#endif
-}
-
 namespace
 {
-
-constexpr std::array<float, 4> kClearColor{0.10F, 0.10F, 0.12F, 1.00F};
+constexpr std::array<float, 4> clear_color{0.10F, 0.10F, 0.12F, 1.00F};
+constexpr auto process_poll_interval{std::chrono::milliseconds{10}};
 
 struct app final
 {
@@ -152,201 +45,180 @@ struct app final
     bool imgui_ready{false};
 };
 
-void start_command(app& app, const run_kind kind, const std::string& shown,
-                   const std::string& command)
+void start_command(app& value, const run_kind kind,
+                   const std::string_view shown, std::string command)
 {
-    if (command.empty() || shown.empty() || app.jobs.busy()) {
+    Expects(!shown.empty());
+    Expects(!command.empty());
+    if (value.jobs.busy()) {
         return;
     }
-    append_log(app.state, "$ " + shown + "\n");
-    app.state.kind = kind;
-    app.state.running = true;
-    if (kind == run_kind::patcher) {
-        app.state.has_run = true;
+    if (!value.jobs.launch(kind, std::move(command))) {
+        return;
     }
-    app.jobs.launch(kind, shown, command);
+    append_log(value.state, std::format("$ {}\n", shown));
+    value.state.kind = kind;
+    value.state.running = true;
+    value.state.has_run |= kind == run_kind::patcher;
 }
 
-void start_run(app& app, const std::string_view subcommand)
+void start_run(app& value, const std::string_view subcommand)
 {
-    if (subcommand != "patch" && subcommand != "restore") {
-        return;
-    }
-    const std::string sub{subcommand};
+    Expects(subcommand == "patch" || subcommand == "restore");
     std::string shown{std::format("{} -u {} {} --install-dir {}",
-                                  app.state.python, app.state.script_path, sub,
-                                  app.state.install_dir)};
-    std::string command{std::format("{} -u {} {} --install-dir {}",
-                                    shell_quote(app.state.python),
-                                    shell_quote(app.state.script_path), sub,
-                                    shell_quote(app.state.install_dir))};
-    if (subcommand == "patch" && !app.state.version_dll.empty()) {
-        shown += std::format(" --version-dll {}", app.state.version_dll);
-        command +=
-            std::format(" --version-dll {}", shell_quote(app.state.version_dll));
+                                  value.state.python, value.state.script_path,
+                                  subcommand, value.state.install_dir)};
+    std::string command{std::format(
+        "{} -u {} {} --install-dir {}", shell_quote(value.state.python),
+        shell_quote(value.state.script_path), subcommand,
+        shell_quote(value.state.install_dir))};
+    if (subcommand == "patch" && !value.state.version_dll.empty()) {
+        shown += std::format(" --version-dll {}", value.state.version_dll);
+        command += std::format(" --version-dll {}",
+                               shell_quote(value.state.version_dll));
     }
-    start_command(app, run_kind::patcher, shown, command);
+    start_command(value, run_kind::patcher, shown, std::move(command));
 }
 
-void start_wemod_download(app& app)
+void start_wemod_download(app& value)
 {
-    if constexpr (kIsWindows) {
+    if constexpr (is_windows) {
         const char* downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
         if (downloads == nullptr) {
-            SDL_Log("SDL_GetUserFolder: %s", SDL_GetError());
+            value.state.want_alert =
+                alert_request{"Cannot download", SDL_GetError()};
             return;
         }
-        const fs::path installer{fs::path(downloads) / "wemod_setup.exe"};
+        const fs::path installer{fs::path{downloads} / "wemod_setup.exe"};
         const std::string command{std::format(
             "powershell -NoProfile -ExecutionPolicy Bypass -Command "
             "\"$ProgressPreference='SilentlyContinue'; Invoke-WebRequest "
             "-Uri '{}' -OutFile '{}'; Start-Process '{}'\"",
-            kInstallerUrl, installer.string(), installer.string())};
-        start_command(app, run_kind::wemod, command, command);
+            installer_url, installer.string(), installer.string())};
+        start_command(value, run_kind::wemod, command, command);
     } else {
         const char* home{
             SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
         if (home == nullptr) {
-            append_log(app.state, "error: HOME is not set - cannot clone "
-                                  "wemod-launcher.\n\n");
-            app.state.want_alert =
-                alert_request{"Cannot download",
-                              "HOME is not set - cannot clone wemod-launcher."};
+            value.state.want_alert =
+                alert_request{"Cannot download", "HOME is not set."};
             return;
         }
-        const fs::path dir{fs::path(home) / "wemod-launcher"};
-        std::error_code ec;
-        if (fs::is_directory(dir, ec)) {
-            app.state.install_dir = dir.string();
-            append_log(app.state,
-                       "wemod-launcher already cloned: " + dir.string() +
-                           "\n  run it once and log in - wemod_data/wemod_bin "
-                           "appears after login, this field resolves to "
-                           "it.\n\n");
-            app.state.scroll_to_bottom = true;
+        const fs::path directory{fs::path{home} / "wemod-launcher"};
+        std::error_code error;
+        if (fs::is_directory(directory, error)) {
+            value.state.install_dir = directory.string();
+            append_log(value.state,
+                       std::format("wemod-launcher already cloned: {}\n\n",
+                                   directory.string()));
+            value.state.scroll_to_bottom = true;
             return;
         }
-        app.state.want_open_url = std::string{kLauncherGuideUrl};
+        value.state.want_open_url = std::string{launcher_guide_url};
         const std::string command{std::format("git clone {} {}",
-                                              kLauncherCloneUrl,
-                                              shell_quote(dir.string()))};
-        start_command(app, run_kind::wemod, command, command);
+                                              launcher_clone_url,
+                                              shell_quote(directory.string()))};
+        start_command(value, run_kind::wemod, command, command);
     }
 }
 
-void start_probe(app& app)
+void start_probe(app& value)
 {
     constexpr std::string_view probe{
         "import sys,platform;print(sys.version.split()[0]);"
         "print(platform.platform())"};
     const std::string shown{
-        std::format("{} -c \"{}\"", app.state.python, probe)};
-    start_command(app, run_kind::probe, shown,
-                  std::format("{} -c \"{}\"", shell_quote(app.state.python),
-                              probe));
+        std::format("{} -c \"{}\"", value.state.python, probe)};
+    start_command(value, run_kind::probe, shown,
+                  std::format("{} -c \"{}\"",
+                              shell_quote(value.state.python), probe));
 }
 
-void poll_jobs(app& app)
+void poll_jobs(app& value)
 {
-    while (auto finished{app.jobs.poll()}) {
-        const run_result& result{finished->result};
-        append_log(app.state, result.output);
-        if (!result.output.empty() && !result.output.ends_with('\n')) {
-            append_log(app.state, "\n");
+    while (auto finished{value.jobs.poll()}) {
+        append_log(value.state, finished->result.output);
+        if (!finished->result.output.empty() &&
+            !finished->result.output.ends_with('\n')) {
+            append_log(value.state, "\n");
         }
-        append_log(app.state,
-                   std::format("[exit code: {}]\n\n", result.exit_code));
-        app.state.last_exit_code = result.exit_code;
-        app.state.scroll_to_bottom = true;
-        switch (finished->kind) {
-        case run_kind::wemod:
-            if (result.exit_code != 0) {
-                append_log(app.state,
-                           kIsWindows
-                               ? "error: could not download the WeMod "
-                                 "installer.\n  fix: check the network "
-                                 "connection, then retry - or grab it from "
-                                 "https://www.wemod.com/download\n\n"
-                               : "error: could not clone wemod-launcher.\n"
-                                 "  fix: check the network connection and "
-                                 "that git is installed, then retry.\n\n");
-                break;
-            }
-            if constexpr (kIsWindows) {
-                append_log(app.state,
-                           "WeMod installer downloaded and started.\n"
-                           "  next: install, run WeMod once, log in - then "
-                           "this app auto-detects the folder.\n\n");
-            } else {
-                if (const char* home{SDL_GetEnvironmentVariable(
-                        SDL_GetEnvironment(), "HOME")}) {
-                    app.state.install_dir =
-                        (fs::path(home) / "wemod-launcher").string();
-                }
-                append_log(app.state,
-                           "wemod-launcher cloned (tutorial opened in your "
-                           "browser).\n"
-                           "  next: run it once and log in - "
-                           "wemod_data/wemod_bin appears after login, the "
-                           "folder field resolves to it.\n\n");
-            }
-            break;
-        case run_kind::probe:
-            app.state.python_ok = result.exit_code == 0 ? probe_state::works
-                                                        : probe_state::failed;
-            parse_probe(app.state, result.output);
-            break;
-        case run_kind::patcher:
-            if (result.exit_code != 0) {
-                append_log(app.state,
-                           "hint: close WeMod fully, then retry. If it still "
-                           "fails, press Report bug below - the issue opens "
-                           "pre-filled with this log.\n\n");
-            }
-            break;
+        append_log(value.state,
+                   std::format("[exit code: {}]\n\n",
+                               finished->result.exit_code));
+        value.state.last_exit_code = finished->result.exit_code;
+        value.state.scroll_to_bottom = true;
+
+        if (finished->kind == run_kind::probe) {
+            value.state.python_ok = finished->result.exit_code == 0
+                ? probe_state::works
+                : probe_state::failed;
+            parse_probe(value.state, finished->result.output);
+        } else if (finished->kind == run_kind::patcher &&
+                   finished->result.exit_code != 0) {
+            append_log(value.state,
+                       "hint: close WeMod fully, then retry. If it still "
+                       "fails, press Report bug.\n\n");
         }
     }
-    app.state.running = app.jobs.busy();
+    value.state.running = value.jobs.busy();
 }
 
-void execute(app& app, const frame_requests& req)
+void execute(app& value, const frame_requests& requests)
 {
-    if (req.patch) {
-        start_run(app, "patch");
-    } else if (req.restore) {
-        start_run(app, "restore");
+    if (requests.patch) {
+        start_run(value, "patch");
+    } else if (requests.restore) {
+        start_run(value, "restore");
+    } else if (requests.download) {
+        start_wemod_download(value);
     }
-    if (req.download) {
-        start_wemod_download(app);
+    if (requests.copy) {
+        value.state.want_clipboard =
+            std::format("{}\n{}", value.state.log, env_info(value.state));
     }
-    if (req.copy) {
-        app.state.want_clipboard = app.state.log + "\n" + env_info(app.state);
+    if (requests.clear) {
+        value.state.log.clear();
+        value.state.copied_flash = 0.0F;
     }
-    if (req.clear) {
-        app.state.log.clear();
-        app.state.copied_flash = 0.0F;
-    }
-    if (req.report) {
-        app.state.want_open_url = issue_url(app.state);
+    if (requests.report) {
+        value.state.want_open_url = issue_url(value.state);
     }
 }
 
-void style_once()
+void configure_imgui()
 {
     ImGuiStyle& style{ImGui::GetStyle()};
-    style.WindowPadding = ImVec2(16.0F, 14.0F);
-    style.FramePadding = ImVec2(14.0F, 8.0F);
-    style.ItemSpacing = ImVec2(10.0F, 8.0F);
-    style.ItemInnerSpacing = ImVec2(8.0F, 6.0F);
+    style.WindowPadding = ImVec2{16.0F, 14.0F};
+    style.FramePadding = ImVec2{14.0F, 8.0F};
+    style.ItemSpacing = ImVec2{10.0F, 8.0F};
+    style.ItemInnerSpacing = ImVec2{8.0F, 6.0F};
     style.ScrollbarSize = 16.0F;
     style.GrabMinSize = 14.0F;
 }
 
-void teardown_imgui() noexcept
+[[nodiscard]] bool init_imgui(const platform::context& context) noexcept
 {
-    // SDL still calls SDL_AppQuit after SDL_AppInit fails, before any
-    // context exists: guard every backend or ImGui asserts on null
-    // BackendPlatformUserData / BackendRendererUserData.
+    const platform::native_context handles{platform::native(context)};
+    Expects(handles.window != nullptr);
+    Expects(handles.renderer != nullptr);
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+    configure_imgui();
+    if (!ImGui_ImplSDL3_InitForSDLRenderer(handles.window, handles.renderer)) {
+        ImGui::DestroyContext();
+        return false;
+    }
+    if (!ImGui_ImplSDLRenderer3_Init(handles.renderer)) {
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext();
+        return false;
+    }
+    return true;
+}
+
+void shutdown_imgui() noexcept
+{
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
@@ -359,128 +231,237 @@ void teardown_imgui() noexcept
     }
     ImGui::DestroyContext();
 }
+}
 
-} // namespace
+run_result run_capture(const std::string_view command,
+                       const std::stop_token token)
+{
+    Expects(!command.empty());
+    run_result result;
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES attributes{sizeof(attributes), nullptr, TRUE};
+    HANDLE read_handle{nullptr};
+    HANDLE write_handle{nullptr};
+    if (!CreatePipe(&read_handle, &write_handle, &attributes, 0)) {
+        result.output = "error: CreatePipe failed";
+        return result;
+    }
+    SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = write_handle;
+    startup.hStdError = write_handle;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    PROCESS_INFORMATION process{};
+    std::string command_line{"cmd.exe /d /s /c "};
+    command_line += command;
+    if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE,
+                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr,
+                        nullptr, &startup, &process)) {
+        CloseHandle(read_handle);
+        CloseHandle(write_handle);
+        result.output = "error: CreateProcess failed";
+        return result;
+    }
+    CloseHandle(write_handle);
+
+    std::array<char, 4096> buffer{};
+    while (true) {
+        if (token.stop_requested()) {
+            TerminateProcess(process.hProcess, 1);
+        }
+        DWORD available{0};
+        if (!PeekNamedPipe(read_handle, nullptr, 0, nullptr, &available,
+                           nullptr)) {
+            break;
+        }
+        while (available != 0) {
+            DWORD read{0};
+            const DWORD requested{std::min<DWORD>(
+                available, gsl::narrow<DWORD>(buffer.size()))};
+            if (!ReadFile(read_handle, buffer.data(), requested, &read,
+                          nullptr) ||
+                read == 0) {
+                available = 0;
+                break;
+            }
+            result.output.append(buffer.data(), read);
+            available -= read;
+        }
+        const DWORD status{
+            WaitForSingleObject(process.hProcess,
+                                gsl::narrow<DWORD>(process_poll_interval.count()))};
+        if (status == WAIT_OBJECT_0) {
+            break;
+        }
+    }
+    DWORD exit_code{1};
+    GetExitCodeProcess(process.hProcess, &exit_code);
+    result.exit_code = gsl::narrow<std::int32_t>(exit_code);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    CloseHandle(read_handle);
+#else
+    int output[2]{-1, -1};
+    if (::pipe2(output, O_CLOEXEC | O_NONBLOCK) != 0) {
+        result.output = std::format("error: pipe2 failed ({})", errno);
+        return result;
+    }
+    const pid_t pid{::fork()};
+    if (pid < 0) {
+        ::close(output[0]);
+        ::close(output[1]);
+        result.output = std::format("error: fork failed ({})", errno);
+        return result;
+    }
+    if (pid == 0) {
+        ::dup2(output[1], STDOUT_FILENO);
+        ::dup2(output[1], STDERR_FILENO);
+        ::close(output[0]);
+        ::close(output[1]);
+        const std::string command_text{command};
+        ::execl("/bin/sh", "sh", "-c", command_text.c_str(), nullptr);
+        ::_exit(127);
+    }
+
+    ::close(output[1]);
+    std::array<char, 4096> buffer{};
+    int status{0};
+    while (true) {
+        const ssize_t count{::read(output[0], buffer.data(), buffer.size())};
+        if (count > 0) {
+            result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
+        }
+        if (token.stop_requested()) {
+            ::kill(pid, SIGKILL);
+        }
+        const pid_t waited{::waitpid(pid, &status, WNOHANG)};
+        if (waited == pid) {
+            break;
+        }
+        if (waited < 0 && errno != EINTR) {
+            ::kill(pid, SIGKILL);
+            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+            }
+            break;
+        }
+        std::this_thread::sleep_for(process_poll_interval);
+    }
+    while (true) {
+        const ssize_t count{::read(output[0], buffer.data(), buffer.size())};
+        if (count <= 0) {
+            break;
+        }
+        result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
+    }
+    ::close(output[0]);
+    result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
+    return result;
+}
 
 } // namespace wemod::gui
 
 using wemod::gui::app;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
-{
+try {
     (void)argc;
     (void)argv;
-    if (appstate == nullptr) {
+    Expects(appstate != nullptr);
+    auto value{std::make_unique<app>()};
+    if (!wemod::gui::platform::init(value->platform, value->state) ||
+        !wemod::gui::init_imgui(value->platform)) {
         return SDL_APP_FAILURE;
     }
-    auto boxed{std::make_unique<app>()};
-    if (!wemod::gui::platform::init(boxed->platform, boxed->state)) {
-        return SDL_APP_FAILURE;
-    }
-    auto* window = static_cast<SDL_Window*>(boxed->platform.window);
-    auto* renderer = static_cast<SDL_Renderer*>(boxed->platform.renderer);
+    value->imgui_ready = true;
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsDark();
-    wemod::gui::style_once();
-    ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
-    ImGui_ImplSDLRenderer3_Init(renderer);
-    boxed->imgui_ready = true;
+    const std::string directory{wemod::gui::platform::exe_dir()};
+    value->state.install_dir =
+        wemod::gui::platform::default_install_dir();
+    value->state.script_path =
+        (wemod::gui::fs::path{directory} / wemod::gui::patcher_name).string();
+    value->state.version_dll =
+        (wemod::gui::fs::path{directory} / wemod::gui::version_dll_name)
+            .string();
 
-    const std::string exe{wemod::gui::platform::exe_dir()};
-    boxed->state.install_dir = wemod::gui::platform::default_install_dir();
-    boxed->state.script_path =
-        (wemod::gui::fs::path(exe) / wemod::gui::kPatcherName).string();
-    boxed->state.version_dll =
-        (wemod::gui::fs::path(exe) / wemod::gui::kVersionDllName).string();
-    boxed->state.python = std::string{wemod::gui::kDefaultPython};
-
-    if (const auto detected{wemod::gui::resolve_wemod_dir(
-                boxed->state.install_dir)};
+    if (const wemod::gui::fs::path detected{
+            wemod::gui::resolve_wemod_dir(value->state.install_dir)};
         !detected.empty()) {
-        boxed->state.install_dir = detected.string();
+        value->state.install_dir = detected.string();
         wemod::gui::append_log(
-            boxed->state,
-            "auto-detected WeMod install: " + boxed->state.install_dir +
-                "\n\n");
+            value->state,
+            std::format("auto-detected WeMod install: {}\n\n",
+                        value->state.install_dir));
     }
-    if (std::error_code ec;
-        wemod::gui::fs::is_regular_file(boxed->state.script_path, ec)) {
-        wemod::gui::append_log(
-            boxed->state,
-            "using bundled patcher: " + boxed->state.script_path + "\n\n");
-    } else {
-        wemod::gui::append_log(
-            boxed->state,
-            "error: wemod_enhancer.py is missing next to the exe:\n  " +
-                boxed->state.script_path +
-                "\n  fix: re-download the GUI package from the GitHub "
-                "releases and unpack the whole folder - it is "
-                "self-contained.\n\n");
-    }
-    start_probe(*boxed);
-    *appstate = boxed.release();
+    wemod::gui::start_probe(*value);
+    *appstate = value.release();
     return SDL_APP_CONTINUE;
+} catch (const std::exception& error) {
+    wemod::gui::platform::fatal("Initialization failed", error.what());
+    return SDL_APP_FAILURE;
+} catch (...) {
+    wemod::gui::platform::fatal("Initialization failed", "Unknown error");
+    return SDL_APP_FAILURE;
 }
 
-SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) noexcept
 {
-    if (event == nullptr) {
-        return SDL_APP_CONTINUE;
+    Expects(event != nullptr);
+    if (appstate != nullptr) {
+        ImGui_ImplSDL3_ProcessEvent(event);
     }
-    ImGui_ImplSDL3_ProcessEvent(event);
-    if (event->type == SDL_EVENT_QUIT) {
-        return SDL_APP_SUCCESS;
-    }
-    (void)appstate;
-    return SDL_APP_CONTINUE;
+    return event->type == SDL_EVENT_QUIT ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppIterate(void* appstate)
-{
-    auto* boxed{static_cast<app*>(appstate)};
-    if (boxed == nullptr || !boxed->imgui_ready) {
+try {
+    gsl::not_null value{static_cast<app*>(appstate)};
+    if (!value->imgui_ready) {
         return SDL_APP_FAILURE;
     }
-    poll_jobs(*boxed);
-
+    wemod::gui::poll_jobs(*value);
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    const wemod::gui::frame_requests req{
-        wemod::gui::view::draw(boxed->state)};
-    execute(*boxed, req);
+    const wemod::gui::frame_requests requests{
+        wemod::gui::view::draw(value->state)};
+    wemod::gui::execute(*value, requests);
     ImGui::Render();
 
-    // Single DPI knob: map imgui window coords onto the
-    // HIGH_PIXEL_DENSITY framebuffer. Never also bake FontScaleDpi /
-    // ScaleAllSizes to the display scale (double-counts, ~2x too big).
     const ImGuiIO& io{ImGui::GetIO()};
-    wemod::gui::platform::drain_outbox(boxed->platform, boxed->state,
+    wemod::gui::platform::drain_outbox(value->platform, value->state,
                                        io.DeltaTime);
-    wemod::gui::platform::begin_frame(boxed->platform,
-                                      io.DisplayFramebufferScale.x,
-                                      io.DisplayFramebufferScale.y, kClearColor);
-    ImGui_ImplSDLRenderer3_RenderDrawData(
-        ImGui::GetDrawData(),
-        static_cast<SDL_Renderer*>(boxed->platform.renderer));
-    wemod::gui::platform::end_frame(boxed->platform);
+    wemod::gui::platform::begin_frame(
+        value->platform, io.DisplayFramebufferScale.x,
+        io.DisplayFramebufferScale.y, wemod::gui::clear_color);
+    const wemod::gui::platform::native_context handles{
+        wemod::gui::platform::native(value->platform)};
+    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),
+                                          handles.renderer);
+    wemod::gui::platform::end_frame(value->platform);
     return SDL_APP_CONTINUE;
+} catch (const std::exception& error) {
+    wemod::gui::platform::fatal("Frame failed", error.what());
+    return SDL_APP_FAILURE;
+} catch (...) {
+    wemod::gui::platform::fatal("Frame failed", "Unknown error");
+    return SDL_APP_FAILURE;
 }
 
-void SDL_AppQuit(void* appstate, SDL_AppResult result)
+void SDL_AppQuit(void* appstate, SDL_AppResult result) noexcept
 {
     (void)result;
-    const std::unique_ptr<app> boxed{static_cast<app*>(appstate)};
-    if (boxed && boxed->imgui_ready) {
-        teardown_imgui();
+    std::unique_ptr<app> value{static_cast<app*>(appstate)};
+    if (!value) {
+        return;
     }
-    if (boxed) {
-        wemod::gui::platform::persist_log(boxed->state);
-        wemod::gui::platform::shutdown(boxed->platform);
-    } else {
-        wemod::gui::platform::context empty;
-        wemod::gui::platform::shutdown(empty);
+    value->jobs.request_stop();
+    wemod::gui::platform::persist_log(value->state);
+    if (value->imgui_ready) {
+        wemod::gui::shutdown_imgui();
     }
+    wemod::gui::platform::shutdown(value->platform);
 }
