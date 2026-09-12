@@ -1,28 +1,28 @@
 #pragma once
 // WeMod Enhancer - GUI contract (pure C++23, no SDL / no ImGui).
 //
-// This is the ONLY channel between the SDL3 platform side and the
-// Dear ImGui view side. Neither side includes the other API:
+// The ONLY channel between the SDL3 platform side and the Dear ImGui
+// view side. Neither side includes the other API:
 //   - sdl_platform.cpp includes <SDL3/SDL.h> + this header.
-//   - imgui_view.cpp  includes <imgui.h>       + this header.
-//   - main.cpp        wires both through the outbox below.
+//   - imgui_view.cpp  includes <imgui.h>      + this header.
+//   - main.cpp        wires both (composition root, may know both).
 //
 // Communication is data, not calls:
-//   view  reads app_state, sets outbox requests (browse, open_url,
-//         clipboard, alert).
-//   main  drains the outbox via platform:: services each frame.
+//   view  reads app_state, writes frame_requests + outbox.
+//   main  executes requests via platform:: services + background_runner.
 //   jobs  run on a std::jthread worker, polled without blocking.
 //
-// C++23: std::format, std::ranges/views, std::expected-free error
-// paths (empty path / nullopt), chrono, jthread + stop_token.
+// C++23: std::format, std::ranges, std::jthread + std::stop_token,
+// chrono, filesystem with error_code, string_view.
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <charconv>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -36,6 +36,10 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+#include <sys/wait.h> // WIFEXITED / WEXITSTATUS for pclose()
+#endif
 
 #ifndef WEMOD_ENHANCER_GUI_VERSION
 #define WEMOD_ENHANCER_GUI_VERSION "0.0.0"
@@ -56,6 +60,15 @@ constexpr std::string_view kLauncherCloneUrl{
 constexpr std::string_view kLauncherGuideUrl{
     "https://deckcheatz.com/wemod-on-linux-full-guide/"};
 constexpr std::string_view kIssueNewUrl{
+    "https://github.com/e-gleba/wemod_enhancer/issues/new"};
+constexpr std::string_view kReleasesUrl{
+    "https://github.com/e-gleba/wemod_enhancer/releases/latest"};
+constexpr std::string_view kQuickstartUrl{
+    "https://github.com/e-gleba/wemod_enhancer#quick-start"};
+constexpr std::string_view kReadmeUrl{
+    "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer"};
+constexpr std::string_view kPythonUrl{"https://www.python.org/downloads/"};
+constexpr std::string_view kIssuesUrl{
     "https://github.com/e-gleba/wemod_enhancer/issues/new"};
 
 #ifdef _WIN32
@@ -109,7 +122,7 @@ struct alert_request final
     std::string message;
 };
 
-// Everything the view needs. No SDL_Window*, no ImGui types.
+// Everything the view needs. No SDL / ImGui types.
 struct app_state final
 {
     std::string install_dir;
@@ -123,7 +136,6 @@ struct app_state final
     bool has_run{false};
     std::int32_t last_exit_code{0};
     float copied_flash{0.0F};
-    // probe cache
     std::string probed_install_dir;
     std::string probed_script_path;
     std::string probed_version_dll;
@@ -131,17 +143,27 @@ struct app_state final
     bool script_present{false};
     bool dll_present{false};
     std::chrono::steady_clock::time_point last_probe{};
-    // diagnostics
     probe_state python_ok{probe_state::unknown};
     std::string python_version;
     std::string platform_detail;
     std::string platform_name;
     std::string exe_dir_text;
-    // outbox: view writes, platform drains (main calls drain).
+    // outbox: view writes, platform drains.
     bool want_browse{false};
     std::optional<std::string> want_open_url;
     std::optional<std::string> want_clipboard;
     std::optional<alert_request> want_alert;
+};
+
+// One frame of view intents. Main executes them after draw.
+struct frame_requests final
+{
+    bool patch{false};
+    bool restore{false};
+    bool download{false};
+    bool copy{false};
+    bool clear{false};
+    bool report{false};
 };
 
 // --- pure logic (std only, ranges + format) ---------------------------
@@ -362,7 +384,7 @@ inline void parse_probe(app_state& state, const std::string& output)
 }
 
 // --- background jobs on std::jthread (no detached threads) ------------
-// Single worker: launch() replaces nothing while busy; poll() is
+// Single worker: launch() is a no-op while busy; poll() is
 // non-blocking and called once per frame from main.
 class background_runner final
 {
@@ -372,23 +394,35 @@ class background_runner final
     background_runner& operator=(const background_runner&) = delete;
     ~background_runner() { request_stop(); }
 
+    struct finished_job final
+    {
+        run_kind kind{run_kind::patcher};
+        std::string shown;
+        run_result result;
+        std::function<void(const run_result&)> on_done;
+    };
+
     [[nodiscard]] bool busy() const noexcept
     {
-        std::lock_guard lock{mutex_};
+        const std::lock_guard lock{mutex_};
         return busy_;
     }
 
     void launch(run_kind kind, std::string shown, std::string command,
-                std::function<void(run_result)> on_done)
+                std::function<void(const run_result&)> on_done)
     {
-        std::lock_guard lock{mutex_};
-        if (busy_) {
-            return;
+        {
+            const std::lock_guard lock{mutex_};
+            if (busy_) {
+                return;
+            }
+            busy_ = true;
         }
-        busy_ = true;
-        // stop previous worker, start a fresh jthread per job: the
-        // old thread is already idle (joined on request_stop).
-        request_stop_locked();
+        // Join the previous idle worker outside the lock.
+        if (worker_.joinable()) {
+            worker_.request_stop();
+            worker_.join();
+        }
         worker_ = std::jthread(
             [this, kind, shown = std::move(shown),
              command = std::move(command),
@@ -397,29 +431,21 @@ class background_runner final
                 if (token.stop_requested()) {
                     return;
                 }
-                std::lock_guard done_lock{mutex_};
-                finished_.push({kind, std::move(shown), std::move(result),
-                                std::move(on_done)});
+                const std::lock_guard done_lock{mutex_};
+                finished_.push(finished_job{kind, std::move(shown),
+                                            std::move(result),
+                                            std::move(on_done)});
             });
     }
 
-    struct finished_job final
-    {
-        run_kind kind{run_kind::patcher};
-        std::string shown;
-        run_result result;
-        std::function<void(run_result)> on_done;
-    };
-
     [[nodiscard]] std::optional<finished_job> poll()
     {
-        std::lock_guard lock{mutex_};
+        const std::lock_guard lock{mutex_};
         if (finished_.empty()) {
             return std::nullopt;
         }
         finished_job job{std::move(finished_.front())};
         finished_.pop();
-        busy_ = finished_.empty() ? false : busy_;
         if (finished_.empty()) {
             busy_ = false;
         }
@@ -428,13 +454,17 @@ class background_runner final
 
     void request_stop()
     {
-        std::lock_guard lock{mutex_};
-        request_stop_locked();
+        if (worker_.joinable()) {
+            worker_.request_stop();
+            worker_.join();
+        }
+        const std::lock_guard lock{mutex_};
+        busy_ = false;
     }
 
   private:
-    static run_result run_capture(const std::string& command,
-                                  const std::stop_token& token)
+    [[nodiscard]] static run_result run_capture(const std::string& command,
+                                                const std::stop_token& token)
     {
         run_result result;
         const std::string full{kIsWindows ? command : command + " 2>&1"};
@@ -459,21 +489,10 @@ class background_runner final
         result.exit_code = _pclose(pipe);
 #else
         const int status{pclose(pipe)};
-#ifndef _WIN32
-#include <sys/wait.h>
-#endif
         result.exit_code =
             status == -1 || !WIFEXITED(status) ? -1 : WEXITSTATUS(status);
 #endif
         return result;
-    }
-
-    void request_stop_locked() noexcept
-    {
-        if (worker_.joinable()) {
-            worker_.request_stop();
-            worker_.join();
-        }
     }
 
     mutable std::mutex mutex_;
@@ -485,7 +504,7 @@ class background_runner final
 // --- view + platform frontiers (defined in their own .cpp) ------------
 namespace view
 {
-void draw(app_state& state);
+[[nodiscard]] frame_requests draw(app_state& state);
 } // namespace view
 
 namespace platform
@@ -495,14 +514,14 @@ struct context final
 {
     void* window{nullptr};
     void* renderer{nullptr};
-    void* folder_state{nullptr}; // app_state*, set by main
 };
 
 [[nodiscard]] std::pair<std::int32_t, std::int32_t>
 preferred_size() noexcept;
 bool init(context& ctx, app_state& state);
 void drain_outbox(context& ctx, app_state& state, float delta_seconds);
-void begin_frame(context& ctx);
+void begin_frame(context& ctx, float scale_x, float scale_y,
+                 const rgba& clear);
 void end_frame(context& ctx);
 void shutdown(context& ctx);
 void fatal(std::string_view title, std::string_view message) noexcept;
