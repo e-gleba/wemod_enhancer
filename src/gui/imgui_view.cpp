@@ -198,6 +198,17 @@ void draw_settings(app_state& state)
     field_fail_hover(state.dll_present, "version.dll not found");
 }
 
+[[nodiscard]] bool resolve_for_run(app_state& state)
+{
+    // Normalize the field to the detected app-* dir so the log shows the
+    // exact folder the patcher runs against.
+    if (state.resolved_install_dir.empty()) {
+        return false;
+    }
+    state.install_dir = state.resolved_install_dir.string();
+    return true;
+}
+
 } // namespace
 
 frame_requests draw(app_state& state)
@@ -258,10 +269,9 @@ frame_requests draw(app_state& state)
     const float action_w{equal_button_width(action_count)};
     const std::string_view block_reason{
         run_block_reason(install_ok, script_ok)};
-    const bool blocked{state.running || !block_reason.empty()};
-    ImGui::BeginDisabled(blocked);
-    if (action_button("Patch", action_w, row_h)) {
-        state.install_dir = state.resolved_install_dir.string();
+    const bool patch_blocked{state.running || !block_reason.empty()};
+    ImGui::BeginDisabled(patch_blocked);
+    if (action_button("Patch", action_w, row_h) && resolve_for_run(state)) {
         req.patch = true;
     }
     ImGui::EndDisabled();
@@ -270,8 +280,8 @@ frame_requests draw(app_state& state)
         tooltip_text(block_reason);
     }
     ImGui::SameLine();
-    ImGui::BeginDisabled(blocked);
-    if (action_button("Restore", action_w, row_h)) {
+    ImGui::BeginDisabled(patch_blocked);
+    if (action_button("Restore", action_w, row_h) && resolve_for_run(state)) {
         req.restore = true;
     }
     ImGui::EndDisabled();
@@ -281,10 +291,12 @@ frame_requests draw(app_state& state)
     }
     if (!install_ok) {
         ImGui::SameLine();
+        ImGui::BeginDisabled(state.running);
         if (action_button("Download WeMod", action_w, row_h)) {
             req.download = true;
         }
-        if (ImGui::IsItemHovered()) {
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
             tooltip_text(
                 kIsWindows
                     ? std::string_view{"Download the official WeMod installer "
