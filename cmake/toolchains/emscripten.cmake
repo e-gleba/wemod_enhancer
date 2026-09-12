@@ -29,7 +29,7 @@ include_guard(GLOBAL)
 
 # --- tunables --------------------------------------------------------------
 set(EMSCRIPTEN_SDK_VERSION
-    "6.0.8"
+    "6.0.9"
     CACHE STRING "emsdk release to bootstrap when none is installed")
 set(EMSCRIPTEN_SDK_ROOT
     ""
