@@ -1,18 +1,10 @@
-// backend_sdl3.cpp - SDL3 platform layer. No ImGui, no domain logic.
-//
-// Every SDL call with a failure return is checked at the call site via
-// check(): failures log through SDL_Log and, when fatal or parented,
-// also pop an SDL message box so a broken video driver, missing
-// Downloads folder, or clipboard/URL failure is visible instead of
-// a silent exit. All entry points are noexcept: SDL failures are values
-// (false / empty), never exceptions.
-//
-// Folder dialog handoff: SDL may invoke the dialog callback on an OS
-// thread and after AppState is gone, so the callback never touches
-// AppState. It stages the picked path in a mutex-guarded slot that
-// the UI thread harvests via take_pending_folder().
+// backend_sdl3.cpp - the ONLY file implementing platform.hpp.
+// Talks SDL3 + log:: only. Knows nothing about Model, view, or the
+// presenter. Errors are logged; failures are values, never throws.
 
-#include "app.hpp"
+#include "platform.hpp"
+
+#include "log.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -21,16 +13,40 @@
 #include <optional>
 #include <string>
 
-namespace wemod::gui::backend
+struct PlatformWindow
+{
+    SDL_Window* handle{nullptr};
+};
+
+namespace wemod::gui::platform
 {
 
 namespace
 {
 
+std::mutex state_mutex;
+std::string last_error_text;
 std::mutex folder_mutex;
 std::optional<std::string> pending_folder;
 
-// May run on an OS thread and may outlive AppState: copy the path
+void record(std::string_view what) noexcept
+{
+    std::string message;
+    try {
+        const char* err{SDL_GetError()};
+        message = std::string(what) + ": " + (err ? err : "?");
+    } catch (...) {
+        return;
+    }
+    try {
+        const std::lock_guard<std::mutex> lock{state_mutex};
+        last_error_text = message;
+    } catch (...) {
+    }
+    log::error(message);
+}
+
+// May run on an OS thread and may outlive the app: stage the path
 // under a lock, touch nothing else. userdata is always nullptr.
 void SDLCALL on_folder_chosen(void* userdata,
                               const char* const* filelist,
@@ -47,49 +63,21 @@ void SDLCALL on_folder_chosen(void* userdata,
     }
 }
 
+[[nodiscard]] SDL_Window* to_sdl(PlatformWindow* window) noexcept
+{
+    return window != nullptr ? window->handle : nullptr;
+}
+
 } // namespace
 
-void log_error(const std::string& message) noexcept
+std::string last_error() noexcept
 {
-    SDL_Log("%s", message.c_str()); // NOLINT(cppcoreguidelines-pro-type-vararg)
-}
-
-void show_error(const char* title,
-                const std::string& message,
-                SDL_Window* parent) noexcept
-{
-    log_error(message);
-    if (title == nullptr) {
-        return;
-    }
-    // A failing box only logs - never throws, never recurses.
-    if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title,
-                                  message.c_str(), parent)) {
-        log_error(std::string("SDL_ShowSimpleMessageBox: ") + SDL_GetError());
-    }
-}
-
-bool check(bool ok,
-           const char* what,
-           SDL_Window* parent,
-           bool fatal) noexcept
-{
-    if (ok) {
-        return true;
-    }
-    const char* what_safe{what != nullptr ? what : "SDL"};
-    std::string message;
     try {
-        message = std::string(what_safe) + ": " + SDL_GetError();
+        const std::lock_guard<std::mutex> lock{state_mutex};
+        return last_error_text;
     } catch (...) {
-        return false;
+        return {};
     }
-    if (fatal || parent != nullptr) {
-        show_error(what_safe, message, parent);
-    } else {
-        log_error(message);
-    }
-    return false;
 }
 
 const char* env_var(const char* name) noexcept
@@ -130,36 +118,60 @@ fs::path downloads_dir() noexcept
         if (const char* dir{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)}) {
             return {dir};
         }
-        log_error(std::string("SDL_GetUserFolder: ") + SDL_GetError());
+        record("SDL_GetUserFolder");
     } catch (...) {
     }
     return {};
 }
 
-bool open_url(const char* url, SDL_Window* parent) noexcept
+bool open_url(std::string_view url, PlatformWindow* parent) noexcept
 {
-    if (url == nullptr) {
+    if (url.empty()) {
         return false;
     }
-    // SDL3: bool SDL_OpenURL (true = success).
-    return check(SDL_OpenURL(url), "SDL_OpenURL", parent, false);
+    // SDL3 bool API: true = success.
+    std::string owned;
+    try {
+        owned = std::string(url);
+    } catch (...) {
+        return false;
+    }
+    if (SDL_OpenURL(owned.c_str())) {
+        return true;
+    }
+    record("SDL_OpenURL");
+    return false;
 }
 
-bool set_clipboard(const std::string& text, SDL_Window* parent) noexcept
+bool set_clipboard(std::string_view text, PlatformWindow* parent) noexcept
 {
-    // SDL3: bool SDL_SetClipboardText (true = success).
-    return check(SDL_SetClipboardText(text.c_str()),
-                 "SDL_SetClipboardText", parent, false);
+    std::string owned;
+    try {
+        owned = std::string(text);
+    } catch (...) {
+        return false;
+    }
+    if (SDL_SetClipboardText(owned.c_str())) {
+        return true;
+    }
+    record("SDL_SetClipboardText");
+    return false;
 }
 
-void show_folder_dialog(AppState& state) noexcept
+void show_folder_dialog(PlatformWindow* parent,
+                        std::string_view current) noexcept
 {
-    const char* current{state.install_dir.empty() ? nullptr
-                                                  : state.install_dir.c_str()};
-    // nullptr userdata: the callback stages the path in pending_folder
-    // and never touches AppState, so a dialog outliving shutdown is safe.
-    SDL_ShowOpenFolderDialog(on_folder_chosen, nullptr, state.window,
-                             current, false);
+    std::string owned;
+    try {
+        owned = std::string(current);
+    } catch (...) {
+        return;
+    }
+    const char* arg{owned.empty() ? nullptr : owned.c_str()};
+    // nullptr userdata: the callback stages into pending_folder and
+    // never touches app state, so a dialog outliving shutdown is safe.
+    SDL_ShowOpenFolderDialog(on_folder_chosen, nullptr, to_sdl(parent),
+                             arg, false);
 }
 
 bool take_pending_folder(std::string& out) noexcept
@@ -197,4 +209,4 @@ WindowSize pick_window_size() noexcept
     }
 }
 
-} // namespace wemod::gui::backend
+} // namespace wemod::gui::platform
