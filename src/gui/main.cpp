@@ -9,6 +9,7 @@
 #include <imgui_impl_sdlrenderer3.h>
 
 #include <gsl/assert>
+#include <gsl/narrow>
 #include <gsl/pointers>
 
 #include <algorithm>
@@ -240,18 +241,18 @@ void shutdown_imgui() noexcept
 #ifndef _WIN32
 [[nodiscard]] bool configure_pipe(const int descriptor) noexcept
 {
-    if (::fcntl(descriptor, F_SETFD, FD_CLOEXEC) == -1) {
+    if (::fcntl(descriptor, F_SETFD, FD_CLOEXEC) == -1) { // NOLINT(cppcoreguidelines-pro-type-vararg)
         return false;
     }
-    const int flags{::fcntl(descriptor, F_GETFL)};
+    const int flags{::fcntl(descriptor, F_GETFL)}; // NOLINT(cppcoreguidelines-pro-type-vararg)
     return flags != -1 &&
-        ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1;
+        ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1; // NOLINT(cppcoreguidelines-pro-type-vararg)
 }
 #endif
 }
 
 run_result run_capture(const std::string_view command,
-                       const std::stop_token token)
+                       const std::stop_token& token)
 {
     Expects(!command.empty());
     run_result result;
@@ -365,9 +366,9 @@ run_result run_capture(const std::string_view command,
     CloseHandle(job);
     CloseHandle(read_handle);
 #else
-    int output[2]{-1, -1};
-    if (::pipe(output) != 0 || !configure_pipe(output[0]) ||
-        !configure_pipe(output[1])) {
+    std::array<int, 2> output{-1, -1};
+    if (::pipe(output.data()) != 0 || !configure_pipe(output[0]) ||
+        !configure_pipe(output[1])) { // NOLINT(cppcoreguidelines-pro-type-vararg)
         if (output[0] != -1) {
             ::close(output[0]);
         }
@@ -391,7 +392,7 @@ run_result run_capture(const std::string_view command,
         ::dup2(output[1], STDERR_FILENO);
         ::close(output[0]);
         ::close(output[1]);
-        ::execl("/bin/sh", "sh", "-c", command_text.c_str(), nullptr);
+        ::execl("/bin/sh", "sh", "-c", command_text.c_str(), nullptr); // NOLINT(cppcoreguidelines-pro-type-vararg)
         ::_exit(127);
     }
 
@@ -477,7 +478,8 @@ try {
     return SDL_APP_FAILURE;
 }
 
-SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event) noexcept
+// NOLINTNEXTLINE(readability-identifier-naming)
+SDL_AppResult SDL_AppEvent(void* appstate, SDL_Event* event)
 {
     Expects(event != nullptr);
     if (appstate != nullptr) {
@@ -521,7 +523,8 @@ try {
     return SDL_APP_FAILURE;
 }
 
-void SDL_AppQuit(void* appstate, SDL_AppResult result) noexcept
+// NOLINTNEXTLINE(readability-identifier-naming)
+void SDL_AppQuit(void* appstate, SDL_AppResult result)
 {
     (void)result;
     std::unique_ptr<app> value{static_cast<app*>(appstate)};
