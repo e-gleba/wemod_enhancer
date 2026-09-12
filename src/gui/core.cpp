@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <cstdio>
 #include <format>
 #include <ranges>
@@ -22,14 +23,6 @@
 
 namespace wemod::gui
 {
-
-namespace
-{
-
-constexpr bool is_constexpr_probe{noexcept(core::version_parts("app-1.2"))};
-static_assert(is_constexpr_probe, "version_parts must stay constexpr");
-
-} // namespace
 
 // --- process capture --------------------------------------------------
 
@@ -297,6 +290,35 @@ std::string shell_quote(std::string_view arg)
         out += '\'';
         return out;
     }
+}
+
+std::vector<std::int32_t> version_parts(std::string_view name)
+{
+    constexpr std::string_view prefix{"app-"};
+    if (name.starts_with(prefix)) {
+        name.remove_prefix(prefix.size());
+    }
+    std::vector<std::int32_t> parts;
+    std::size_t pos{0};
+    while (pos < name.size()) {
+        const std::size_t dot{name.find('.', pos)};
+        const std::string_view token{
+            name.data() + pos,
+            (dot == std::string_view::npos ? name.size() : dot) - pos};
+        std::int32_t value{0};
+        const char* const begin{token.data()};
+        const char* const end{begin + token.size()};
+        if (const auto res{std::from_chars(begin, end, value)};
+            res.ec != std::errc{} || res.ptr != end) {
+            value = 0;
+        }
+        parts.push_back(value);
+        if (dot == std::string_view::npos) {
+            break;
+        }
+        pos = dot + 1;
+    }
+    return parts;
 }
 
 fs::path newest_app_dir(const fs::path& root)
