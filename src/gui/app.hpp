@@ -30,9 +30,9 @@ inline constexpr std::string_view version_dll_name{"version.dll"};
 inline constexpr std::string_view installer_url{
     "https://api.wemod.com/client/download"};
 inline constexpr std::string_view launcher_clone_url{
-    "https://github.com/DaniAsh551/wemod-launcher.git"};
+    "https://github.com/DeckCheatz/wemod-launcher.git"};
 inline constexpr std::string_view launcher_guide_url{
-    "https://deckcheatz.com/wemod-on-linux-full-guide/"};
+    "https://github.com/DeckCheatz/wemod-launcher"};
 inline constexpr std::string_view issue_new_url{
     "https://github.com/e-gleba/wemod_enhancer/issues/new"};
 inline constexpr std::string_view releases_url{
