@@ -5,8 +5,6 @@
 
 #include "platform.hpp"
 
-#include <SDL3/SDL_error.h>
-
 #include <gsl/assert>
 
 #include <string>
@@ -386,7 +384,6 @@ void report_bug(app_state& state)
                           url_encode("bug: gui report") +
                           "&body=" + url_encode(body)};
     open_url(url.c_str());
-    (void)SDL_GetError; // keep SDL_error include honest: errors log in platform
 }
 
 } // namespace wemod::gui
