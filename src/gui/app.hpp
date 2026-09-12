@@ -7,21 +7,19 @@
 //   - imgui_view.cpp  includes <imgui.h>      + this header.
 //   - main.cpp        wires both (composition root, may know both).
 //
-// No ImGui types, no SDL types, no UI styling here: window sizes live
-// in sdl_platform.cpp, paddings/colors live in imgui_view.cpp.
+// No ImGui types, no SDL types, no UI styling, no OS process APIs
+// here: window sizes live in sdl_platform.cpp, paddings/colors live
+// in imgui_view.cpp, child-process capture lives in main.cpp.
 // Communication is data, not calls:
 //   view  reads app_state, writes frame_requests + outbox.
 //   main  executes requests via platform:: services + background_runner.
 //   jobs  run on a std::jthread worker, polled without blocking.
 
 #include <algorithm>
-#include <array>
-#include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -29,16 +27,12 @@
 #include <optional>
 #include <queue>
 #include <ranges>
+#include <stop_token>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
-
-#ifndef _WIN32
-#include <sys/wait.h> // WIFEXITED / WEXITSTATUS for pclose()
-#endif
 
 #ifndef WEMOD_ENHANCER_GUI_VERSION
 #define WEMOD_ENHANCER_GUI_VERSION "0.0.0"
@@ -366,6 +360,12 @@ inline void parse_probe(app_state& state, const std::string& output)
     }
 }
 
+// Killable capture, defined in main.cpp (composition root): polls the
+// child and terminates it on stop_token, so request_stop() never hangs
+// on a silent child. Declared here so the header stays std-only.
+[[nodiscard]] run_result run_capture_impl(const std::string& command,
+                                          const std::stop_token& token);
+
 // --- background jobs on std::jthread (no detached threads) ------------
 // Single worker: launch() is a no-op while busy; poll() is
 // non-blocking and called once per frame from main.
@@ -406,13 +406,12 @@ class background_runner final
         worker_ = std::jthread(
             [this, kind, shown = std::move(shown),
              command = std::move(command)](const std::stop_token token) {
-                run_result result{run_capture(command, token)};
+                run_result result{run_capture_impl(command, token)};
+                const std::lock_guard done_lock{mutex_};
                 if (token.stop_requested()) {
-                    const std::lock_guard idle_lock{mutex_};
                     busy_ = false;
                     return;
                 }
-                const std::lock_guard done_lock{mutex_};
                 finished_.push(
                     finished_job{kind, std::move(shown), std::move(result)});
             });
@@ -443,38 +442,6 @@ class background_runner final
     }
 
   private:
-    [[nodiscard]] static run_result run_capture(const std::string& command,
-                                                const std::stop_token& token)
-    {
-        run_result result;
-        const std::string full{kIsWindows ? command : command + " 2>&1"};
-#ifdef _WIN32
-        FILE* pipe{_popen(full.c_str(), "r")};
-#else
-        FILE* pipe{popen(full.c_str(), "r")};
-#endif
-        if (pipe == nullptr) {
-            result.output = std::format(
-                "error: failed to start the command ({})",
-                std::system_category().message(errno));
-            return result;
-        }
-        std::array<char, 4096> buffer{};
-        while (!token.stop_requested() &&
-               fgets(buffer.data(),
-                     static_cast<int>(buffer.size()), pipe) != nullptr) {
-            result.output += buffer.data();
-        }
-#ifdef _WIN32
-        result.exit_code = _pclose(pipe);
-#else
-        const int status{pclose(pipe)};
-        result.exit_code =
-            status == -1 || !WIFEXITED(status) ? -1 : WEXITSTATUS(status);
-#endif
-        return result;
-    }
-
     mutable std::mutex mutex_;
     std::jthread worker_;
     std::queue<finished_job> finished_;
