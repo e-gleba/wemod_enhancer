@@ -74,6 +74,7 @@ struct dialog_result final
 {
     std::mutex mutex;
     std::optional<std::string> folder;
+    bool pending{false};
 };
 
 struct app_state final

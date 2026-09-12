@@ -53,6 +53,7 @@ void SDLCALL on_folder(void* userdata, const char* const* file_list,
     if (file_list != nullptr && file_list[0] != nullptr) {
         result->folder = file_list[0];
     }
+    result->pending = false;
 }
 
 [[nodiscard]] std::string preference_file(const std::string_view name)
@@ -182,8 +183,18 @@ try {
     }
 
     if (std::exchange(state.want_browse, false)) {
-        SDL_ShowOpenFolderDialog(on_folder, ctx.dialog, handles.window,
-                                 nullptr, false);
+        bool open{false};
+        {
+            const std::lock_guard lock{ctx.dialog->mutex};
+            if (!ctx.dialog->pending) {
+                ctx.dialog->pending = true;
+                open = true;
+            }
+        }
+        if (open) {
+            SDL_ShowOpenFolderDialog(on_folder, ctx.dialog, handles.window,
+                                     nullptr, false);
+        }
     }
     if (state.want_open_url) {
         const std::string url{std::move(*state.want_open_url)};
