@@ -27,7 +27,6 @@
 
 #pragma once
 
-#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -37,13 +36,14 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <thread>
 #include <vector>
 
 // Forward declarations keep SDL headers out of this header.
 struct SDL_Window;
 struct SDL_Renderer;
+// ImGui vector type (complete in view_imgui.cpp / main.cpp).
+struct ImVec4;
 
 #ifndef WEMOD_ENHANCER_GUI_VERSION
 #define WEMOD_ENHANCER_GUI_VERSION "0.0.0"
@@ -111,7 +111,7 @@ enum class ProbeState : std::uint8_t { unknown, failed, works };
 // Run a shell command, capture merged stdout+stderr and the exit code.
 [[nodiscard]] RunResult run_capture(const std::string& command);
 
-// One background job at a time. UI thread owns start()/try_take();
+// One background job at a time. UI thread owns launch()/try_take();
 // the worker thread only fulfils the promise. std::jthread gives RAII
 // join on destruction; a pending job is joined before relaunch.
 class JobRunner final
@@ -186,6 +186,7 @@ void show_error(const char* title,
                 SDL_Window* parent) noexcept;
 // Check one SDL bool result: log on failure, optional fatal box.
 // Returns ok unchanged so call sites read `if (!check(...))`.
+// Non-fatal call sites intentionally discard with (void)check(...).
 [[nodiscard]] bool check(bool ok,
                          const char* what,
                          SDL_Window* parent,
@@ -216,34 +217,11 @@ namespace core
 
 [[nodiscard]] std::string url_encode(std::string_view text);
 [[nodiscard]] std::string shell_quote(std::string_view arg);
-[[nodiscard]] constexpr std::vector<std::int32_t> version_parts(std::string name)
-{
-    constexpr std::string_view prefix{"app-"};
-    if (name.starts_with(prefix)) {
-        name.erase(0, prefix.size());
-    }
-    std::vector<std::int32_t> parts;
-    std::size_t pos{0};
-    while (pos < name.size()) {
-        const std::size_t dot{name.find('.', pos)};
-        const std::string_view token{
-            name.data() + pos,
-            (dot == std::string::npos ? name.size() : dot) - pos};
-        std::int32_t value{0};
-        const char* const begin{token.data()};
-        const char* const end{begin + token.size()};
-        if (const auto res{std::from_chars(begin, end, value)};
-            res.ec != std::errc{} || res.ptr != end) {
-            value = 0;
-        }
-        parts.push_back(value);
-        if (dot == std::string::npos) {
-            break;
-        }
-        pos = dot + 1;
-    }
-    return parts;
-}
+// Parse "app-1.2.3" (or "1.2.3") into numeric parts for ordering.
+// Plain (non-constexpr): std::vector / from_chars are not constant
+// evaluable on all supported toolchains (notably MinGW libc++).
+[[nodiscard]] std::vector<std::int32_t> version_parts(
+    std::string_view name);
 [[nodiscard]] fs::path newest_app_dir(const fs::path& root);
 [[nodiscard]] std::string default_install_dir();
 [[nodiscard]] fs::path resolve_wemod_dir(const std::string& dir);
@@ -267,6 +245,7 @@ void report_bug(AppState& state);
 namespace view
 {
 
+[[nodiscard]] const ImVec4& frame_clear_color() noexcept;
 void draw(AppState& state);
 
 } // namespace view
