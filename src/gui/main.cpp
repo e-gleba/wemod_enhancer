@@ -11,6 +11,7 @@
 #include <gsl/assert>
 #include <gsl/pointers>
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <memory>
@@ -50,10 +51,8 @@ void start_command(app& value, const run_kind kind,
 {
     Expects(!shown.empty());
     Expects(!command.empty());
-    if (value.jobs.busy()) {
-        return;
-    }
-    if (!value.jobs.launch(kind, std::move(command))) {
+    if (value.jobs.busy() ||
+        !value.jobs.launch(kind, std::move(command))) {
         return;
     }
     append_log(value.state, std::format("$ {}\n", shown));
@@ -246,7 +245,12 @@ run_result run_capture(const std::string_view command,
         result.output = "error: CreatePipe failed";
         return result;
     }
-    SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, 0);
+    if (!SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(read_handle);
+        CloseHandle(write_handle);
+        result.output = "error: SetHandleInformation failed";
+        return result;
+    }
 
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
@@ -296,10 +300,15 @@ run_result run_capture(const std::string_view command,
         if (status == WAIT_OBJECT_0) {
             break;
         }
+        if (status == WAIT_FAILED) {
+            TerminateProcess(process.hProcess, 1);
+            break;
+        }
     }
     DWORD exit_code{1};
-    GetExitCodeProcess(process.hProcess, &exit_code);
-    result.exit_code = gsl::narrow<std::int32_t>(exit_code);
+    if (GetExitCodeProcess(process.hProcess, &exit_code)) {
+        result.exit_code = gsl::narrow<std::int32_t>(exit_code);
+    }
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     CloseHandle(read_handle);

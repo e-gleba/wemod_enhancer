@@ -7,7 +7,6 @@
 #include <gsl/narrow>
 
 #include <algorithm>
-#include <memory>
 #include <system_error>
 
 namespace wemod::gui::platform
@@ -21,12 +20,15 @@ constexpr std::int32_t window_min_height{600};
 constexpr std::int32_t window_max_width{1680};
 constexpr std::int32_t window_max_height{1050};
 
-using sdl_string = std::unique_ptr<char, decltype(&SDL_free)>;
-
-[[nodiscard]] sdl_string adopt(char* value) noexcept
+struct sdl_string final
 {
-    return {value, &SDL_free};
-}
+    char* value{nullptr};
+
+    explicit sdl_string(char* owned) noexcept : value{owned} {}
+    sdl_string(const sdl_string&) = delete;
+    sdl_string& operator=(const sdl_string&) = delete;
+    ~sdl_string() noexcept { SDL_free(value); }
+};
 
 void message_box(SDL_Window* window, const SDL_MessageBoxFlags flags,
                  const std::string_view title,
@@ -44,20 +46,22 @@ void SDLCALL on_folder(void* userdata, const char* const* file_list,
                        int) noexcept
 {
     auto* result{static_cast<dialog_result*>(userdata)};
-    if (result == nullptr || file_list == nullptr || file_list[0] == nullptr) {
+    if (result == nullptr) {
         return;
     }
     const std::lock_guard lock{result->mutex};
-    result->folder = file_list[0];
+    if (file_list != nullptr && file_list[0] != nullptr) {
+        result->folder = file_list[0];
+    }
 }
 
 [[nodiscard]] std::string preference_file(const std::string_view name)
 {
-    sdl_string preference{adopt(SDL_GetPrefPath("wemod", "enhancer"))};
-    if (!preference) {
+    sdl_string preference{SDL_GetPrefPath("wemod", "enhancer")};
+    if (preference.value == nullptr) {
         return {};
     }
-    return (fs::path{preference.get()} / name).string();
+    return (fs::path{preference.value} / name).string();
 }
 
 void log_error(const std::string_view operation) noexcept
@@ -116,7 +120,7 @@ std::string platform_name()
 }
 
 bool init(context& ctx, app_state& state) noexcept
-{
+try {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fatal("SDL_Init failed", SDL_GetError());
         return false;
@@ -136,11 +140,7 @@ bool init(context& ctx, app_state& state) noexcept
 
     ctx.window = window;
     ctx.renderer = renderer;
-    ctx.dialog = new (std::nothrow) dialog_result{};
-    if (ctx.dialog == nullptr) {
-        shutdown(ctx);
-        return false;
-    }
+    ctx.dialog = new dialog_result{};
 
     if (!SDL_SetWindowMinimumSize(window, window_min_width,
                                   window_min_height)) {
@@ -153,11 +153,19 @@ bool init(context& ctx, app_state& state) noexcept
     state.platform_name = platform_name();
     state.exe_dir_text = exe_dir();
     return true;
+} catch (const std::exception& error) {
+    fatal("SDL initialization failed", error.what());
+    shutdown(ctx);
+    return false;
+} catch (...) {
+    fatal("SDL initialization failed", "Unknown error");
+    shutdown(ctx);
+    return false;
 }
 
 void drain_outbox(context& ctx, app_state& state,
                   const float delta_seconds) noexcept
-{
+try {
     const native_context handles{native(ctx)};
     Expects(handles.window != nullptr);
     Expects(handles.renderer != nullptr);
@@ -174,10 +182,8 @@ void drain_outbox(context& ctx, app_state& state,
     }
 
     if (std::exchange(state.want_browse, false)) {
-        SDL_ShowOpenFolderDialog(
-            on_folder, ctx.dialog, handles.window,
-            state.install_dir.empty() ? nullptr : state.install_dir.c_str(),
-            false);
+        SDL_ShowOpenFolderDialog(on_folder, ctx.dialog, handles.window,
+                                 nullptr, false);
     }
     if (state.want_open_url) {
         const std::string url{std::move(*state.want_open_url)};
@@ -201,6 +207,10 @@ void drain_outbox(context& ctx, app_state& state,
         message_box(handles.window, SDL_MESSAGEBOX_WARNING, alert.title,
                     alert.message);
     }
+} catch (const std::exception& error) {
+    SDL_Log("drain_outbox: %s", error.what());
+} catch (...) {
+    SDL_Log("drain_outbox: unknown error");
 }
 
 void begin_frame(context& ctx, const float scale_x, const float scale_y,
