@@ -119,7 +119,7 @@ jobs:
   # ── MSVC Windows AMD64 ─────────────────────────────────────────────────────
   windows_msvc_amd64:
     name: windows-msvc-amd64
-    runs-on: windows-2022
+    runs-on: windows-2026
     permissions:
       contents: read
       actions: write
