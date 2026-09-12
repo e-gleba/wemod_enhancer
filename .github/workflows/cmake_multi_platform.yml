@@ -44,7 +44,7 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - os: windows-2022
+                    - os: windows-2026
                       preset: windows_msvc_amd64_full
                       artifact-name: windows-msvc-amd64
                       build-dir: build/windows_msvc_amd64
