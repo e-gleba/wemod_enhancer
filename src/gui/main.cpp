@@ -152,6 +152,12 @@ void poll_jobs(app& value)
                 ? probe_state::works
                 : probe_state::failed;
             parse_probe(value.state, finished->result.output);
+        } else if (finished->kind == run_kind::wemod &&
+                   finished->result.exit_code == 0 && !is_windows) {
+            value.state.install_dir = platform::default_install_dir();
+            value.state.last_probe = {};
+            append_log(value.state,
+                       "wemod-launcher cloned. Run it once and log in.\n\n");
         } else if (finished->kind == run_kind::patcher &&
                    finished->result.exit_code != 0) {
             append_log(value.state,
@@ -230,6 +236,18 @@ void shutdown_imgui() noexcept
     }
     ImGui::DestroyContext();
 }
+
+#ifndef _WIN32
+[[nodiscard]] bool configure_pipe(const int descriptor) noexcept
+{
+    if (::fcntl(descriptor, F_SETFD, FD_CLOEXEC) == -1) {
+        return false;
+    }
+    const int flags{::fcntl(descriptor, F_GETFL)};
+    return flags != -1 &&
+        ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1;
+}
+#endif
 }
 
 run_result run_capture(const std::string_view command,
@@ -252,6 +270,24 @@ run_result run_capture(const std::string_view command,
         return result;
     }
 
+    HANDLE job{CreateJobObjectA(nullptr, nullptr)};
+    if (job == nullptr) {
+        CloseHandle(read_handle);
+        CloseHandle(write_handle);
+        result.output = "error: CreateJobObject failed";
+        return result;
+    }
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                 &limits, sizeof(limits))) {
+        CloseHandle(job);
+        CloseHandle(read_handle);
+        CloseHandle(write_handle);
+        result.output = "error: SetInformationJobObject failed";
+        return result;
+    }
+
     STARTUPINFOA startup{};
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
@@ -262,19 +298,32 @@ run_result run_capture(const std::string_view command,
     std::string command_line{"cmd.exe /d /s /c "};
     command_line += command;
     if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE,
-                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, nullptr,
-                        nullptr, &startup, &process)) {
+                        CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
+                        &startup, &process)) {
+        CloseHandle(job);
         CloseHandle(read_handle);
         CloseHandle(write_handle);
         result.output = "error: CreateProcess failed";
         return result;
     }
+    if (!AssignProcessToJobObject(job, process.hProcess)) {
+        TerminateProcess(process.hProcess, 1);
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        CloseHandle(job);
+        CloseHandle(read_handle);
+        CloseHandle(write_handle);
+        result.output = "error: AssignProcessToJobObject failed";
+        return result;
+    }
+    ResumeThread(process.hThread);
     CloseHandle(write_handle);
 
     std::array<char, 4096> buffer{};
+    bool completed{false};
     while (true) {
         if (token.stop_requested()) {
-            TerminateProcess(process.hProcess, 1);
+            TerminateJobObject(job, 1);
         }
         DWORD available{0};
         if (!PeekNamedPipe(read_handle, nullptr, 0, nullptr, &available,
@@ -298,10 +347,12 @@ run_result run_capture(const std::string_view command,
             WaitForSingleObject(process.hProcess,
                                 gsl::narrow<DWORD>(process_poll_interval.count()))};
         if (status == WAIT_OBJECT_0) {
-            break;
-        }
-        if (status == WAIT_FAILED) {
-            TerminateProcess(process.hProcess, 1);
+            if (completed && available == 0) {
+                break;
+            }
+            completed = true;
+        } else if (status == WAIT_FAILED) {
+            TerminateJobObject(job, 1);
             break;
         }
     }
@@ -311,13 +362,22 @@ run_result run_capture(const std::string_view command,
     }
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
+    CloseHandle(job);
     CloseHandle(read_handle);
 #else
     int output[2]{-1, -1};
-    if (::pipe2(output, O_CLOEXEC | O_NONBLOCK) != 0) {
-        result.output = std::format("error: pipe2 failed ({})", errno);
+    if (::pipe(output) != 0 || !configure_pipe(output[0]) ||
+        !configure_pipe(output[1])) {
+        if (output[0] != -1) {
+            ::close(output[0]);
+        }
+        if (output[1] != -1) {
+            ::close(output[1]);
+        }
+        result.output = std::format("error: pipe setup failed ({})", errno);
         return result;
     }
+    const std::string command_text{command};
     const pid_t pid{::fork()};
     if (pid < 0) {
         ::close(output[0]);
@@ -326,15 +386,16 @@ run_result run_capture(const std::string_view command,
         return result;
     }
     if (pid == 0) {
+        ::setpgid(0, 0);
         ::dup2(output[1], STDOUT_FILENO);
         ::dup2(output[1], STDERR_FILENO);
         ::close(output[0]);
         ::close(output[1]);
-        const std::string command_text{command};
         ::execl("/bin/sh", "sh", "-c", command_text.c_str(), nullptr);
         ::_exit(127);
     }
 
+    ::setpgid(pid, pid);
     ::close(output[1]);
     std::array<char, 4096> buffer{};
     int status{0};
@@ -344,14 +405,14 @@ run_result run_capture(const std::string_view command,
             result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
         }
         if (token.stop_requested()) {
-            ::kill(pid, SIGKILL);
+            ::killpg(pid, SIGKILL);
         }
         const pid_t waited{::waitpid(pid, &status, WNOHANG)};
         if (waited == pid) {
             break;
         }
         if (waited < 0 && errno != EINTR) {
-            ::kill(pid, SIGKILL);
+            ::killpg(pid, SIGKILL);
             while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
             }
             break;
