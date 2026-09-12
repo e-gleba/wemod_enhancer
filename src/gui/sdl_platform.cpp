@@ -36,8 +36,10 @@ struct sdl_string final
 void log_message(const std::string_view message) noexcept
 {
     const std::string text{message};
+    // SDL logging is variadic by API design; isolate that boundary here.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_ERROR, "%s",
-                   text.c_str()); // NOLINT(cppcoreguidelines-pro-type-vararg)
+                   text.c_str());
 }
 
 void message_box(SDL_Window* window, const SDL_MessageBoxFlags flags,
@@ -187,9 +189,8 @@ try {
         std::max(0.0F, state.copied_flash - delta_seconds);
     {
         const std::lock_guard lock{ctx.dialog->mutex};
-        if (ctx.dialog->folder) {
-            state.install_dir = std::move(*ctx.dialog->folder);
-            ctx.dialog->folder.reset();
+        if (auto folder{std::exchange(ctx.dialog->folder, std::nullopt)}) {
+            state.install_dir = std::move(folder).value();
         }
     }
 

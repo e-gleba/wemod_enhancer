@@ -153,9 +153,12 @@ std::string issue_url(const app_state& state)
     const std::string_view tail{state.log.data() + start,
                                 state.log.size() - start};
     const std::string prefix{start == 0UZ ? "" : "... (log tail)\n"};
-    const std::string body{
-        std::format("## log\n\n```\n{}{}\n```\n\n{}", prefix, tail,
-                    env_info(state))};
+    const std::string body{std::format(
+        "## Summary\n\nDescribe what failed and what you expected.\n\n"
+        "## Steps to reproduce\n\n1. \n2. \n3. \n\n"
+        "## Diagnostic digest\n\n```text\n{}\n```\n\n"
+        "## Log output\n\n```text\n{}{}\n```",
+        env_info(state), prefix, tail)};
     return std::format("{}?template=bug_report.yml&title={}&body={}",
                        issue_new_url, url_encode("bug: gui report"),
                        url_encode(body));
