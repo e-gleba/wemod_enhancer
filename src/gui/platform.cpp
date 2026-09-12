@@ -73,12 +73,14 @@ run_result run_process_argv(const std::vector<const char*>& args)
             std::string{"error: SDL_CreateProperties: "} + sdl_err() + "\n";
         return result;
     }
+    // Argv form: no shell, no quoting. Merged stderr->stdout so one
+    // SDL_ReadProcess captures both streams with no pipe-drain thread.
     SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
                            const_cast<const char**>(args.data()));
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
                           SDL_PROCESS_STDIO_APP);
-    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER,
-                          SDL_PROCESS_STDIO_APP);
+    SDL_SetBooleanProperty(
+        props, SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN, true);
 
     SDL_Process* proc{SDL_CreateProcessWithProperties(props)};
     SDL_DestroyProperties(props);
@@ -159,8 +161,9 @@ SDL_EnumerationResult SDLCALL on_dir_entry(void* userdata, const char* dirname,
         return SDL_ENUM_CONTINUE;
     }
     if (std::string_view{fname}.starts_with("app-")) {
+        // fs::path join: SDL does not promise a trailing separator.
+        const std::string full{(fs::path(dirname) / fname).string()};
         SDL_PathInfo info{};
-        const std::string full{std::string{dirname} + fname};
         if (SDL_GetPathInfo(full.c_str(), &info) &&
             info.type == SDL_PATHTYPE_DIRECTORY) {
             const std::vector<std::int32_t> parts{version_parts(fname)};
@@ -181,31 +184,36 @@ SDL_EnumerationResult SDLCALL on_dir_entry(void* userdata, const char* dirname,
 
 fs::path newest_app_dir(const fs::path& root) noexcept
 {
-    app_scan scan;
-    const std::string dir{root.string()};
-    if (dir.empty()) {
+    try {
+        app_scan scan;
+        const std::string dir{root.string()};
+        if (dir.empty()) {
+            return {};
+        }
+        if (!SDL_EnumerateDirectory(dir.c_str(), on_dir_entry, &scan)) {
+            log_error(std::string{"SDL_EnumerateDirectory: "} + sdl_err());
+            return {};
+        }
+        if (!scan.have) {
+            return {};
+        }
+        return {scan.best};
+    } catch (...) {
+        log_error("newest_app_dir: path conversion failed");
         return {};
     }
-    if (!SDL_EnumerateDirectory(dir.c_str(), on_dir_entry, &scan)) {
-        log_error(std::string{"SDL_EnumerateDirectory: "} + sdl_err());
-        return {};
-    }
-    if (!scan.have) {
-        return {};
-    }
-    return {scan.best};
 }
 
 std::string default_install_dir()
 {
     if constexpr (is_windows) {
-        if (const char* local{
-                SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "LOCALAPPDATA")}) {
+        if (const char* local{SDL_GetEnvironmentVariable(
+                SDL_GetEnvironment(), "LOCALAPPDATA")}) {
             return (fs::path(local) / "WeMod").string();
         }
     } else {
-        if (const char* home{
-                SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")}) {
+        if (const char* home{SDL_GetEnvironmentVariable(SDL_GetEnvironment(),
+                                                        "HOME")}) {
             return (fs::path(home) / "wemod-launcher").string();
         }
     }
@@ -218,7 +226,8 @@ fs::path exe_dir()
         return {base};
     }
     log_error(std::string{"SDL_GetBasePath: "} + sdl_err());
-    return fs::temp_directory_path() / "wemod_enhancer";
+    std::error_code ec;
+    return fs::temp_directory_path(ec) / "wemod_enhancer";
 }
 
 std::string url_encode(std::string_view text)
@@ -263,7 +272,9 @@ std::string pick_folder(void* window_handle, const std::string& current)
     SDL_ShowOpenFolderDialog(callback, &result, window,
                              current.empty() ? nullptr : current.c_str(), false);
     // Modal dialog pumps its own loop; poll until the callback fires.
-    for (int spins{0}; spins < 6000; ++spins) {
+    // ~3 min budget: browsing takes a while, but a headless failure
+    // (callback never fires) must not hang the app forever.
+    for (int spins{0}; spins < 36000; ++spins) {
         {
             std::lock_guard lock{result.mutex};
             if (result.done) {
