@@ -3,8 +3,9 @@
 //
 // Threading: AppState::start_command() funnels into JobRunner, one
 // std::jthread job at a time. The worker only returns a RunResult;
-// the UI thread harvests it in core::poll(). No atomics, no detached
-// threads: jthread joins on destruction / relaunch by construction.
+// the UI thread harvests it in core::poll(). The popen() worker is
+// not cancellable mid-child, so the quit path stays open until the
+// job completes instead of hiding the window behind a blocked join.
 
 #include "app.hpp"
 
@@ -29,7 +30,10 @@ namespace wemod::gui
 RunResult run_capture(const std::string& command)
 {
     RunResult result;
-    const std::string full{is_windows ? command : command + " 2>&1"};
+    // cmd.exe (_popen) supports 2>&1 too: without it the patcher's
+    // Python tracebacks and PowerShell errors bypass result.output
+    // and the console / bug report stay empty on failure.
+    const std::string full{command + " 2>&1"};
 
 #ifdef _WIN32
     FILE* pipe{_popen(full.c_str(), "r")};
@@ -64,8 +68,10 @@ RunResult run_capture(const std::string& command)
 JobRunner::~JobRunner()
 {
     // jthread destructor joins; request stop first so a future
-    // stop-aware worker can bail early. Current worker ignores the
-    // token and runs to completion - join still bounds its lifetime.
+    // stop-aware worker can bail early. The current popen() worker
+    // ignores the token while blocked on the child - the quit path
+    // in main.cpp keeps the window open until it finishes instead
+    // of hiding it behind a hung shutdown.
     worker_.request_stop();
 }
 
@@ -108,6 +114,14 @@ void JobRunner::launch(std::string command)
         } catch (...) {
             active_ = false;
         }
+    }
+}
+
+void JobRunner::request_stop() noexcept
+{
+    try {
+        worker_.request_stop();
+    } catch (...) {
     }
 }
 
@@ -323,19 +337,30 @@ std::vector<std::int32_t> version_parts(std::string_view name)
 
 fs::path newest_app_dir(const fs::path& root)
 {
+    // Throwing overloads are off-limits here: this runs inside
+    // SDL_AppIterate via view::draw, so every filesystem step takes
+    // an error_code, including iterator increment (permission
+    // errors / removed dirs must not throw across the C callback).
     std::error_code ec;
-    std::vector<fs::path> apps;
-    for (const auto& entry : fs::directory_iterator(root, ec)) {
-        if (entry.is_directory(ec) &&
+    std::vector<std::pair<fs::path, std::vector<std::int32_t>>> apps;
+    for (fs::directory_iterator it{root, ec}, end; !ec && it != end;
+         it.increment(ec)) {
+        const fs::directory_entry& entry{*it};
+        ec.clear();
+        if (entry.is_directory(ec) && !ec &&
             entry.path().filename().string().starts_with("app-")) {
-            apps.push_back(entry.path());
+            ec.clear();
+            apps.emplace_back(entry.path(),
+                              version_parts(entry.path().filename().string()));
         }
+        ec.clear();
     }
-    const auto newest{std::ranges::max_element(
-        apps, {}, [](const fs::path& path) {
-            return version_parts(path.filename().string());
-        })};
-    return newest == apps.end() ? fs::path{} : *newest;
+    // Keys precomputed above: max_element compares cached vectors
+    // instead of re-parsing on every comparison.
+    const auto newest{
+        std::ranges::max_element(apps, {}, &std::pair<fs::path,
+                                                      std::vector<std::int32_t>>::second)};
+    return newest == apps.end() ? fs::path{} : newest->first;
 }
 
 std::string default_install_dir()
