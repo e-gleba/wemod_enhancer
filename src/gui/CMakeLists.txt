@@ -1,7 +1,7 @@
-add_executable(wemod_enhancer_gui WIN32 MACOSX_BUNDLE main.cpp)
+add_executable(wemod_enhancer_gui WIN32 MACOSX_BUNDLE
+               main.cpp backend_sdl3.cpp core.cpp view_imgui.cpp app.hpp)
 
-target_link_libraries(wemod_enhancer_gui PRIVATE imgui::sdl3_renderer
-                                                 Microsoft.GSL::GSL)
+target_link_libraries(wemod_enhancer_gui PRIVATE imgui::sdl3_renderer)
 
 target_compile_features(wemod_enhancer_gui PRIVATE cxx_std_23)
 
