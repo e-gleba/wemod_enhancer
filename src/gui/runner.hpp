@@ -5,6 +5,7 @@
 #pragma once
 
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -43,6 +44,10 @@ public:
     // Start `task` on a fresh jthread. Returns false when busy.
     // The finished thread is joined before replacement (jthread move
     // assignment over a joinable thread would terminate).
+    // Stop semantics: a stop request abandons the result (poll_run
+    // never sees it) but the worker still joins - the child is a
+    // short-lived patcher/probe command, and there is no UI cancel
+    // path that needs preemptive kill.
     bool launch(std::function<run_result()> task)
     {
         {
@@ -55,15 +60,28 @@ public:
         }
         join();
         worker_ = std::jthread([this, task = std::move(task)](std::stop_token stop) {
-            run_result result = task();
-            if (stop.stop_requested()) {
+            // Never let an exception escape: it would call
+            // std::terminate. Publish a failed result instead so the
+            // log always narrates what happened.
+            try {
+                run_result result = task();
                 std::lock_guard lock{mutex_};
+                if (!stop.stop_requested()) {
+                    ready_ = std::move(result);
+                }
                 active_ = false;
-                return;
+            } catch (const std::exception& e) {
+                std::lock_guard lock{mutex_};
+                ready_ = run_result{
+                    -1, std::string{"error: background task threw: "} + e.what() +
+                            "\n"};
+                active_ = false;
+            } catch (...) {
+                std::lock_guard lock{mutex_};
+                ready_ = run_result{
+                    -1, "error: background task threw an unknown exception\n"};
+                active_ = false;
             }
-            std::lock_guard lock{mutex_};
-            ready_ = std::move(result);
-            active_ = false;
         });
         return true;
     }

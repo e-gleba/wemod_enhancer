@@ -73,6 +73,12 @@ void log_error(const std::string& message) noexcept;
 // patcher ships next to the exe, so the install stays one movable folder.
 [[nodiscard]] fs::path exe_dir();
 
+// OS Downloads folder (SDL_GetUserFolder) / home dir (HOME env).
+// Empty + logged on failure. Keeps SDL env lookups behind this layer
+// so state.cpp never calls SDL directly.
+[[nodiscard]] std::string downloads_dir();
+[[nodiscard]] std::string home_dir();
+
 // URL percent-encoding (RFC 3986, unreserved pass through) for the
 // pre-filled GitHub issue behind Report bug. Pure.
 [[nodiscard]] std::string url_encode(std::string_view text);
