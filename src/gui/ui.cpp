@@ -11,7 +11,9 @@
 #include <gsl/assert>
 
 #include <algorithm>
+#include <cfloat>
 #include <format>
+#include <string>
 
 namespace wemod::gui
 {
@@ -317,10 +319,12 @@ void draw_ui(app_state& state)
 
     if (!install_ok) {
         ImGui::SameLine();
+        ImGui::BeginDisabled(busy);
         if (action_button("Download WeMod", action_w, row_h)) {
             start_wemod_download(state);
         }
-        if (ImGui::IsItemHovered()) {
+        ImGui::EndDisabled();
+        if (!busy && ImGui::IsItemHovered()) {
             tooltip_text(is_windows
                              ? "Download the official WeMod installer into "
                                "your Downloads folder and run it"

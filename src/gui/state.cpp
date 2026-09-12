@@ -6,10 +6,10 @@
 #include "platform.hpp"
 
 #include <gsl/assert>
-#include <gsl/narrow>
 
-#include <format>
+#include <string>
 #include <system_error>
+#include <vector>
 
 namespace wemod::gui
 {
@@ -41,6 +41,7 @@ fs::path resolve_wemod_dir(const std::string& dir)
     }
     // wemod-launcher clone: wemod_data/wemod_bin inside (appears after
     // the first run + login - see the readme tutorial).
+    ec.clear();
     const fs::path launcher_bin{picked / "wemod_data" / "wemod_bin"};
     if (fs::is_regular_file(launcher_bin / "resources" / "app.asar", ec)) {
         return launcher_bin;
@@ -66,6 +67,7 @@ void probe_filesystem(app_state& state)
     std::error_code ec;
     state.script_present = !state.script_path.empty() &&
         fs::is_regular_file(state.script_path, ec);
+    ec.clear();
     state.dll_present = !state.version_dll.empty() &&
         fs::is_regular_file(state.version_dll, ec);
 }

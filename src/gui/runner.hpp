@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 
 namespace wemod::gui
 {
