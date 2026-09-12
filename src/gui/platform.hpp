@@ -61,11 +61,10 @@ void log_error(const std::string& message) noexcept;
 // Native directory scan for app-x.y.z via SDL_EnumerateDirectory +
 // SDL_GetPathInfo. Returns the newest entry, empty path when none.
 // Lexicographic order would put app-10 before app-9, so numeric compare.
-[[nodiscard]] fs::path newest_app_dir(const fs::path& root) noexcept;
+[[nodiscard]] fs::path newest_app_dir(const fs::path& root);
 
-// "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0. Pure, noexcept.
-[[nodiscard]] std::vector<std::int32_t> version_parts(
-    std::string_view name) noexcept;
+// "app-10.2.3" -> {10, 2, 3}; non-numeric tokens become 0. Pure.
+[[nodiscard]] std::vector<std::int32_t> version_parts(std::string_view name);
 
 // WeMod's default install dir for the current platform, or empty.
 [[nodiscard]] std::string default_install_dir();
@@ -75,7 +74,7 @@ void log_error(const std::string& message) noexcept;
 [[nodiscard]] fs::path exe_dir();
 
 // URL percent-encoding (RFC 3986, unreserved pass through) for the
-// pre-filled GitHub issue behind Report bug. Pure, noexcept.
+// pre-filled GitHub issue behind Report bug. Pure.
 [[nodiscard]] std::string url_encode(std::string_view text);
 
 // Native folder picker. Synchronous wrapper: shows the SDL dialog and
@@ -84,14 +83,14 @@ void log_error(const std::string& message) noexcept;
                                       const std::string& current);
 
 // Clipboard + browser + platform string. All checked; failures log.
-bool set_clipboard_text(const std::string& text) noexcept;
+bool set_clipboard_text(const std::string& text);
 bool open_url(const char* url) noexcept;
-[[nodiscard]] std::string platform_name() noexcept;
+[[nodiscard]] std::string platform_name();
 
 // Comfortable window size in SDL window coordinates: a fraction of the
 // usable display, clamped so laptops stay usable and 4K stays sane.
 // HiDPI is SDL_SetRenderScale, applied by app.cpp every frame.
-[[nodiscard]] std::pair<std::int32_t, std::int32_t> pick_window_size() noexcept;
+[[nodiscard]] std::pair<std::int32_t, std::int32_t> pick_window_size();
 
 // Thin window+renderer handle pair owned by app.cpp.
 struct window final
@@ -145,7 +144,7 @@ struct window final
 // clear with the theme color, present. False keeps the frame loop alive
 // but logs - a single failed present is not fatal.
 bool begin_frame(SDL_Renderer* renderer, float scale_x, float scale_y,
-                 float r, float g, float b, float a) noexcept;
-bool present_frame(SDL_Renderer* renderer) noexcept;
+                 float r, float g, float b, float a);
+bool present_frame(SDL_Renderer* renderer);
 
 } // namespace wemod::gui
