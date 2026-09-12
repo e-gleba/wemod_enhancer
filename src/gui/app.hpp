@@ -1,19 +1,17 @@
 // WeMod Enhancer GUI - single public header.
 //
-// Layering (one header, three translation units, no cycles):
-//   backend_sdl3.cpp  - SDL3 only. Window/renderer lifecycle helpers,
-//                       message boxes, clipboard, URLs, folder dialogs,
-//                       environment, paths, display sizing. No ImGui.
-//   core.cpp          - pure domain logic. Filesystem probing, WeMod dir
-//                       resolution, shell quoting, process capture,
-//                       background jobs (std::jthread), log budgeting.
-//                       No SDL headers, no ImGui headers - it talks to
-//                       SDL only through backend:: declared below.
-//   view_imgui.cpp    - Dear ImGui only. All widgets and layout. SDL
-//                       side effects go through backend::, domain facts
-//                       through core::. Never touches SDL_Create*.
-//   main.cpp          - SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS).
-//                       Thin glue: init -> core state -> view::draw.
+// Layering (one header, four translation units, no cycles):
+//   backend_sdl3.cpp - SDL3 only. Init helpers, message boxes,
+//                      clipboard, URLs, folder dialogs, environment,
+//                      paths, display sizing. No ImGui.
+//   core.cpp         - pure domain logic. Filesystem probing, WeMod dir
+//                      resolution, shell quoting, process capture,
+//                      background jobs (std::jthread). No SDL headers,
+//                      no ImGui headers - SDL via backend:: below.
+//   view_imgui.cpp   - Dear ImGui only. All widgets and layout. SDL
+//                      side effects via backend::, facts via core::.
+//   main.cpp         - SDL3 app callbacks (SDL_MAIN_USE_CALLBACKS).
+//                      Thin glue: init -> core state -> view::draw.
 //
 // Error handling: every SDL call with a failure return is checked at
 // the call site via backend::check(); fatal init failures also raise
@@ -25,28 +23,25 @@
 // produces a RunResult; the UI thread owns all state. No atomics,
 // no detached threads, no data races by construction.
 //
-// ASCII-only literals: imgui's default font covers ASCII only.
+// ASCII-only literals: imgui default font covers ASCII only.
 
 #pragma once
 
+#include <charconv>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <future>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
-#include <utility>
 #include <vector>
 
-// Forward declarations keep SDL/ImGui headers out of this header.
-// backend_sdl3.cpp and main.cpp include <SDL3/SDL.h> where the
-// complete types are visible; view_imgui.cpp includes <imgui.h>.
+// Forward declarations keep SDL headers out of this header.
 struct SDL_Window;
 struct SDL_Renderer;
 
@@ -114,7 +109,6 @@ enum class RunKind : std::uint8_t { patcher, probe, wemod };
 enum class ProbeState : std::uint8_t { unknown, failed, works };
 
 // Run a shell command, capture merged stdout+stderr and the exit code.
-// Defined in core.cpp. Not noexcept: allocations and popen() can fail.
 [[nodiscard]] RunResult run_capture(const std::string& command);
 
 // One background job at a time. UI thread owns start()/try_take();
@@ -131,8 +125,6 @@ class JobRunner final
     JobRunner& operator=(JobRunner&&) = delete;
 
     [[nodiscard]] bool running() const noexcept { return active_; }
-    // No-op while a job is active. Never throws out: a promise
-    // allocation failure is reported as a failed result on next poll.
     void launch(std::string command);
     // Non-blocking harvest. nullopt = still running or idle. Never
     // throws: a worker exception becomes RunResult{-1, ...}.
@@ -201,12 +193,12 @@ void show_error(const char* title,
 [[nodiscard]] const char* env_var(const char* name) noexcept;
 [[nodiscard]] fs::path exe_dir() noexcept;
 [[nodiscard]] std::string platform_name() noexcept;
-// Empty path when the folder is unknown (caller decides the fallback).
+// Empty path when the folder is unknown (caller decides fallback).
 [[nodiscard]] fs::path downloads_dir() noexcept;
 // True on success; false logs (+ non-fatal box when parent set).
 bool open_url(const char* url, SDL_Window* parent) noexcept;
 bool set_clipboard(const std::string& text, SDL_Window* parent) noexcept;
-void show_folder_dialog(AppState& state);
+void show_folder_dialog(AppState& state) noexcept;
 
 struct WindowSize final
 {
