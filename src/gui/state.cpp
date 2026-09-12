@@ -5,6 +5,8 @@
 
 #include "platform.hpp"
 
+#include <SDL3/SDL_error.h>
+
 #include <gsl/assert>
 
 #include <string>
@@ -103,6 +105,21 @@ namespace
     return out;
 }
 
+// Single quotes cannot appear inside a PowerShell single-quoted string:
+// double each one (' -> '') per PowerShell quoting rules.
+[[nodiscard]] std::string ps_quote(const std::string& text)
+{
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        out += c;
+        if (c == '\'') {
+            out += '\'';
+        }
+    }
+    return out;
+}
+
 // Probe output: version on line 1, platform on line 2. Both ride in
 // the bug report, so keep them raw (trimmed).
 void parse_probe(app_state& state, const std::string& output)
@@ -130,7 +147,7 @@ void parse_probe(app_state& state, const std::string& output)
 
 } // namespace
 
-void start_command(app_state& state, const run_kind kind,
+void start_command(app_state& state, const run_kind kind, const run_kind shown_kind,
                    const std::string& shown, std::vector<std::string> argv)
 {
     Expects(!argv.empty());
@@ -139,6 +156,7 @@ void start_command(app_state& state, const run_kind kind,
     }
     append_log(state, "$ " + shown + "\n");
     state.kind = kind;
+    state.completion_kind = shown_kind;
     if (kind == run_kind::patcher) {
         state.has_run = true;
     }
@@ -159,16 +177,16 @@ void start_run(app_state& state, const char* subcommand)
         argv.emplace_back("--version-dll");
         argv.emplace_back(state.version_dll);
     }
-    start_command(state, run_kind::patcher, format_argv(argv), std::move(argv));
+    // Result kind == launch kind here: completion narrates the patch.
+    start_command(state, run_kind::patcher, run_kind::patcher,
+                  format_argv(argv), std::move(argv));
 }
 
 void start_wemod_download(app_state& state)
 {
     if constexpr (is_windows) {
-        // SDL_GetUserFolder returns SDL-owned memory - do not free.
-        const char* const downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
-        if (downloads == nullptr) {
-            log_error(std::string{"SDL_GetUserFolder: "} + SDL_GetError());
+        const std::string downloads{downloads_dir()};
+        if (downloads.empty()) {
             append_log(state,
                        "error: could not find the Downloads folder\n"
                        "  fix: grab the installer from "
@@ -178,6 +196,7 @@ void start_wemod_download(app_state& state)
         const fs::path installer{fs::path(downloads) / "wemod_setup.exe"};
         // No shell: powershell argv, installer launched by the user flow
         // after download (log narrates the next step).
+        const std::string quoted{ps_quote(installer.string())};
         const std::vector<std::string> argv{
             "powershell",      "-NoProfile",
             "-ExecutionPolicy", "Bypass",
@@ -185,12 +204,12 @@ void start_wemod_download(app_state& state)
             "$ProgressPreference='SilentlyContinue'; "
             "Invoke-WebRequest -Uri '" +
                 std::string(wemod_installer_url) + "' -OutFile '" +
-                installer.string() + "'; Start-Process '" +
-                installer.string() + "'"};
-        start_command(state, run_kind::wemod, format_argv(argv), argv);
+                quoted + "'; Start-Process '" + quoted + "'"};
+        start_command(state, run_kind::wemod, run_kind::wemod,
+                      format_argv(argv), argv);
     } else {
-        const char* home{SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
-        if (home == nullptr) {
+        const std::string home{home_dir()};
+        if (home.empty()) {
             append_log(state,
                        "error: HOME is not set - cannot clone "
                        "wemod-launcher.\n\n");
@@ -214,7 +233,8 @@ void start_wemod_download(app_state& state)
         open_url(std::string(launcher_repo_url).c_str());
         const std::vector<std::string> argv{
             "git", "clone", std::string(launcher_clone_url), dir.string()};
-        start_command(state, run_kind::wemod, format_argv(argv), argv);
+        start_command(state, run_kind::wemod, run_kind::wemod,
+                      format_argv(argv), argv);
     }
 }
 
@@ -224,7 +244,8 @@ void start_probe(app_state& state)
         state.python, "-c",
         "import sys,platform;print(sys.version.split()[0]);"
         "print(platform.platform())"};
-    start_command(state, run_kind::probe, format_argv(argv), argv);
+    start_command(state, run_kind::probe, run_kind::probe,
+                  format_argv(argv), argv);
 }
 
 void poll_run(app_state& state)
@@ -239,12 +260,17 @@ void poll_run(app_state& state)
     }
     append_log(state,
                "[exit code: " + std::to_string(result.exit_code) + "]\n\n");
-    state.last_exit_code = result.exit_code;
+    // Probe/WeMod runs share the pipe but must not clobber the patch
+    // status: only patcher results update the Done/Failed line and the
+    // bug-report exit code.
+    if (state.completion_kind == run_kind::patcher) {
+        state.last_exit_code = result.exit_code;
+    }
     state.scroll_to_bottom = true;
 
     // Every failure says what happened and how to fix it - the log is
     // the error report (see the Copy output / Report bug buttons).
-    switch (state.kind) {
+    switch (state.completion_kind) {
     case run_kind::wemod:
         if (result.exit_code != 0) {
             append_log(
@@ -266,8 +292,7 @@ void poll_run(app_state& state)
         } else {
             // Aim the field at the fresh clone: after the first run +
             // login the resolver picks wemod_data/wemod_bin inside it.
-            if (const char* home{SDL_GetEnvironmentVariable(
-                    SDL_GetEnvironment(), "HOME")}) {
+            if (const std::string home{home_dir()}; !home.empty()) {
                 state.install_dir =
                     (fs::path(home) / "wemod-launcher").string();
             }
@@ -282,7 +307,11 @@ void poll_run(app_state& state)
     case run_kind::probe:
         state.python_ok = result.exit_code == 0 ? probe_state::works
                                                 : probe_state::failed;
-        parse_probe(state, result.output);
+        // A failed probe carries stderr text, not version lines -
+        // parsing it would print garbage in Settings and bug reports.
+        if (result.exit_code == 0) {
+            parse_probe(state, result.output);
+        }
         break;
     case run_kind::patcher:
         if (result.exit_code != 0) {
@@ -357,6 +386,7 @@ void report_bug(app_state& state)
                           url_encode("bug: gui report") +
                           "&body=" + url_encode(body)};
     open_url(url.c_str());
+    (void)SDL_GetError; // keep SDL_error include honest: errors log in platform
 }
 
 } // namespace wemod::gui
