@@ -14,4 +14,3 @@ cpmaddpackage(
     "SPDLOG_FUZZ OFF"
     "SPDLOG_USE_STD_FORMAT ON"
     "SPDLOG_SYSTEM_INCLUDES ON")
-
