@@ -43,7 +43,7 @@ cpmaddpackage(
     VERSION
     3.4.16
     GIT_TAG
-    release-3.4.16
+    release-3.4.18
     GIT_SHALLOW
     ON
     GIT_PROGRESS
