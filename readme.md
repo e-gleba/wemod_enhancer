@@ -106,6 +106,8 @@ python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 
 > `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
 
+> The app refuses to start on hardened Windows 11 builds? See [docs/windows.md](/e-gleba/wemod_enhancer/blob/main/docs/windows.md) — the patcher removes Electron's ASAR integrity fuse in `Wand.exe` for that reason, which changes one byte of the signed executable. Pass `--no-fuse-flip` to keep the executable untouched.
+
 ## Restore
 
 Originals are backed up automatically. One command reverts everything:
