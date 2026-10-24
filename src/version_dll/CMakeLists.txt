@@ -45,14 +45,20 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
 
     # Dev builds: stage the proxy next to the GUI binary, mirroring the
     # install layout, so a build-tree run finds it without installing.
-    # Ref: https://cmake.org/cmake/help/latest/module/ExternalProject.html
+    # Copy to an explicit file path after make_directory: copy_if_different
+    # to a bare directory treats a missing multi-config directory (the
+    # proxy builds before the GUI target, which owns creating it) as the
+    # output file itself. That stray file then breaks MSVC MSB3191.
+    # Ref: https://cmake.org/cmake/help/latest/command/add_custom_command.html
     if(TARGET wemod_enhancer_gui)
         add_custom_command(
             TARGET wemod_version_dll
             POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                     "${version_dll_install}/bin/version.dll"
-                    "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
+                    "$<TARGET_FILE_DIR:wemod_enhancer_gui>/version.dll"
             VERBATIM)
     endif()
 
@@ -91,14 +97,20 @@ install(TARGETS wemod_version_dll RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 # The GUI target is created first (src/CMakeLists.txt); TARGET genexes
 # resolve at generate time, so the forward reference is safe. This block
 # only exists in the native-Windows process - on Linux hosts this project
-# is the ExternalProject child itself, which has no GUI target.
+# is the ExternalProject child itself, which has no GUI target. Copy to an
+# explicit file path after make_directory: copy_if_different to a bare
+# directory treats a missing multi-config directory (this target builds
+# before the GUI target, which owns creating it) as the output file
+# itself. That stray file then breaks MSVC MSB3191.
 # Ref: https://cmake.org/cmake/help/latest/command/add_custom_command.html
 if(TARGET wemod_enhancer_gui)
     add_custom_command(
         TARGET wemod_version_dll
         POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "$<TARGET_FILE:wemod_version_dll>"
-                "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
+                "$<TARGET_FILE_DIR:wemod_enhancer_gui>/version.dll"
         VERBATIM)
 endif()
