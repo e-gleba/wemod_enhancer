@@ -20,19 +20,6 @@
 #include <string>
 #include <system_error>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <cerrno>
-#include <csignal>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
-
 namespace wemod::gui
 {
 namespace
@@ -49,12 +36,11 @@ struct app final
 };
 
 void start_command(app& value, const run_kind kind,
-                   const std::string_view shown, std::string command)
+                   const std::string_view shown, std::vector<std::string> args)
 {
     Expects(!shown.empty());
-    Expects(!command.empty());
-    if (value.jobs.busy() ||
-        !value.jobs.launch(kind, std::move(command))) {
+    Expects(!args.empty());
+    if (value.jobs.busy() || !value.jobs.launch(kind, std::move(args))) {
         return;
     }
     append_log(value.state, std::format("$ {}\n", shown));
@@ -69,16 +55,16 @@ void start_run(app& value, const std::string_view subcommand)
     std::string shown{std::format("{} -u {} {} --install-dir {}",
                                   value.state.python, value.state.script_path,
                                   subcommand, value.state.install_dir)};
-    std::string command{std::format(
-        "{} -u {} {} --install-dir {}", shell_quote(value.state.python),
-        shell_quote(value.state.script_path), subcommand,
-        shell_quote(value.state.install_dir))};
+    std::vector<std::string> args{value.state.python, "-u",
+                                  value.state.script_path,
+                                  std::string{subcommand}, "--install-dir",
+                                  value.state.install_dir};
     if (subcommand == "patch" && !value.state.version_dll.empty()) {
         shown += std::format(" --version-dll {}", value.state.version_dll);
-        command += std::format(" --version-dll {}",
-                               shell_quote(value.state.version_dll));
+        args.emplace_back("--version-dll");
+        args.emplace_back(value.state.version_dll);
     }
-    start_command(value, run_kind::patcher, shown, std::move(command));
+    start_command(value, run_kind::patcher, shown, std::move(args));
 }
 
 void start_wemod_download(app& value)
@@ -91,12 +77,17 @@ void start_wemod_download(app& value)
             return;
         }
         const fs::path installer{fs::path{downloads} / "wemod_setup.exe"};
-        const std::string command{std::format(
-            "powershell -NoProfile -ExecutionPolicy Bypass -Command "
-            "\"$ProgressPreference='SilentlyContinue'; Invoke-WebRequest "
-            "-Uri '{}' -OutFile '{}'; Start-Process '{}'\"",
+        const std::string script{std::format(
+            "$ProgressPreference='SilentlyContinue';Invoke-WebRequest "
+            "-Uri '{}' -OutFile '{}';Start-Process '{}'",
             installer_url, installer.string(), installer.string())};
-        start_command(value, run_kind::wemod, command, command);
+        const std::string shown{
+            std::format("powershell -NoProfile -ExecutionPolicy Bypass "
+                        "-Command \"{}\"",
+                        script)};
+        start_command(value, run_kind::wemod, shown,
+                      {"powershell", "-NoProfile", "-ExecutionPolicy",
+                       "Bypass", "-Command", script});
     } else {
         const char* home{
             SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
@@ -116,10 +107,12 @@ void start_wemod_download(app& value)
             return;
         }
         value.state.want_open_url = std::string{launcher_guide_url};
-        const std::string command{std::format("git clone {} {}",
-                                              launcher_clone_url,
-                                              shell_quote(directory.string()))};
-        start_command(value, run_kind::wemod, command, command);
+        const std::string shown{std::format("git clone {} {}",
+                                            launcher_clone_url,
+                                            directory.string())};
+        start_command(value, run_kind::wemod, shown,
+                      {"git", "clone", std::string{launcher_clone_url},
+                       directory.string()});
     }
 }
 
@@ -131,8 +124,7 @@ void start_probe(app& value)
     const std::string shown{
         std::format("{} -c \"{}\"", value.state.python, probe)};
     start_command(value, run_kind::probe, shown,
-                  std::format("{} -c \"{}\"",
-                              shell_quote(value.state.python), probe));
+                  {value.state.python, "-c", std::string{probe}});
 }
 
 void poll_jobs(app& value)
@@ -194,6 +186,9 @@ void execute(app& value, const frame_requests& requests)
 
 void configure_imgui()
 {
+    // Stock ImGui theme on purpose: upstream keeps it coherent across
+    // imgui updates, a hand-rolled palette drifts and fights the widgets.
+    ImGui::StyleColorsDark();
     ImGuiStyle& style{ImGui::GetStyle()};
     style.WindowPadding = ImVec2{18.0F, 14.0F};
     style.FramePadding = ImVec2{12.0F, 8.0F};
@@ -210,37 +205,6 @@ void configure_imgui()
     style.FrameBorderSize = 1.0F;
     style.ScrollbarSize = 14.0F;
     style.GrabMinSize = 14.0F;
-
-    // Phosphor green on black: wake up, Neo.
-    auto& colors{style.Colors};
-    colors[ImGuiCol_Text]                 = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_TextDisabled]         = ImVec4{0.00F, 0.45F, 0.20F, 1.00F};
-    colors[ImGuiCol_WindowBg]             = ImVec4{0.01F, 0.03F, 0.01F, 1.00F};
-    colors[ImGuiCol_ChildBg]              = ImVec4{0.02F, 0.05F, 0.02F, 1.00F};
-    colors[ImGuiCol_PopupBg]              = ImVec4{0.02F, 0.05F, 0.02F, 0.98F};
-    colors[ImGuiCol_Border]               = ImVec4{0.00F, 0.60F, 0.25F, 0.60F};
-    colors[ImGuiCol_FrameBg]              = ImVec4{0.00F, 0.06F, 0.02F, 1.00F};
-    colors[ImGuiCol_FrameBgHovered]       = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
-    colors[ImGuiCol_FrameBgActive]        = ImVec4{0.00F, 0.20F, 0.08F, 1.00F};
-    colors[ImGuiCol_TitleBg]              = ImVec4{0.01F, 0.03F, 0.01F, 1.00F};
-    colors[ImGuiCol_TitleBgActive]        = ImVec4{0.01F, 0.03F, 0.01F, 1.00F};
-    colors[ImGuiCol_ScrollbarGrab]        = ImVec4{0.00F, 0.35F, 0.15F, 1.00F};
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{0.00F, 0.55F, 0.25F, 1.00F};
-    colors[ImGuiCol_ScrollbarGrabActive]  = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_CheckMark]            = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_SliderGrab]           = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_SliderGrabActive]     = ImVec4{0.00F, 0.80F, 0.35F, 1.00F};
-    colors[ImGuiCol_Button]               = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
-    colors[ImGuiCol_ButtonHovered]        = ImVec4{0.00F, 0.25F, 0.10F, 1.00F};
-    colors[ImGuiCol_ButtonActive]         = ImVec4{0.00F, 0.18F, 0.07F, 1.00F};
-    colors[ImGuiCol_Header]               = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
-    colors[ImGuiCol_HeaderHovered]        = ImVec4{0.00F, 0.25F, 0.10F, 1.00F};
-    colors[ImGuiCol_HeaderActive]         = ImVec4{0.00F, 0.18F, 0.07F, 1.00F};
-    colors[ImGuiCol_Separator]            = ImVec4{0.00F, 0.50F, 0.20F, 0.60F};
-    colors[ImGuiCol_SeparatorHovered]     = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_SeparatorActive]      = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_TabHovered]           = ImVec4{0.00F, 0.25F, 0.10F, 1.00F};
-    colors[ImGuiCol_TabActive]            = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
 }
 
 [[nodiscard]] bool init_imgui(const platform::context& context) noexcept
@@ -250,7 +214,6 @@ void configure_imgui()
     Expects(handles.renderer != nullptr);
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::StyleColorsDark();
     configure_imgui();
     if (!ImGui_ImplSDL3_InitForSDLRenderer(handles.window, handles.renderer)) {
         ImGui::DestroyContext();
@@ -279,201 +242,105 @@ void shutdown_imgui() noexcept
     ImGui::DestroyContext();
 }
 
-#ifndef _WIN32
-[[nodiscard]] bool configure_pipe(const int descriptor) noexcept
-{
-    if (::fcntl(descriptor, F_SETFD, FD_CLOEXEC) == -1) { // NOLINT(cppcoreguidelines-pro-type-vararg)
-        return false;
-    }
-    const int flags{::fcntl(descriptor, F_GETFL)}; // NOLINT(cppcoreguidelines-pro-type-vararg)
-    return flags != -1 &&
-        ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1; // NOLINT(cppcoreguidelines-pro-type-vararg)
-}
-#endif
-}
+} // namespace
 
-run_result run_capture(const std::string_view command,
+run_result run_capture(const std::vector<std::string>& args,
                        const std::stop_token& token)
 {
-    Expects(!command.empty());
+    Expects(!args.empty());
     run_result result;
-#ifdef _WIN32
-    SECURITY_ATTRIBUTES attributes{sizeof(attributes), nullptr, TRUE};
-    HANDLE read_handle{nullptr};
-    HANDLE write_handle{nullptr};
-    if (!CreatePipe(&read_handle, &write_handle, &attributes, 0)) {
-        result.output = "error: CreatePipe failed";
+    // SDL3 process: argv stays argv on every platform, no shell anywhere.
+    // SDL quotes each arg for CreateProcessW on Windows (UTF-8 paths and
+    // spaces survive) and execs directly on POSIX, so cmd.exe /bin/sh
+    // metacharacters are inert. See: https://wiki.libsdl.org/SDL3/CategoryProcess
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1UZ);
+    for (const std::string& arg : args) {
+        argv.push_back(arg.c_str());
+    }
+    argv.push_back(nullptr);
+
+    SDL_PropertiesID props{SDL_CreateProperties()};
+    if (props == 0) {
+        result.output = std::format("error: SDL_CreateProperties failed ({})",
+                                    SDL_GetError());
         return result;
     }
-    if (!SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, 0)) {
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: SetHandleInformation failed";
+    // SDL copies what it needs at create time; argv only has to outlive
+    // the SDL_CreateProcessWithProperties call below, not the process.
+    const bool args_set{SDL_SetPointerProperty(
+        props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
+        // SDL stores args as void*; argv outlives the create call below,
+        // which is all SDL needs. Explicit cast silences
+        // bugprone-multi-level-implicit-pointer-conversion at this boundary.
+        static_cast<void*>(argv.data()))};
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
+                          SDL_PROCESS_STDIO_NULL);
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
+                          SDL_PROCESS_STDIO_APP);
+    SDL_SetBooleanProperty(props,
+                           SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN,
+                           true);
+    if (!args_set) {
+        result.output = std::format("error: SDL_CreateProcess failed ({})",
+                                    SDL_GetError());
+        SDL_DestroyProperties(props);
+        return result;
+    }
+    SDL_Process* process{SDL_CreateProcessWithProperties(props)};
+    SDL_DestroyProperties(props);
+    if (process == nullptr) {
+        result.output = std::format("error: SDL_CreateProcess failed ({})",
+                                    SDL_GetError());
         return result;
     }
 
-    HANDLE job{CreateJobObjectA(nullptr, nullptr)};
-    if (job == nullptr) {
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: CreateJobObject failed";
+    SDL_IOStream* output{SDL_GetProcessOutput(process)};
+    if (output == nullptr) {
+        result.output = std::format("error: SDL_GetProcessOutput failed ({})",
+                                    SDL_GetError());
+        SDL_KillProcess(process, true);
+        SDL_DestroyProcess(process);
         return result;
     }
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation,
-                                 &limits, sizeof(limits))) {
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: SetInformationJobObject failed";
-        return result;
-    }
-
-    STARTUPINFOA startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdOutput = write_handle;
-    startup.hStdError = write_handle;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    PROCESS_INFORMATION process{};
-    std::string command_line{"cmd.exe /d /s /c "};
-    command_line += command;
-    if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE,
-                        CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
-                        &startup, &process)) {
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: CreateProcess failed";
-        return result;
-    }
-    if (!AssignProcessToJobObject(job, process.hProcess)) {
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: AssignProcessToJobObject failed";
-        return result;
-    }
-    ResumeThread(process.hThread);
-    CloseHandle(write_handle);
 
     std::array<char, 4096> buffer{};
-    bool completed{false};
+    bool killed{false};
     while (true) {
-        if (token.stop_requested()) {
-            TerminateJobObject(job, 1);
-        }
-        DWORD available{0};
-        if (!PeekNamedPipe(read_handle, nullptr, 0, nullptr, &available,
-                           nullptr)) {
-            break;
-        }
-        while (available != 0) {
-            DWORD read{0};
-            const DWORD requested{std::min<DWORD>(
-                available, gsl::narrow<DWORD>(buffer.size()))};
-            if (!ReadFile(read_handle, buffer.data(), requested, &read,
-                          nullptr) ||
-                read == 0) {
-                available = 0;
-                break;
-            }
-            result.output.append(buffer.data(), read);
-            available -= read;
-        }
-        const DWORD status{
-            WaitForSingleObject(process.hProcess,
-                                gsl::narrow<DWORD>(process_poll_interval.count()))};
-        if (status == WAIT_OBJECT_0) {
-            if (completed && available == 0) {
-                break;
-            }
-            completed = true;
-        } else if (status == WAIT_FAILED) {
-            TerminateJobObject(job, 1);
-            break;
-        }
-    }
-    DWORD exit_code{1};
-    if (GetExitCodeProcess(process.hProcess, &exit_code)) {
-        result.exit_code = gsl::narrow<std::int32_t>(exit_code);
-    }
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    CloseHandle(job);
-    CloseHandle(read_handle);
-#else
-    std::array<int, 2> output{-1, -1};
-    if (::pipe(output.data()) != 0 || !configure_pipe(gsl::at(output, 0)) ||
-        !configure_pipe(gsl::at(output, 1))) { // NOLINT(cppcoreguidelines-pro-type-vararg)
-        if (gsl::at(output, 0) != -1) {
-            ::close(gsl::at(output, 0));
-        }
-        if (gsl::at(output, 1) != -1) {
-            ::close(gsl::at(output, 1));
-        }
-        result.output = std::format("error: pipe setup failed ({})", errno);
-        return result;
-    }
-    const std::string command_text{command};
-    const pid_t pid{::fork()};
-    if (pid < 0) {
-        ::close(gsl::at(output, 0));
-        ::close(gsl::at(output, 1));
-        result.output = std::format("error: fork failed ({})", errno);
-        return result;
-    }
-    if (pid == 0) {
-        ::setpgid(0, 0);
-        ::dup2(gsl::at(output, 1), STDOUT_FILENO);
-        ::dup2(gsl::at(output, 1), STDERR_FILENO);
-        ::close(gsl::at(output, 0));
-        ::close(gsl::at(output, 1));
-        ::execl("/bin/sh", "sh", "-c", command_text.c_str(), nullptr); // NOLINT(cppcoreguidelines-pro-type-vararg)
-        ::_exit(127);
-    }
-
-    ::setpgid(pid, pid);
-    ::close(gsl::at(output, 1));
-    std::array<char, 4096> buffer{};
-    int status{0};
-    while (true) {
-        const ssize_t count{::read(gsl::at(output, 0), buffer.data(), buffer.size())};
+        const std::size_t count{SDL_ReadIO(output, buffer.data(),
+                                           buffer.size())};
         if (count > 0) {
-            result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
+            result.output.append(buffer.data(), count);
+            continue;
         }
-        if (token.stop_requested()) {
-            ::killpg(pid, SIGKILL);
-        }
-        const pid_t waited{::waitpid(pid, &status, WNOHANG)};
-        if (waited == pid) {
+        if (SDL_GetIOStatus(output) == SDL_IO_STATUS_ERROR) {
             break;
         }
-        if (waited < 0 && errno != EINTR) {
-            ::killpg(pid, SIGKILL);
-            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
-            }
+        int exit_code{0};
+        if (SDL_WaitProcess(process, false, &exit_code)) {
             break;
         }
-        std::this_thread::sleep_for(process_poll_interval);
+        if (token.stop_requested() && !killed) {
+            killed = true;
+            SDL_KillProcess(process, false);
+        }
+        SDL_Delay(gsl::narrow<Uint32>(process_poll_interval.count()));
     }
+    // Drain whatever arrived between the last poll and exit.
     while (true) {
-        const ssize_t count{::read(gsl::at(output, 0), buffer.data(), buffer.size())};
-        if (count <= 0) {
+        const std::size_t count{SDL_ReadIO(output, buffer.data(),
+                                           buffer.size())};
+        if (count == 0) {
             break;
         }
-        result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
+        result.output.append(buffer.data(), count);
     }
-    ::close(gsl::at(output, 0));
-    result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-#endif
+    int exit_code{0};
+    SDL_WaitProcess(process, true, &exit_code);
+    result.exit_code = exit_code;
+    SDL_DestroyProcess(process);
     return result;
 }
-
 } // namespace wemod::gui
 
 using wemod::gui::app;

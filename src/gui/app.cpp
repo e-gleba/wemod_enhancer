@@ -27,20 +27,6 @@ std::string url_encode(const std::string_view text)
     return result;
 }
 
-std::string shell_quote(const std::string_view arg)
-{
-    std::string result{is_windows ? "\"" : "'"};
-    for (const char value : arg) {
-        if constexpr (is_windows) {
-            result += value == '"' ? "\"\"" : std::string{value};
-        } else {
-            result += value == '\'' ? "'\"'\"'" : std::string{value};
-        }
-    }
-    result += is_windows ? '"' : '\'';
-    return result;
-}
-
 std::vector<std::int32_t> version_parts(std::string_view name)
 {
     constexpr std::string_view prefix{"app-"};
@@ -210,9 +196,10 @@ bool background_runner::busy() const noexcept
     return busy_;
 }
 
-bool background_runner::launch(const run_kind kind, std::string command)
+bool background_runner::launch(const run_kind kind,
+                               std::vector<std::string> args)
 {
-    Expects(!command.empty());
+    Expects(!args.empty());
     {
         const std::scoped_lock lock{mutex_};
         if (busy_) {
@@ -225,9 +212,9 @@ bool background_runner::launch(const run_kind kind, std::string command)
         worker_.join();
     }
     worker_ = std::jthread{
-        [this, kind, command = std::move(command)](
+        [this, kind, args = std::move(args)](
             const std::stop_token& token) {
-            run_result result{run_capture(command, token)};
+            run_result result{run_capture(args, token)};
             const std::scoped_lock lock{mutex_};
             if (token.stop_requested()) {
                 busy_ = false;

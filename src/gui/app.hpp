@@ -150,7 +150,6 @@ run_block_reason(bool install_ok, bool script_ok) noexcept
 }
 
 [[nodiscard]] std::string url_encode(std::string_view text);
-[[nodiscard]] std::string shell_quote(std::string_view arg);
 [[nodiscard]] std::vector<std::int32_t> version_parts(std::string_view name);
 [[nodiscard]] fs::path newest_app_dir(const fs::path& root);
 [[nodiscard]] fs::path resolve_wemod_dir(std::string_view dir);
@@ -158,7 +157,7 @@ void append_log(app_state& state, std::string_view text);
 [[nodiscard]] std::string env_info(const app_state& state);
 [[nodiscard]] std::string issue_url(const app_state& state);
 void parse_probe(app_state& state, std::string_view output);
-[[nodiscard]] run_result run_capture(std::string_view command,
+[[nodiscard]] run_result run_capture(const std::vector<std::string>& args,
                                      const std::stop_token& token);
 
 class background_runner final
@@ -178,7 +177,8 @@ class background_runner final
     ~background_runner() noexcept;
 
     [[nodiscard]] bool busy() const noexcept;
-    [[nodiscard]] bool launch(run_kind kind, std::string command);
+    [[nodiscard]] bool launch(run_kind kind,
+                              std::vector<std::string> args);
     [[nodiscard]] std::optional<finished_job> poll();
     void request_stop() noexcept;
 
