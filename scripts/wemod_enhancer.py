@@ -122,7 +122,7 @@ def find_bundled_dll() -> Path | None:
 
     After `cmake --install` both wemod_enhancer.py and version.dll
     land in the same directory.  This lets end users run the patcher
-    with just Python — no CMake or compiler needed.
+    with just Python -- no CMake or compiler needed.
     """
     dll = Path(__file__).resolve().parent / "version.dll"
     return dll if dll.is_file() else None
@@ -138,6 +138,29 @@ def paths(install: Path):
     resources = install / "resources"
     return resources / "app.asar", resources / "app.asar.backup", install / "version.dll", install / "version.dll.wemod-enhancer-backup"
 
+def electron_exe(install: Path) -> Path | None:
+    """Electron executable of the install dir (Wand.exe / WeMod.exe)."""
+    for name in ("Wand.exe", "WeMod.exe"):
+        candidate = install / name
+        if candidate.is_file(): return candidate
+    return None
+
+def local_marker(install: Path) -> Path | None:
+    """<exe>.local redirection marker next to the executable, or None.
+
+    One marker per executable name (Wand.exe.local / WeMod.exe.local):
+    the name follows the exe that actually sits in the install dir.
+    An empty file with that name enables DLL redirection, so the
+    version.dll proxy next to the executable is preferred over the
+    System32 copy. Same effect WINEDLLOVERRIDES="version=n,b" gives
+    on Wine, through the Windows loader's own redirection support.
+    The file stays empty: the loader only checks that it exists.
+    Ref: https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-redirection
+    """
+    exe = electron_exe(install)
+    if exe is None: return None
+    return install / f"{exe.name}.local"
+
 def patch(install: Path, dll: Path | None):
     asar, backup, target_dll, dll_backup = paths(install)
     if not asar.is_file(): raise FileNotFoundError(f"missing {asar}")
@@ -145,14 +168,18 @@ def patch(install: Path, dll: Path | None):
     else: shutil.copy2(backup, asar)
     if target_dll.exists() and not dll_backup.exists(): shutil.copy2(target_dll, dll_backup)
     dll = resolve_dll(dll); pe_x64(dll)
+    marker = local_marker(install)
     try:
         with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
             work = Path(tmp); header = extract_asar(asar, work); patch_bundles(work); pack_asar(work, asar, header)
-        shutil.copy2(dll, target_dll); print(f"patched {install}")
+        shutil.copy2(dll, target_dll)
+        if marker: marker.touch(exist_ok=True); print(f"installed {marker.name} (dll redirection for version.dll)")
+        print(f"patched {install}")
     except Exception:
         shutil.copy2(backup, asar)
         if dll_backup.exists(): shutil.copy2(dll_backup, target_dll)
         elif target_dll.exists(): target_dll.unlink()
+        if marker and marker.exists(): marker.unlink()
         raise
 
 def restore(install: Path):
@@ -161,6 +188,8 @@ def restore(install: Path):
     shutil.copy2(backup, asar)
     if dll_backup.exists(): shutil.copy2(dll_backup, dll)
     elif dll.exists(): dll.unlink()
+    marker = local_marker(install)
+    if marker and marker.exists(): marker.unlink()
     print(f"restored {install}")
 
 def main():
