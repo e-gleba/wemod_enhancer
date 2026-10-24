@@ -29,3 +29,29 @@ install(
     TARGETS wemod_enhancer_gui
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     BUNDLE DESTINATION .)
+
+# Dev builds run straight from the build tree, so stage the runtime
+# companions next to the GUI binary: the patcher script it shells out
+# to and, on Windows, the version.dll proxy it hands to the patcher.
+# $<TARGET_FILE_DIR> follows the per-config subdir of multi-config
+# generators, and TARGET_FILE keeps this correct if the proxy output
+# name or location ever moves. Install/CPack rules are untouched.
+# Ref: https://cmake.org/cmake/help/latest/command/add_custom_command.html
+add_custom_command(
+    TARGET wemod_enhancer_gui
+    POST_BUILD
+    COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/scripts/wemod_enhancer.py"
+        "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
+    VERBATIM)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    add_custom_command(
+        TARGET wemod_enhancer_gui
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:wemod_version_dll>"
+                "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
+        VERBATIM)
+endif()
