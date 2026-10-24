@@ -20,19 +20,6 @@
 #include <string>
 #include <system_error>
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#else
-#include <cerrno>
-#include <csignal>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
-
 namespace wemod::gui
 {
 namespace
@@ -47,29 +34,6 @@ struct app final
     background_runner jobs;
     bool imgui_ready{false};
 };
-
-#ifdef _WIN32
-// UTF-8 state string to wide argv text. The A APIs and std::filesystem
-// .string() narrow through the ANSI codepage and corrupt non-ASCII paths.
-[[nodiscard]] std::wstring to_wide(const std::string_view text)
-{
-    if (text.empty()) {
-        return {};
-    }
-    const int size{MultiByteToWideChar(
-        CP_UTF8, 0, text.data(), gsl::narrow<int>(text.size()), nullptr, 0)};
-    if (size <= 0) {
-        return {};
-    }
-    std::wstring result(gsl::narrow<std::size_t>(size), L'\0');
-    if (MultiByteToWideChar(CP_UTF8, 0, text.data(),
-                            gsl::narrow<int>(text.size()), result.data(),
-                            size) <= 0) {
-        return {};
-    }
-    return result;
-}
-#endif
 
 void start_command(app& value, const run_kind kind,
                    const std::string_view shown, std::vector<std::string> args)
@@ -307,222 +271,95 @@ void shutdown_imgui() noexcept
     ImGui::DestroyContext();
 }
 
-#ifndef _WIN32
-[[nodiscard]] bool configure_pipe(const int descriptor) noexcept
-{
-    if (::fcntl(descriptor, F_SETFD, FD_CLOEXEC) == -1) { // NOLINT(cppcoreguidelines-pro-type-vararg)
-        return false;
-    }
-    const int flags{::fcntl(descriptor, F_GETFL)}; // NOLINT(cppcoreguidelines-pro-type-vararg)
-    return flags != -1 &&
-        ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1; // NOLINT(cppcoreguidelines-pro-type-vararg)
-}
-#endif
-}
+} // namespace
 
 run_result run_capture(const std::vector<std::string>& args,
                        const std::stop_token& token)
 {
     Expects(!args.empty());
     run_result result;
-#ifdef _WIN32
-    SECURITY_ATTRIBUTES attributes{sizeof(attributes), nullptr, TRUE};
-    HANDLE read_handle{nullptr};
-    HANDLE write_handle{nullptr};
-    if (!CreatePipe(&read_handle, &write_handle, &attributes, 0)) {
-        result.output = "error: CreatePipe failed";
-        return result;
-    }
-    if (!SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, 0)) {
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: SetHandleInformation failed";
-        return result;
-    }
-
-    HANDLE job{CreateJobObjectW(nullptr, nullptr)};
-    if (job == nullptr) {
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: CreateJobObject failed";
-        return result;
-    }
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation,
-                                 &limits, sizeof(limits))) {
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: SetInformationJobObject failed";
-        return result;
-    }
-
-    STARTUPINFOW startup{};
-    startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
-    startup.hStdOutput = write_handle;
-    startup.hStdError = write_handle;
-    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    PROCESS_INFORMATION process{};
-    // argv joined by windows_quote, never a shell: spaces and non-ASCII
-    // paths survive, and % & | < > lose their cmd.exe meaning.
-    std::wstring command_line;
+    // SDL3 process: argv stays argv on every platform, no shell anywhere.
+    // SDL quotes each arg for CreateProcessW on Windows (UTF-8 paths and
+    // spaces survive) and execs directly on POSIX, so cmd.exe /bin/sh
+    // metacharacters are inert. See: https://wiki.libsdl.org/SDL3/CategoryProcess
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1UZ);
     for (const std::string& arg : args) {
-        if (!command_line.empty()) {
-            command_line += L' ';
-        }
-        command_line += to_wide(windows_quote(arg));
+        argv.push_back(arg.c_str());
     }
-    if (command_line.empty()) {
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: command line is empty";
-        return result;
-    }
-    if (!CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, TRUE,
-                        CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
-                        &startup, &process)) {
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: CreateProcess failed";
-        return result;
-    }
-    if (!AssignProcessToJobObject(job, process.hProcess)) {
-        TerminateProcess(process.hProcess, 1);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        CloseHandle(job);
-        CloseHandle(read_handle);
-        CloseHandle(write_handle);
-        result.output = "error: AssignProcessToJobObject failed";
-        return result;
-    }
-    ResumeThread(process.hThread);
-    CloseHandle(write_handle);
+    argv.push_back(nullptr);
 
-    std::array<char, 4096> buffer{};
-    bool completed{false};
-    while (true) {
-        if (token.stop_requested()) {
-            TerminateJobObject(job, 1);
-        }
-        DWORD available{0};
-        if (!PeekNamedPipe(read_handle, nullptr, 0, nullptr, &available,
-                           nullptr)) {
-            break;
-        }
-        while (available != 0) {
-            DWORD read{0};
-            const DWORD requested{std::min<DWORD>(
-                available, gsl::narrow<DWORD>(buffer.size()))};
-            if (!ReadFile(read_handle, buffer.data(), requested, &read,
-                          nullptr) ||
-                read == 0) {
-                available = 0;
-                break;
-            }
-            result.output.append(buffer.data(), read);
-            available -= read;
-        }
-        const DWORD status{
-            WaitForSingleObject(process.hProcess,
-                                gsl::narrow<DWORD>(process_poll_interval.count()))};
-        if (status == WAIT_OBJECT_0) {
-            if (completed && available == 0) {
-                break;
-            }
-            completed = true;
-        } else if (status == WAIT_FAILED) {
-            TerminateJobObject(job, 1);
-            break;
-        }
-    }
-    DWORD exit_code{1};
-    if (GetExitCodeProcess(process.hProcess, &exit_code)) {
-        result.exit_code = gsl::narrow<std::int32_t>(exit_code);
-    }
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-    CloseHandle(job);
-    CloseHandle(read_handle);
-#else
-    std::array<int, 2> output{-1, -1};
-    if (::pipe(output.data()) != 0 || !configure_pipe(gsl::at(output, 0)) ||
-        !configure_pipe(gsl::at(output, 1))) { // NOLINT(cppcoreguidelines-pro-type-vararg)
-        if (gsl::at(output, 0) != -1) {
-            ::close(gsl::at(output, 0));
-        }
-        if (gsl::at(output, 1) != -1) {
-            ::close(gsl::at(output, 1));
-        }
-        result.output = std::format("error: pipe setup failed ({})", errno);
+    SDL_PropertiesID props{SDL_CreateProperties()};
+    if (props == 0) {
+        result.output = std::format("error: SDL_CreateProperties failed ({})",
+                                    SDL_GetError());
         return result;
     }
-    const pid_t pid{::fork()};
-    if (pid < 0) {
-        ::close(gsl::at(output, 0));
-        ::close(gsl::at(output, 1));
-        result.output = std::format("error: fork failed ({})", errno);
+    // Owned by props once the strings are set; SDL copies what it needs
+    // at create time, argv itself only has to live until then.
+    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
+                           argv.data());
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
+                          SDL_PROCESS_STDIO_NULL);
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
+                          SDL_PROCESS_STDIO_APP);
+    SDL_SetBooleanProperty(props,
+                           SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN,
+                           true);
+    SDL_Process* process{SDL_CreateProcessWithProperties(props)};
+    SDL_DestroyProperties(props);
+    if (process == nullptr) {
+        result.output = std::format("error: SDL_CreateProcess failed ({})",
+                                    SDL_GetError());
         return result;
-    }
-    if (pid == 0) {
-        ::setpgid(0, 0);
-        ::dup2(gsl::at(output, 1), STDOUT_FILENO);
-        ::dup2(gsl::at(output, 1), STDERR_FILENO);
-        ::close(gsl::at(output, 0));
-        ::close(gsl::at(output, 1));
-        std::vector<char*> argv;
-        argv.reserve(args.size() + 1UZ);
-        for (const std::string& arg : args) {
-            // execvp wants mutable char*; the strings outlive exec and the
-            // cast is never written through.
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(nullptr);
-        ::execvp(argv.front(), argv.data()); // NOLINT(cppcoreguidelines-pro-type-vararg)
-        ::_exit(127);
     }
 
-    ::setpgid(pid, pid);
-    ::close(gsl::at(output, 1));
+    SDL_IOStream* output{SDL_GetProcessOutput(process)};
+    if (output == nullptr) {
+        result.output = std::format("error: SDL_GetProcessOutput failed ({})",
+                                    SDL_GetError());
+        SDL_KillProcess(process, true);
+        SDL_DestroyProcess(process);
+        return result;
+    }
+
     std::array<char, 4096> buffer{};
-    int status{0};
+    bool killed{false};
     while (true) {
-        const ssize_t count{::read(gsl::at(output, 0), buffer.data(), buffer.size())};
+        const std::size_t count{SDL_ReadIO(output, buffer.data(),
+                                           buffer.size())};
         if (count > 0) {
-            result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
+            result.output.append(buffer.data(), count);
+            continue;
         }
-        if (token.stop_requested()) {
-            ::killpg(pid, SIGKILL);
-        }
-        const pid_t waited{::waitpid(pid, &status, WNOHANG)};
-        if (waited == pid) {
+        if (SDL_GetIOStatus(output) == SDL_IO_STATUS_ERROR) {
             break;
         }
-        if (waited < 0 && errno != EINTR) {
-            ::killpg(pid, SIGKILL);
-            while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
-            }
+        int exit_code{0};
+        if (SDL_WaitProcess(process, false, &exit_code)) {
             break;
         }
-        std::this_thread::sleep_for(process_poll_interval);
+        if (token.stop_requested() && !killed) {
+            killed = true;
+            SDL_KillProcess(process, false);
+        }
+        SDL_Delay(gsl::narrow<Uint32>(process_poll_interval.count()));
     }
+    // Drain whatever arrived between the last poll and exit.
     while (true) {
-        const ssize_t count{::read(gsl::at(output, 0), buffer.data(), buffer.size())};
-        if (count <= 0) {
+        const std::size_t count{SDL_ReadIO(output, buffer.data(),
+                                           buffer.size())};
+        if (count == 0) {
             break;
         }
-        result.output.append(buffer.data(), gsl::narrow<std::size_t>(count));
+        result.output.append(buffer.data(), count);
     }
-    ::close(gsl::at(output, 0));
-    result.exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-#endif
+    int exit_code{0};
+    SDL_WaitProcess(process, true, &exit_code);
+    result.exit_code = exit_code;
+    SDL_DestroyProcess(process);
     return result;
 }
-
 } // namespace wemod::gui
 
 using wemod::gui::app;
