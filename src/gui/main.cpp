@@ -186,6 +186,9 @@ void execute(app& value, const frame_requests& requests)
 
 void configure_imgui()
 {
+    // Stock ImGui theme on purpose: upstream keeps it coherent across
+    // imgui updates, a hand-rolled palette drifts and fights the widgets.
+    ImGui::StyleColorsDark();
     ImGuiStyle& style{ImGui::GetStyle()};
     style.WindowPadding = ImVec2{18.0F, 14.0F};
     style.FramePadding = ImVec2{12.0F, 8.0F};
@@ -202,37 +205,6 @@ void configure_imgui()
     style.FrameBorderSize = 1.0F;
     style.ScrollbarSize = 14.0F;
     style.GrabMinSize = 14.0F;
-
-    // Phosphor green on black: wake up, Neo.
-    auto& colors{style.Colors};
-    colors[ImGuiCol_Text]                 = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_TextDisabled]         = ImVec4{0.00F, 0.45F, 0.20F, 1.00F};
-    colors[ImGuiCol_WindowBg]             = ImVec4{0.01F, 0.03F, 0.01F, 1.00F};
-    colors[ImGuiCol_ChildBg]              = ImVec4{0.02F, 0.05F, 0.02F, 1.00F};
-    colors[ImGuiCol_PopupBg]              = ImVec4{0.02F, 0.05F, 0.02F, 0.98F};
-    colors[ImGuiCol_Border]               = ImVec4{0.00F, 0.60F, 0.25F, 0.60F};
-    colors[ImGuiCol_FrameBg]              = ImVec4{0.00F, 0.06F, 0.02F, 1.00F};
-    colors[ImGuiCol_FrameBgHovered]       = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
-    colors[ImGuiCol_FrameBgActive]        = ImVec4{0.00F, 0.20F, 0.08F, 1.00F};
-    colors[ImGuiCol_TitleBg]              = ImVec4{0.01F, 0.03F, 0.01F, 1.00F};
-    colors[ImGuiCol_TitleBgActive]        = ImVec4{0.01F, 0.03F, 0.01F, 1.00F};
-    colors[ImGuiCol_ScrollbarGrab]        = ImVec4{0.00F, 0.35F, 0.15F, 1.00F};
-    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4{0.00F, 0.55F, 0.25F, 1.00F};
-    colors[ImGuiCol_ScrollbarGrabActive]  = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_CheckMark]            = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_SliderGrab]           = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_SliderGrabActive]     = ImVec4{0.00F, 0.80F, 0.35F, 1.00F};
-    colors[ImGuiCol_Button]               = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
-    colors[ImGuiCol_ButtonHovered]        = ImVec4{0.00F, 0.25F, 0.10F, 1.00F};
-    colors[ImGuiCol_ButtonActive]         = ImVec4{0.00F, 0.18F, 0.07F, 1.00F};
-    colors[ImGuiCol_Header]               = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
-    colors[ImGuiCol_HeaderHovered]        = ImVec4{0.00F, 0.25F, 0.10F, 1.00F};
-    colors[ImGuiCol_HeaderActive]         = ImVec4{0.00F, 0.18F, 0.07F, 1.00F};
-    colors[ImGuiCol_Separator]            = ImVec4{0.00F, 0.50F, 0.20F, 0.60F};
-    colors[ImGuiCol_SeparatorHovered]     = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_SeparatorActive]      = ImVec4{0.00F, 1.00F, 0.45F, 1.00F};
-    colors[ImGuiCol_TabHovered]           = ImVec4{0.00F, 0.25F, 0.10F, 1.00F};
-    colors[ImGuiCol_TabActive]            = ImVec4{0.00F, 0.12F, 0.05F, 1.00F};
 }
 
 [[nodiscard]] bool init_imgui(const platform::context& context) noexcept
@@ -242,7 +214,6 @@ void configure_imgui()
     Expects(handles.renderer != nullptr);
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::StyleColorsDark();
     configure_imgui();
     if (!ImGui_ImplSDL3_InitForSDLRenderer(handles.window, handles.renderer)) {
         ImGui::DestroyContext();
@@ -295,10 +266,14 @@ run_result run_capture(const std::vector<std::string>& args,
                                     SDL_GetError());
         return result;
     }
-    // Owned by props once the strings are set; SDL copies what it needs
-    // at create time, argv itself only has to live until then.
-    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
-                           argv.data());
+    // SDL copies what it needs at create time; argv only has to outlive
+    // the SDL_CreateProcessWithProperties call below, not the process.
+    const bool args_set{SDL_SetPointerProperty(
+        props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
+        // SDL stores args as void*; argv outlives the create call below,
+        // which is all SDL needs. Explicit cast silences
+        // bugprone-multi-level-implicit-pointer-conversion at this boundary.
+        static_cast<void*>(argv.data()))};
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
                           SDL_PROCESS_STDIO_NULL);
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
@@ -306,6 +281,12 @@ run_result run_capture(const std::vector<std::string>& args,
     SDL_SetBooleanProperty(props,
                            SDL_PROP_PROCESS_CREATE_STDERR_TO_STDOUT_BOOLEAN,
                            true);
+    if (!args_set) {
+        result.output = std::format("error: SDL_CreateProcess failed ({})",
+                                    SDL_GetError());
+        SDL_DestroyProperties(props);
+        return result;
+    }
     SDL_Process* process{SDL_CreateProcessWithProperties(props)};
     SDL_DestroyProperties(props);
     if (process == nullptr) {
