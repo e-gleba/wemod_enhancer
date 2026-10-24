@@ -26,14 +26,13 @@ constexpr std::string_view arch{"arm64"};
 constexpr std::string_view arch{"unknown"};
 #endif
 
-constexpr std::array<float, 4> tint_ok{0.00F, 0.25F, 0.08F, 0.90F};
-constexpr std::array<float, 4> tint_bad{0.35F, 0.05F, 0.05F, 0.90F};
-constexpr std::array<float, 4> ink_ok{0.00F, 1.00F, 0.45F, 1.00F};
-constexpr std::array<float, 4> ink_bad{1.00F, 0.25F, 0.25F, 1.00F};
-constexpr std::array<float, 4> ink_dim{0.00F, 0.50F, 0.22F, 1.00F};
-constexpr std::array<float, 4> accent{0.00F, 0.45F, 0.18F, 1.00F};
-constexpr std::array<float, 4> accent_hover{0.00F, 0.65F, 0.27F, 1.00F};
-constexpr std::array<float, 4> accent_active{0.00F, 0.35F, 0.14F, 1.00F};
+// Status semantics only, sampled from the stock dark palette so text
+// and fields stay readable without a custom theme to maintain.
+constexpr std::array<float, 4> tint_ok{0.16F, 0.26F, 0.16F, 0.90F};
+constexpr std::array<float, 4> tint_bad{0.30F, 0.14F, 0.14F, 0.90F};
+constexpr std::array<float, 4> ink_ok{0.40F, 0.80F, 0.40F, 1.00F};
+constexpr std::array<float, 4> ink_bad{0.90F, 0.35F, 0.35F, 1.00F};
+constexpr std::array<float, 4> ink_dim{0.55F, 0.55F, 0.55F, 1.00F};
 
 [[nodiscard]] ImVec4 to_vec(const std::array<float, 4>& color)
 {
@@ -81,7 +80,7 @@ void help_link(app_state& state, const std::string_view text,
 }
 
 // ASCII status tag, airborne-console style. Plain text keeps every
-// column aligned in any font, at any DPI: OK green, ERR red, -- dim.
+// column aligned in any font, at any DPI: OK, ERR, -- states.
 void status_tag(const int state)
 {
     const char* label{"--"};
@@ -111,7 +110,7 @@ void status_tag(const int state)
                     1.0F);
 }
 
-// Full-width field, green/red tint once a value was entered.
+// Full-width field, ok/bad tint once a value was entered.
 void field(const char* id, const char* hint, std::string& value,
            const bool show_tint, const bool ok, const char* why)
 {
@@ -325,20 +324,10 @@ frame_requests draw(app_state& state)
     const int actions{install_ok ? 2 : 3};
     const float width{equal_width(actions)};
     const std::string_view blocked{run_block_reason(install_ok, script_ok)};
-    // The accent highlight means "clickable": apply it only when the
-    // button is really enabled, never under BeginDisabled.
     const bool actions_ready{!state.running && blocked.empty()};
     ImGui::BeginDisabled(!actions_ready);
-    if (actions_ready) {
-        ImGui::PushStyleColor(ImGuiCol_Button, to_vec(accent));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, to_vec(accent_hover));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, to_vec(accent_active));
-    }
     const bool patch_pressed{ImGui::Button("Patch",
                                            ImVec2(width, action_height))};
-    if (actions_ready) {
-        ImGui::PopStyleColor(3);
-    }
     if (patch_pressed && resolve_for_run(state)) {
         requests.patch = true;
     }
