@@ -150,7 +150,6 @@ run_block_reason(bool install_ok, bool script_ok) noexcept
 }
 
 [[nodiscard]] std::string url_encode(std::string_view text);
-[[nodiscard]] std::string windows_quote(std::string_view arg);
 [[nodiscard]] std::vector<std::int32_t> version_parts(std::string_view name);
 [[nodiscard]] fs::path newest_app_dir(const fs::path& root);
 [[nodiscard]] fs::path resolve_wemod_dir(std::string_view dir);

@@ -27,34 +27,6 @@ std::string url_encode(const std::string_view text)
     return result;
 }
 
-std::string windows_quote(const std::string_view arg)
-{
-    // CommandLineToArgvW quoting: quote only when the arg is empty or
-    // holds space, tab or quote. Backslashes double only before a quote.
-    // See: https://learn.microsoft.com/en-us/cpp/cpp/main-function-command-line-args
-    if (!arg.empty() && arg.find_first_of(" \t\"") == std::string_view::npos) {
-        return std::string{arg};
-    }
-    std::string result{"\""};
-    std::size_t slashes{0UZ};
-    for (const char value : arg) {
-        if (value == '\\') {
-            ++slashes;
-            continue;
-        }
-        result.append(value == '"' ? 2UZ * slashes + 1UZ : slashes, '\\');
-        slashes = 0UZ;
-        if (value == '"') {
-            result += '"';
-        } else {
-            result += value;
-        }
-    }
-    result.append(2UZ * slashes, '\\');
-    result += '"';
-    return result;
-}
-
 std::vector<std::int32_t> version_parts(std::string_view name)
 {
     constexpr std::string_view prefix{"app-"};
