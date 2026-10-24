@@ -30,22 +30,27 @@ install(
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     BUNDLE DESTINATION .)
 
-# Dev builds run straight from the build tree, so stage the runtime
-# companions next to the GUI binary: the patcher script it shells out
-# to and, on Windows, the version.dll proxy it hands to the patcher.
-# $<TARGET_FILE_DIR> follows the per-config subdir of multi-config
-# generators, and TARGET_FILE keeps this correct if the proxy output
-# name or location ever moves. Install/CPack rules are untouched.
+# Dev builds run straight from the build tree: stage the runtime companions
+# next to the GUI binary so no install/CPack step is needed to try a change.
+# The GUI resolves both files relative to its own directory (SDL_AppInit).
+# $<TARGET_FILE_DIR> follows the per-config subdir of multi-config generators;
+# copy_if_different keeps repeat builds silent. Install rules stay untouched.
 # Ref: https://cmake.org/cmake/help/latest/command/add_custom_command.html
 add_custom_command(
     TARGET wemod_enhancer_gui
     POST_BUILD
     COMMAND
         ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_SOURCE_DIR}/scripts/wemod_enhancer.py"
+        "${CMAKE_CURRENT_LIST_DIR}/../../scripts/wemod_enhancer.py"
         "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
     VERBATIM)
 
+# Native Windows only, and the gate is load-bearing: there wemod_version_dll
+# is a real library target in this process (src/CMakeLists.txt adds the GUI
+# first; the genex resolves lazily at generate time). On Linux hosts the same
+# name is an ExternalProject utility target, where $<TARGET_FILE:...> fails
+# generation - and that build only needs the DLL inside the package anyway,
+# which the install rule in ct_version_dll.cmake already covers.
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     add_custom_command(
         TARGET wemod_enhancer_gui
