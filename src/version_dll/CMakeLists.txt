@@ -31,3 +31,20 @@ target_link_options(
 # RUNTIME only: nothing links the proxy (WeMod loads it via DLL search
 # order), so the import .lib is dead weight.
 install(TARGETS wemod_version_dll RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+# Dev builds: stage the proxy next to the GUI binary, mirroring the install
+# layout, so a build-tree run finds it via --version-dll without installing.
+# The GUI target is created first (src/CMakeLists.txt); TARGET genexes
+# resolve at generate time, so the forward reference is safe. This block
+# only exists in the native-Windows process - on Linux hosts this project
+# is the ExternalProject child itself, which has no GUI target.
+# Ref: https://cmake.org/cmake/help/latest/command/add_custom_command.html
+if(TARGET wemod_enhancer_gui)
+    add_custom_command(
+        TARGET wemod_version_dll
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:wemod_version_dll>"
+                "$<TARGET_FILE_DIR:wemod_enhancer_gui>"
+        VERBATIM)
+endif()
