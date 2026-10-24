@@ -48,13 +48,35 @@ struct app final
     bool imgui_ready{false};
 };
 
+#ifdef _WIN32
+// UTF-8 state string to wide argv text. The A APIs and std::filesystem
+// .string() narrow through the ANSI codepage and corrupt non-ASCII paths.
+[[nodiscard]] std::wstring to_wide(const std::string_view text)
+{
+    if (text.empty()) {
+        return {};
+    }
+    const int size{MultiByteToWideChar(
+        CP_UTF8, 0, text.data(), gsl::narrow<int>(text.size()), nullptr, 0)};
+    if (size <= 0) {
+        return {};
+    }
+    std::wstring result(gsl::narrow<std::size_t>(size), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, text.data(),
+                            gsl::narrow<int>(text.size()), result.data(),
+                            size) <= 0) {
+        return {};
+    }
+    return result;
+}
+#endif
+
 void start_command(app& value, const run_kind kind,
-                   const std::string_view shown, std::string command)
+                   const std::string_view shown, std::vector<std::string> args)
 {
     Expects(!shown.empty());
-    Expects(!command.empty());
-    if (value.jobs.busy() ||
-        !value.jobs.launch(kind, std::move(command))) {
+    Expects(!args.empty());
+    if (value.jobs.busy() || !value.jobs.launch(kind, std::move(args))) {
         return;
     }
     append_log(value.state, std::format("$ {}\n", shown));
@@ -69,16 +91,16 @@ void start_run(app& value, const std::string_view subcommand)
     std::string shown{std::format("{} -u {} {} --install-dir {}",
                                   value.state.python, value.state.script_path,
                                   subcommand, value.state.install_dir)};
-    std::string command{std::format(
-        "{} -u {} {} --install-dir {}", shell_quote(value.state.python),
-        shell_quote(value.state.script_path), subcommand,
-        shell_quote(value.state.install_dir))};
+    std::vector<std::string> args{value.state.python, "-u",
+                                  value.state.script_path,
+                                  std::string{subcommand}, "--install-dir",
+                                  value.state.install_dir};
     if (subcommand == "patch" && !value.state.version_dll.empty()) {
         shown += std::format(" --version-dll {}", value.state.version_dll);
-        command += std::format(" --version-dll {}",
-                               shell_quote(value.state.version_dll));
+        args.emplace_back("--version-dll");
+        args.emplace_back(value.state.version_dll);
     }
-    start_command(value, run_kind::patcher, shown, std::move(command));
+    start_command(value, run_kind::patcher, shown, std::move(args));
 }
 
 void start_wemod_download(app& value)
@@ -91,12 +113,17 @@ void start_wemod_download(app& value)
             return;
         }
         const fs::path installer{fs::path{downloads} / "wemod_setup.exe"};
-        const std::string command{std::format(
-            "powershell -NoProfile -ExecutionPolicy Bypass -Command "
-            "\"$ProgressPreference='SilentlyContinue'; Invoke-WebRequest "
-            "-Uri '{}' -OutFile '{}'; Start-Process '{}'\"",
+        const std::string script{std::format(
+            "$ProgressPreference='SilentlyContinue';Invoke-WebRequest "
+            "-Uri '{}' -OutFile '{}';Start-Process '{}'",
             installer_url, installer.string(), installer.string())};
-        start_command(value, run_kind::wemod, command, command);
+        const std::string shown{
+            std::format("powershell -NoProfile -ExecutionPolicy Bypass "
+                        "-Command \"{}\"",
+                        script)};
+        start_command(value, run_kind::wemod, shown,
+                      {"powershell", "-NoProfile", "-ExecutionPolicy",
+                       "Bypass", "-Command", script});
     } else {
         const char* home{
             SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
@@ -116,10 +143,12 @@ void start_wemod_download(app& value)
             return;
         }
         value.state.want_open_url = std::string{launcher_guide_url};
-        const std::string command{std::format("git clone {} {}",
-                                              launcher_clone_url,
-                                              shell_quote(directory.string()))};
-        start_command(value, run_kind::wemod, command, command);
+        const std::string shown{std::format("git clone {} {}",
+                                            launcher_clone_url,
+                                            directory.string())};
+        start_command(value, run_kind::wemod, shown,
+                      {"git", "clone", std::string{launcher_clone_url},
+                       directory.string()});
     }
 }
 
@@ -131,8 +160,7 @@ void start_probe(app& value)
     const std::string shown{
         std::format("{} -c \"{}\"", value.state.python, probe)};
     start_command(value, run_kind::probe, shown,
-                  std::format("{} -c \"{}\"",
-                              shell_quote(value.state.python), probe));
+                  {value.state.python, "-c", std::string{probe}});
 }
 
 void poll_jobs(app& value)
@@ -292,10 +320,10 @@ void shutdown_imgui() noexcept
 #endif
 }
 
-run_result run_capture(const std::string_view command,
+run_result run_capture(const std::vector<std::string>& args,
                        const std::stop_token& token)
 {
-    Expects(!command.empty());
+    Expects(!args.empty());
     run_result result;
 #ifdef _WIN32
     SECURITY_ATTRIBUTES attributes{sizeof(attributes), nullptr, TRUE};
@@ -312,7 +340,7 @@ run_result run_capture(const std::string_view command,
         return result;
     }
 
-    HANDLE job{CreateJobObjectA(nullptr, nullptr)};
+    HANDLE job{CreateJobObjectW(nullptr, nullptr)};
     if (job == nullptr) {
         CloseHandle(read_handle);
         CloseHandle(write_handle);
@@ -330,16 +358,30 @@ run_result run_capture(const std::string_view command,
         return result;
     }
 
-    STARTUPINFOA startup{};
+    STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdOutput = write_handle;
     startup.hStdError = write_handle;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION process{};
-    std::string command_line{"cmd.exe /d /s /c "};
-    command_line += command;
-    if (!CreateProcessA(nullptr, command_line.data(), nullptr, nullptr, TRUE,
+    // argv joined by windows_quote, never a shell: spaces and non-ASCII
+    // paths survive, and % & | < > lose their cmd.exe meaning.
+    std::wstring command_line;
+    for (const std::string& arg : args) {
+        if (!command_line.empty()) {
+            command_line += L' ';
+        }
+        command_line += to_wide(windows_quote(arg));
+    }
+    if (command_line.empty()) {
+        CloseHandle(job);
+        CloseHandle(read_handle);
+        CloseHandle(write_handle);
+        result.output = "error: command line is empty";
+        return result;
+    }
+    if (!CreateProcessW(nullptr, command_line.data(), nullptr, nullptr, TRUE,
                         CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr,
                         &startup, &process)) {
         CloseHandle(job);
@@ -419,7 +461,6 @@ run_result run_capture(const std::string_view command,
         result.output = std::format("error: pipe setup failed ({})", errno);
         return result;
     }
-    const std::string command_text{command};
     const pid_t pid{::fork()};
     if (pid < 0) {
         ::close(gsl::at(output, 0));
@@ -433,7 +474,15 @@ run_result run_capture(const std::string_view command,
         ::dup2(gsl::at(output, 1), STDERR_FILENO);
         ::close(gsl::at(output, 0));
         ::close(gsl::at(output, 1));
-        ::execl("/bin/sh", "sh", "-c", command_text.c_str(), nullptr); // NOLINT(cppcoreguidelines-pro-type-vararg)
+        std::vector<char*> argv;
+        argv.reserve(args.size() + 1UZ);
+        for (const std::string& arg : args) {
+            // execvp wants mutable char*; the strings outlive exec and the
+            // cast is never written through.
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
+        ::execvp(argv.front(), argv.data()); // NOLINT(cppcoreguidelines-pro-type-vararg)
         ::_exit(127);
     }
 
