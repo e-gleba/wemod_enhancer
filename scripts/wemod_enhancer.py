@@ -2,7 +2,7 @@
 """Install version.dll and patch Wand/WeMod Electron app.asar."""
 from __future__ import annotations
 
-import argparse, hashlib, json, re, shutil, struct, sys, tempfile
+import argparse, hashlib, json, mmap, re, shutil, struct, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 BLOCK_SIZE = 4 * 1024 * 1024
@@ -145,21 +145,64 @@ def electron_exe(install: Path) -> Path | None:
         if candidate.is_file(): return candidate
     return None
 
-def local_marker(install: Path) -> Path | None:
-    """<exe>.local redirection marker next to the executable, or None.
+LOAD_CONFIG_DIRECTORY = 10
+DEPENDENT_LOAD_FLAGS_OFFSET = 0x4E
+LOAD_LIBRARY_SEARCH_SYSTEM32 = 0x0800
 
-    One marker per executable name (Wand.exe.local / WeMod.exe.local):
-    the name follows the exe that actually sits in the install dir.
-    An empty file with that name enables DLL redirection, so the
-    version.dll proxy next to the executable is preferred over the
-    System32 copy. Same effect WINEDLLOVERRIDES="version=n,b" gives
-    on Wine, through the Windows loader's own redirection support.
-    The file stays empty: the loader only checks that it exists.
-    Ref: https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-redirection
+def u16(data: bytes, pos: int) -> int: return struct.unpack_from("<H", data, pos)[0]
+
+def dependent_load_flags_offset(data) -> int | None:
+    """File offset of DependentLoadFlags in a PE32+ load config, or None.
+
+    Newer Wand builds set LOAD_LIBRARY_SEARCH_SYSTEM32 there, which
+    restricts every statically imported DLL, version.dll included, to
+    System32. The proxy next to the executable is then never loaded.
+    Ref: https://learn.microsoft.com/en-us/cpp/build/reference/dependentloadflag
     """
-    exe = electron_exe(install)
-    if exe is None: return None
-    return install / f"{exe.name}.local"
+    if len(data) < 0x40 or data[:2] != b"MZ": raise RuntimeError("electron executable is not a PE file")
+    nt = u32(data, 0x3C)
+    if nt + 24 > len(data) or data[nt:nt + 4] != b"PE\0\0": raise RuntimeError("electron executable has no PE header")
+    optional = nt + 24; optional_size = u16(data, nt + 20)
+    if optional + optional_size > len(data): raise RuntimeError("electron executable has a truncated optional header")
+    if u16(data, optional) != 0x20B: return None
+    entry = optional + 112 + LOAD_CONFIG_DIRECTORY * 8
+    if entry + 8 > optional + optional_size: return None
+    config_rva, config_size = struct.unpack_from("<II", data, entry)
+    if config_rva == 0 or config_size < DEPENDENT_LOAD_FLAGS_OFFSET + 2: return None
+    if config_rva < u32(data, optional + 60):
+        config_offset = config_rva
+    else:
+        config_offset = None; sections = optional + optional_size
+        for index in range(u16(data, nt + 6)):
+            section = sections + index * 40
+            if section + 40 > len(data): raise RuntimeError("electron executable has a truncated section table")
+            virtual_size, virtual_address, raw_size, raw_offset = struct.unpack_from("<IIII", data, section + 8)
+            if virtual_address <= config_rva < virtual_address + max(virtual_size, raw_size):
+                delta = config_rva - virtual_address
+                if delta >= raw_size: return None
+                config_offset = raw_offset + delta; break
+        if config_offset is None: return None
+    flags_offset = config_offset + DEPENDENT_LOAD_FLAGS_OFFSET
+    return flags_offset if flags_offset + 2 <= len(data) else None
+
+def dependent_load_flags(exe: Path) -> int | None:
+    """Current DependentLoadFlags of an executable, or None if not set."""
+    with exe.open("rb") as f:
+        if exe.stat().st_size == 0: return None
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            offset = dependent_load_flags_offset(mm)
+            return None if offset is None else u16(mm, offset)
+
+def set_dependent_load_flags(exe: Path, flags: int) -> int:
+    """Set DependentLoadFlags of an executable, return the previous value."""
+    if not 0 <= flags <= 0xFFFF: raise ValueError(f"invalid DependentLoadFlags {flags!r}")
+    with exe.open("r+b") as f:
+        with mmap.mmap(f.fileno(), 0) as mm:
+            offset = dependent_load_flags_offset(mm)
+            if offset is None: raise RuntimeError(f"no load config directory in {exe}")
+            previous = u16(mm, offset)
+            if previous != flags: struct.pack_into("<H", mm, offset, flags); mm.flush()
+            return previous
 
 def patch(install: Path, dll: Path | None):
     asar, backup, target_dll, dll_backup = paths(install)
@@ -168,18 +211,33 @@ def patch(install: Path, dll: Path | None):
     else: shutil.copy2(backup, asar)
     if target_dll.exists() and not dll_backup.exists(): shutil.copy2(target_dll, dll_backup)
     dll = resolve_dll(dll); pe_x64(dll)
-    marker = local_marker(install)
+    exe = electron_exe(install); load_flags_backup = install / "dependent-load-flags.wemod-enhancer-backup"
+    load_flags_before = None; load_flags_backup_existed = load_flags_backup.exists()
     try:
         with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
             work = Path(tmp); header = extract_asar(asar, work); patch_bundles(work); pack_asar(work, asar, header)
         shutil.copy2(dll, target_dll)
-        if marker: marker.touch(exist_ok=True); print(f"installed {marker.name} (dll redirection for version.dll)")
+        if exe:
+            flags = dependent_load_flags(exe)
+            if flags is None: print(f"skipped dependent load flags: no load config in {exe.name}")
+            elif not flags & LOAD_LIBRARY_SEARCH_SYSTEM32: print(f"dependent load flags already allow the app directory in {exe.name} (0x{flags:04X})")
+            else:
+                # Set before the write: if the setter fails partway, the
+                # except path still knows the value to put back.
+                load_flags_before = flags
+                if not load_flags_backup.exists(): load_flags_backup.write_text(f"{flags:04x}", encoding="ascii")
+                cleared = flags & ~LOAD_LIBRARY_SEARCH_SYSTEM32
+                set_dependent_load_flags(exe, cleared)
+                print(f"cleared LOAD_LIBRARY_SEARCH_SYSTEM32 in {exe.name} (DependentLoadFlags 0x{flags:04X} -> 0x{cleared:04X})")
         print(f"patched {install}")
     except Exception:
         shutil.copy2(backup, asar)
         if dll_backup.exists(): shutil.copy2(dll_backup, target_dll)
         elif target_dll.exists(): target_dll.unlink()
-        if marker and marker.exists(): marker.unlink()
+        if exe and load_flags_before is not None:
+            try: set_dependent_load_flags(exe, load_flags_before)
+            except Exception: pass
+            if not load_flags_backup_existed and load_flags_backup.exists(): load_flags_backup.unlink()
         raise
 
 def restore(install: Path):
@@ -188,8 +246,17 @@ def restore(install: Path):
     shutil.copy2(backup, asar)
     if dll_backup.exists(): shutil.copy2(dll_backup, dll)
     elif dll.exists(): dll.unlink()
-    marker = local_marker(install)
-    if marker and marker.exists(): marker.unlink()
+    exe = electron_exe(install); load_flags_backup = install / "dependent-load-flags.wemod-enhancer-backup"
+    if load_flags_backup.exists():
+        if exe:
+            saved = load_flags_backup.read_text(encoding="ascii").strip()
+            try: flags = int(saved, 16)
+            except ValueError: raise RuntimeError(f"invalid dependent load flags backup: {saved!r}") from None
+            if not 0 <= flags <= 0xFFFF: raise RuntimeError(f"invalid dependent load flags backup: {saved!r}")
+            current = dependent_load_flags(exe)
+            if current is not None and current != flags:
+                set_dependent_load_flags(exe, flags); print(f"restored DependentLoadFlags in {exe.name} (0x{current:04X} -> 0x{flags:04X})")
+        load_flags_backup.unlink()
     print(f"restored {install}")
 
 def main():
