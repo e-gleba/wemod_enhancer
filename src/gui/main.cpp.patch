@@ -1,0 +1,183 @@
+#include "app.hpp"
+#include "platform.hpp"
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlrenderer3.h>
+
+#include <gsl/assert>
+#include <gsl/narrow>
+#include <gsl/pointers>
+#include <gsl/util>
+
+#include <algorithm>
+#include <array>
+#include <format>
+#include <memory>
+#include <string>
+#include <system_error>
+
+namespace wemod::gui
+{
+namespace
+{
+constexpr std::array<float, 4> clear_color{0.10F, 0.10F, 0.12F, 1.00F};
+constexpr auto process_poll_interval{std::chrono::milliseconds{10}};
+
+struct app final
+{
+    platform::context platform;
+    app_state state;
+    background_runner jobs;
+    bool imgui_ready{false};
+};
+
+void start_command(app& value, const run_kind kind,
+                   const std::string_view shown, std::vector<std::string> args)
+{
+    Expects(!shown.empty());
+    Expects(!args.empty());
+    if (value.jobs.busy() || !value.jobs.launch(kind, std::move(args))) {
+        return;
+    }
+    append_log(value.state, std::format("$ {}\n", shown));
+    value.state.kind = kind;
+    value.state.running = true;
+    value.state.has_run |= kind == run_kind::patcher;
+}
+
+void start_run(app& value, const std::string_view subcommand)
+{
+    Expects(subcommand == "patch" || subcommand == "restore");
+    std::string shown{std::format("{} -u {} {} --install-dir {}",
+                                  value.state.python, value.state.script_path,
+                                  subcommand, value.state.install_dir)};
+    std::vector<std::string> args{value.state.python, "-u",
+                                  value.state.script_path,
+                                  std::string{subcommand}, "--install-dir",
+                                  value.state.install_dir};
+    start_command(value, run_kind::patcher, shown, std::move(args));
+}
+
+void start_wemod_download(app& value)
+{
+    if constexpr (is_windows) {
+        const char* downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
+        if (downloads == nullptr) {
+            value.state.want_alert =
+                alert_request{.title = "Cannot download", .message = SDL_GetError()};
+            return;
+        }
+        const fs::path installer{fs::path{downloads} / "wemod_setup.exe"};
+        const std::string script{std::format(
+            "$ProgressPreference='SilentlyContinue';Invoke-WebRequest "
+            "-Uri '{}' -OutFile '{}';Start-Process '{}'",
+            installer_url, installer.string(), installer.string())};
+        const std::string shown{
+            std::format("powershell -NoProfile -ExecutionPolicy Bypass "
+                        "-Command \"{}\"",
+                        script)};
+        start_command(value, run_kind::wemod, shown,
+                      {"powershell", "-NoProfile", "-ExecutionPolicy",
+                       "Bypass", "-Command", script});
+    } else {
+        const char* home{
+            SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
+        if (home == nullptr) {
+            value.state.want_alert =
+                alert_request{.title = "Cannot download", .message = "HOME is not set."};
+            return;
+        }
+        const fs::path directory{fs::path{home} / "wemod-launcher"};
+        std::error_code error;
+        if (fs::is_directory(directory, error)) {
+            value.state.install_dir = directory.string();
+            append_log(value.state,
+                       std::format("wemod-launcher already cloned: {}\n\n",
+                                   directory.string()));
+            value.state.scroll_to_bottom = true;
+            return;
+        }
+        value.state.want_open_url = std::string{launcher_guide_url};
+        const std::string shown{std::format("git clone {} {}",
+                                            launcher_clone_url,
+                                            directory.string())};
+        start_command(value, run_kind::wemod, shown,
+                      {"git", "clone", std::string{launcher_clone_url},
+                       directory.string()});
+    }
+}
+
+void start_probe(app& value)
+{
+    constexpr std::string_view probe{
+        "import sys,platform;print(sys.version.split()[0]);"
+        "print(platform.platform())"};
+    const std::string shown{
+        std::format("{} -c \"{}\"", value.state.python, probe)};
+    start_command(value, run_kind::probe, shown,
+                  {value.state.python, "-c", std::string{probe}});
+}
+
+void poll_jobs(app& value)
+{
+    while (auto finished{value.jobs.poll()}) {
+        append_log(value.state, finished->result.output);
+        if (!finished->result.output.empty() &&
+            !finished->result.output.ends_with('\n')) {
+            append_log(value.state, "\n");
+        }
+        append_log(value.state,
+                   std::format("[exit code: {}]\n\n",
+                               finished->result.exit_code));
+        value.state.last_exit_code = finished->result.exit_code;
+        value.state.scroll_to_bottom = true;
+
+        if (finished->kind == run_kind::probe) {
+            value.state.python_ok = finished->result.exit_code == 0
+                ? probe_state::works
+                : probe_state::failed;
+            parse_probe(value.state, finished->result.output);
+        } else if (finished->kind == run_kind::wemod &&
+                   finished->result.exit_code == 0 && !is_windows) {
+            value.state.install_dir = platform::default_install_dir();
+            value.state.last_probe = {};
+            append_log(value.state,
+                       "wemod-launcher cloned. Run it once and log in.\n\n");
+        } else if (finished->kind == run_kind::patcher &&
+                   finished->result.exit_code != 0) {
+            append_log(value.state,
+                       "hint: close WeMod fully, then retry. If it still "
+                       "fails, press Report bug.\n\n");
+        }
+    }
+    value.state.running = value.jobs.busy();
+}
+
+void execute(app& value, const frame_requests& requests)
+{
+    if (requests.patch) {
+        start_run(value, "patch");
+    } else if (requests.restore) {
+        start_run(value, "restore");
+    } else if (requests.download) {
+        start_wemod_download(value);
+    }
+    if (requests.copy) {
+        value.state.want_clipboard =
+            std::format("{}\n{}", value.state.log, env_info(value.state));
+    }
+    if (requests.clear) {
+        value.state.log.clear();
+        value.state.copied_flash = 0.0F;
+    }
+    if (requests.report) {
+        // Clipboard first: the form field has a length cap and the URL can
+        // hit the 414 limit on long logs, so pasting stays the fallback.
+        value.state.want_clipboard = report_text(value.state);
+        value.state.want_open_url = issue_url(value.state);
+    }
+}
