@@ -85,9 +85,6 @@ Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cle
 
 ## Windows (CLI)
 
-> [!WARNING]
-> **Unsafe workaround:** Windows safe DLL search order ignores the local `version.dll`. If patching alone does not load it, disable safe search as admin — `reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v SafeDllSearchMode /t REG_DWORD /d 0 /f` — then re-apply after `restore` with `/d 1`. This makes the current folder load first for **every** app and reopens [DLL planting](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-security). Never run patched WeMod as admin. See [DLL search order](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order).
-
 Install WeMod, authorize. Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
 
 ```powershell
@@ -108,6 +105,11 @@ python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 ```
 
 > `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
+
+> [!WARNING]
+> It is really dirty unsafe hack, so for now investigating the ability to make it cleaner.
+> **Unsafe crash-on-start workaround:** With safe DLL search mode enabled (Windows default), the current folder is searched last, after the app folder, System32, and Windows folder, so a copy found earlier can win over your current-folder `version.dll`. If patching alone does not load it, as a last resort run elevated: `reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v SafeDllSearchMode /t REG_DWORD /d 0 /f`, then restart Windows. To restore the safe default, run the same command elevated with `/d 1` and restart again (patched DLL will stop loading until you disable again). While disabled, the current folder moves to just after the app folder for **every** app, which reopens [DLL preloading / binary planting attacks](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-security). Never run patched WeMod elevated. See [DLL search order](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order). 
+
 
 ## Restore
 
