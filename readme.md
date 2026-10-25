@@ -85,6 +85,17 @@ Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cle
 
 ## Windows (CLI)
 
+> [!WARNING]
+> **Workaround — this patch weakens a Windows DLL load-order hardening flag in `Wand.exe`.**
+>
+> Current `Wand.exe` builds on Windows 11 set `DependentLoadFlags` to `0x0800` (`LOAD_LIBRARY_SEARCH_SYSTEM32`). With that flag, Windows resolves `VERSION.dll` from `%SystemRoot%\System32` only, so the local `version.dll` proxy next to `Wand.exe` is ignored by design. `PATH`, the current folder, a `.local` marker, and `SafeDllSearchMode` cannot override that flag — see [dynamic-link library search order](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order) and [/DEPENDENTLOADFLAG](https://learn.microsoft.com/en-us/cpp/build/reference/dependentloadflag).
+>
+> To make the proxy load, the patcher clears **only** the `0x0800` bit in the load configuration of `Wand.exe` and preserves every other flag. The original value is saved to a sidecar backup next to the executable before the write, and `restore` puts it back. No executable bit or Authenticode signature fix-up is attempted — modifying the file invalidates a signed executable's signature (`HashMismatch`), so SmartScreen, antivirus, or a WeMod update may flag or replace it. Re-review and re-apply after every update.
+>
+> **Why this is unsafe:** that flag exists to make [DLL planting / preloading attacks](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-security) harder. Clearing it restores the default search order for dependent DLLs of `Wand.exe`, so a malicious DLL placed in the WeMod app folder can be loaded by `Wand.exe` with your user rights. Only patch an official WeMod install that you control, never run the patched app as administrator, never use a pre-patched `Wand.exe` from anyone else, do not patch anything in `System32`, and **do not** disable `SafeDllSearchMode` globally in the registry — that would weaken every application on the machine, not just `Wand.exe`.
+>
+> This is a workaround, not a fix. A real fix needs WeMod to stop shipping that loader restriction or to provide a supported local-plugin load path.
+
 Install WeMod, authorize. Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
 
 ```powershell
