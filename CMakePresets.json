@@ -71,7 +71,7 @@
         {
             "name": "linux_gcc_amd64",
             "displayName": "Linux AMD64 (GCC)",
-            "description": "Build the Linux x86-64 package natively with GCC (version.dll via nested llvm-mingw)",
+            "description": "Build the Linux x86-64 package natively with GCC",
             "generator": "Ninja Multi-Config",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -87,7 +87,7 @@
         {
             "name": "linux_clang_amd64",
             "displayName": "Linux AMD64 (Clang)",
-            "description": "Build the Linux x86-64 package natively with Clang (version.dll via nested llvm-mingw)",
+            "description": "Build the Linux x86-64 package natively with Clang",
             "inherits": "linux_gcc_amd64",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -98,14 +98,14 @@
         {
             "name": "linux_gcc_arm64",
             "displayName": "Linux ARM64 (GCC)",
-            "description": "Build the Linux ARM64 package natively with GCC (version.dll via nested llvm-mingw)",
+            "description": "Build the Linux ARM64 package natively with GCC",
             "inherits": "linux_gcc_amd64",
             "binaryDir": "${sourceDir}/build/${presetName}"
         },
         {
             "name": "linux_clang_arm64",
             "displayName": "Linux ARM64 (Clang)",
-            "description": "Build the Linux ARM64 package natively with Clang (version.dll via nested llvm-mingw)",
+            "description": "Build the Linux ARM64 package natively with Clang",
             "inherits": "linux_gcc_arm64",
             "binaryDir": "${sourceDir}/build/${presetName}",
             "cacheVariables": {
@@ -359,7 +359,7 @@
             "steps": [
                 {
                     "type": "configure",
-                    "name": "linux_clang_arm64"
+                    "name": "linux_clang_amd64"
                 },
                 {
                     "type": "build",
