@@ -4,15 +4,14 @@
 
 # WeMod Enhancer
 
-**The original WeMod app — Pro unlocked — on Steam Deck, Linux & Windows**
+**Steam Deck, Linux & Windows**
 
-One command patches the WeMod client: Pro subscription active, auto-updates disabled, F12 DevTools, no mobile-pairing nag. Zero runtime dependencies — stdlib Python only.
+One command patches the WeMod client: Pro subscription active, auto-updates disabled, F12 DevTools, no mobile-pairing nag. The only requirement is [Python](https://www.python.org/downloads/).
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
 [![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
 [![release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
 [![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake)](https://cmake.org)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#linux--steam-deck)
 
 [![▶ run release](https://img.shields.io/badge/%E2%96%B6_run-release-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml)
@@ -27,13 +26,13 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 One self-contained folder, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
 
-| OS | Artifact | Inside |
-| :- | :------- | :----- |
-| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` |
-| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` |
-| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` | same layout, ARM build |
+| OS | Artifact |
+| :- | :------- |
+| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` |
+| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` |
+| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` |
 
-Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
+Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **[Python 3.11+](https://www.python.org/downloads/)** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
 ## Linux / Steam Deck (CLI)
 
@@ -89,7 +88,7 @@ python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 .\bin\wemod_enhancer_gui.exe
 ```
 
-> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
+> `python` not recognized? Install [Python 3.13](https://www.python.org/downloads/) (`winget install Python.Python.3.13`), then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
 
 ## Restore
 
@@ -104,6 +103,8 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 ```
 
 ## vs Wand-Enhancer
+
+If you just want Pro unlocked — lightweight, scriptable, everywhere — use WeMod Enhancer. If you're on Windows and need extras like Remote Web Panel or custom script injection, use [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer).
 
 | | **WeMod Enhancer** | **Wand-Enhancer** |
 | :-- | :------------------- | :------------------- |
@@ -125,7 +126,7 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 | **Backup & restore** | Automatic, one-command restore | — |
 | **License** | MIT | Apache-2.0 |
 
-> WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
+> WeMod Enhancer is the lean Pro driver: one script, three OSes, zero bloat. [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) is the full-featured Windows GUI — pick by need.
 
 ## Build from source
 
