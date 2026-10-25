@@ -105,24 +105,7 @@ install_agent_skills(
     https://github.com/vercel-labs/skills
     SKILLS
     find-skills)
-install_agent_skills(
-    URL
-    https://github.com/mattpocock/skills
-    SKILLS
-    code-review
-    caveman
-    diagnose
-    qa
-    to-spec
-    research
-    to-tickets
-    resolving-merge-conflicts)
-install_agent_skills(
-    URL
-    https://github.com/github/awesome-copilot
-    SKILLS
-    create-github-action-workflow-specification
-    git-commit)
+
 install_agent_skills(
     URL
     https://github.com/mohitmishra786/low-level-dev-skills
@@ -131,18 +114,10 @@ install_agent_skills(
     clang
     llvm
     cross-gcc
-    pgo
-    cpp-modules
-    cpp-templates
-    cpp-coroutines
     cmake
-    make
     ninja
-    meson
-    conan-vcpkg
     static-analysis
     build-acceleration
-    bazel
     include-what-you-use
     linker-scripts
     gdb
@@ -150,14 +125,11 @@ install_agent_skills(
     core-dumps
     concurrency-debugging
     debug-optimized-builds
-    dwarf-debug-format
     linux-perf
     valgrind
     flamegraphs
     strace-ltrace
     heaptrack
-    intel-vtune-amd-uprof
-    hardware-counters
     sanitizers
     fuzzing
     binary-hardening
@@ -167,65 +139,11 @@ install_agent_skills(
     dynamic-linking
     assembly-x86
     assembly-arm
-    assembly-riscv
-    interpreters
-    simd-intrinsics
     memory-model
     cpu-cache-opt
-    custom-allocators
-    numa-programming
     compiler-frontend
-    llvm-passes
-    llvm-ir-and-passes
-    compiler-optimizations-deep
-    code-generation-and-backends
-    mlir
-    jit-compilation
-    linux-kernel-architecture
-    kernel-memory-management
-    kernel-concurrency
-    device-tree
-    platform-device-model
-    writing-char-drivers
-    bus-drivers-i2c-spi
-    kernel-debugging-advanced
-    qemu-for-kernel-development
-    kernel-internals
-    device-drivers
-    kernel-debugging
-    kernel-testing
-    os-dev-scratch
-    linux-kernel-modules
-    io-uring
-    dpdk
-    af-xdp
-    ebpf
-    cuda
-    cuda-profiling
-    cuda-debugging
-    triton-lang
-    hip-rocm
-    gpu-memory-model
-    openmp
-    mpi
-    rdma-verbs
-    qemu-kvm
-    hypervisor-internals
-    containers-internals
     qemu-embedded-simulation
-    resource-optimization-lowend
-    cpu-pipelines-and-hazards
-    memory-hierarchy-and-caches
-    virtual-memory-paging-and-tlb
-    abi-and-calling-conventions
-    branch-prediction-and-speculation
-    reverse-engineering
-    kernel-security
-    arm-sve
-    riscv-privileged
-    apple-silicon
-    wasm-emscripten
-    wasm-wasmtime)
+    reverse-engineering)
 
 install_agent_mcp(
     URL

@@ -8,8 +8,6 @@
         "github": {
             "type": "remote",
             "url": "https://api.githubcopilot.com/mcp/",
-            // As github is piece of shit disable it
-            // Done everything as they say: https://github.com/github/github-mcp-server/blob/main/docs/installation-guides/install-opencode.md
             "enabled": false,
             "oauth": false,
             "headers": {
