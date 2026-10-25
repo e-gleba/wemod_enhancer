@@ -21,17 +21,6 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 
 </div>
 
-## What you get
-
-| Feature | How |
-| :------ | :-- |
-| **Pro activation** | Intercepts `/v3/account` → injects `subscription: { period: "yearly", state: "active" }` |
-| **ASAR integrity bypass** | One-byte Electron fuse flip (`EnableEmbeddedAsarIntegrityValidation` → removed) in `Wand.exe`/`WeMod.exe`, with automatic backup |
-| **F12 DevTools** | Hotkey hook on `browser-window-created` |
-| **No auto-updates** | `ACTION_CHECK_FOR_UPDATE` → no-op — the patch survives until you say otherwise |
-| **No mobile pairing** | `requestRemoteAuthCode()` → reject |
-| **Fail-safe** | Automatic backup, all-or-nothing patching, one-command restore |
-
 ## GUI (optional)
 
 ![Screenshot presenting GUI](docs/Screenshot_20260930_224227.png)
@@ -79,10 +68,6 @@ Steam launch options for the game:
 WEMOD_LOG="$HOME/wemod-launcher/wemod.log" "$HOME/wemod-launcher/wemod" %command%
 ```
 
-> No `WINEDLLOVERRIDES` needed — the patcher flips the ASAR integrity fuse in `WeMod.exe` itself, so there is no extra DLL for Wine to ignore.
-
-Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cleanup: [docs/linux.md](docs/linux.md).
-
 ## Windows (CLI)
 
 Install WeMod, authorize. Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
@@ -108,7 +93,6 @@ python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 
 > [!WARNING]
 > The patcher flips one byte of the signed executable (Electron's ASAR integrity fuse, `1` to `r`), so `Get-AuthenticodeSignature` reports `HashMismatch`. The client runs fine — this is the same operation `@electron/fuses` performs. `restore` puts the original executable back from `Wand.exe.wemod-enhancer-backup` / `WeMod.exe.wemod-enhancer-backup`.
-
 
 ## Restore
 
