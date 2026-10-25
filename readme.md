@@ -34,11 +34,16 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 
 The GUI ships as a self-contained folder and requires no terminal. Download the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), extract it, and run the executable.
 
-| OS          | Artifact                                |
-| ----------- | --------------------------------------- |
-| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` |
-| Linux x64   | `wemod_enhancer-linux-amd64.tar.xz`     |
-| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz`     |
+| OS          | Artifact                                           |
+| ----------- | -------------------------------------------------- |
+| Windows x64 | [`wemod_enhancer-windows-msvc-amd64.zip`][win-x64] |
+| Linux x64   | [`wemod_enhancer-linux-amd64.tar.xz`][linux-x64]   |
+| Linux ARM64 | [`wemod_enhancer-linux-arm64.tar.xz`][linux-arm64] |
+
+[win-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip
+[linux-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-amd64.tar.xz
+[linux-arm64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-arm64.tar.xz
+
 
 All components are included in the package, and nothing is downloaded at runtime. The GUI locates `wemod_enhancer.py` next to the executable, detects the WeMod installation folder automatically, and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
