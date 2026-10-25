@@ -28,11 +28,15 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 - [Comparison with Wand-Enhancer](#comparison-with-wand-enhancer)
 - [Build from source](#build-from-source)
 
+> [!WARNING]
+> Sign in to your WeMod account before patching. The patcher does not work without an authorized WeMod session.
+> This requirement is repeated in each platform section to prevent confusion.
+
 ## GUI
 
 ![WeMod Enhancer GUI](docs/Screenshot_20260930_224227.png)
 
-The GUI ships as a self-contained folder and requires no terminal. Download the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), extract it, and run the executable.
+The GUI ships as a self-contained folder and requires no terminal. Download the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), extract it, and run the executable. Make sure to log in to your WeMod account before patching.
 
 | OS          | Artifact                                           |
 | ----------- | -------------------------------------------------- |
@@ -44,10 +48,9 @@ The GUI ships as a self-contained folder and requires no terminal. Download the 
 [linux-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-amd64.tar.xz
 [linux-arm64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-arm64.tar.xz
 
-
 All components are included in the package, and nothing is downloaded at runtime. The GUI locates `wemod_enhancer.py` next to the executable, detects the WeMod installation folder automatically, and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
-**Requirement:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`.
+**Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`.
 
 ## Linux / Steam Deck (CLI)
 
