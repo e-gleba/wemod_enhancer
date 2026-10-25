@@ -1,5 +1,5 @@
 // WeMod Enhancer - Dear ImGui view side (ImGui + app.hpp only).
-// Steam-style single column: header, status, folder, actions, output,
+// Steam-style single column: header, folder, actions, output,
 // advanced. Side effects leave via the state outbox for the SDL side.
 
 #include "app.hpp"
@@ -154,51 +154,6 @@ void probe_filesystem(app_state& state)
     return true;
 }
 
-void status_cell(const char* label, const std::string& sub,
-                 const int state)
-{
-    status_tag(state);
-    ImGui::TextUnformatted(label);
-    muted(sub);
-}
-
-void draw_status(const app_state& state, const bool install_ok,
-                 const bool script_ok)
-{
-    int python_state{-1};
-    if (state.python_ok == probe_state::works) {
-        python_state = 1;
-    } else if (state.python_ok == probe_state::failed) {
-        python_state = 0;
-    }
-    int folder_state{-1};
-    std::string folder{"not selected"};
-    if (install_ok) {
-        folder_state = 1;
-        folder = state.resolved_install_dir.string();
-    } else if (!state.install_dir.empty()) {
-        folder_state = 0;
-        folder = "not a WeMod install";
-    }
-    const std::string interpreter{state.python_version.empty()
-                                      ? state.python
-                                      : state.python_version};
-
-    if (ImGui::BeginTable("##status", 3,
-                          ImGuiTableFlags_SizingStretchSame |
-                              ImGuiTableFlags_PadOuterX)) {
-        ImGui::TableNextRow();
-        ImGui::TableNextColumn();
-        status_cell("WeMod", folder, folder_state);
-        ImGui::TableNextColumn();
-        status_cell("Python", interpreter, python_state);
-        ImGui::TableNextColumn();
-        status_cell("Patcher", script_ok ? "ready" : "missing",
-                    script_ok ? 1 : 0);
-        ImGui::EndTable();
-    }
-}
-
 void draw_settings(app_state& state)
 {
     muted("Patcher");
@@ -251,8 +206,6 @@ frame_requests draw(app_state& state)
                              ImGui::CalcTextSize(right.c_str()).x);
         muted(right);
     }
-    ImGui::Separator();
-    draw_status(state, install_ok, script_ok);
     ImGui::Separator();
 
     muted("WeMod folder");
