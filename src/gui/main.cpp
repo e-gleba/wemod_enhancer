@@ -59,11 +59,6 @@ void start_run(app& value, const std::string_view subcommand)
                                   value.state.script_path,
                                   std::string{subcommand}, "--install-dir",
                                   value.state.install_dir};
-    if (subcommand == "patch" && !value.state.version_dll.empty()) {
-        shown += std::format(" --version-dll {}", value.state.version_dll);
-        args.emplace_back("--version-dll");
-        args.emplace_back(value.state.version_dll);
-    }
     start_command(value, run_kind::patcher, shown, std::move(args));
 }
 
@@ -362,9 +357,6 @@ try {
         wemod::gui::platform::default_install_dir();
     value->state.script_path =
         (wemod::gui::fs::path{directory} / wemod::gui::patcher_name).string();
-    value->state.version_dll =
-        (wemod::gui::fs::path{directory} / wemod::gui::version_dll_name)
-            .string();
 
     if (const wemod::gui::fs::path detected{
             wemod::gui::resolve_wemod_dir(value->state.install_dir)};

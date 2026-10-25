@@ -26,7 +26,6 @@ namespace fs = std::filesystem;
 
 inline constexpr std::string_view gui_version{WEMOD_ENHANCER_GUI_VERSION};
 inline constexpr std::string_view patcher_name{"wemod_enhancer.py"};
-inline constexpr std::string_view version_dll_name{"version.dll"};
 inline constexpr std::string_view installer_url{
     "https://api.wemod.com/client/download"};
 inline constexpr std::string_view launcher_clone_url{
@@ -39,8 +38,6 @@ inline constexpr std::string_view releases_url{
     "https://github.com/e-gleba/wemod_enhancer/releases/latest"};
 inline constexpr std::string_view quickstart_url{
     "https://github.com/e-gleba/wemod_enhancer#quick-start"};
-inline constexpr std::string_view readme_url{
-    "https://github.com/e-gleba/wemod_enhancer#wemod-enhancer"};
 inline constexpr std::string_view python_url{
     "https://www.python.org/downloads/"};
 inline constexpr std::size_t log_budget{512UZ * 1024UZ};
@@ -83,7 +80,6 @@ struct app_state final
     std::string install_dir;
     std::string script_path;
     std::string python{default_python};
-    std::string version_dll;
     std::string log;
     bool running{false};
     run_kind kind{run_kind::patcher};
@@ -93,10 +89,8 @@ struct app_state final
     float copied_flash{0.0F};
     std::string probed_install_dir;
     std::string probed_script_path;
-    std::string probed_version_dll;
     fs::path resolved_install_dir;
     bool script_present{false};
-    bool dll_present{false};
     std::chrono::steady_clock::time_point last_probe;
     probe_state python_ok{probe_state::unknown};
     std::string python_version;

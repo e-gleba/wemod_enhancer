@@ -133,21 +133,16 @@ void probe_filesystem(app_state& state)
     const auto now{std::chrono::steady_clock::now()};
     if (state.probed_install_dir == state.install_dir &&
         state.probed_script_path == state.script_path &&
-        state.probed_version_dll == state.version_dll &&
         (now - state.last_probe) < reprobe_interval) {
         return;
     }
     state.probed_install_dir = state.install_dir;
     state.probed_script_path = state.script_path;
-    state.probed_version_dll = state.version_dll;
     state.last_probe = now;
     state.resolved_install_dir = resolve_wemod_dir(state.install_dir);
     std::error_code error;
     state.script_present = !state.script_path.empty() &&
         fs::is_regular_file(state.script_path, error);
-    error.clear();
-    state.dll_present = !state.version_dll.empty() &&
-        fs::is_regular_file(state.version_dll, error);
 }
 
 [[nodiscard]] bool resolve_for_run(app_state& state)
@@ -189,7 +184,7 @@ void draw_status(const app_state& state, const bool install_ok,
                                       ? state.python
                                       : state.python_version};
 
-    if (ImGui::BeginTable("##status", 4,
+    if (ImGui::BeginTable("##status", 3,
                           ImGuiTableFlags_SizingStretchSame |
                               ImGuiTableFlags_PadOuterX)) {
         ImGui::TableNextRow();
@@ -200,9 +195,6 @@ void draw_status(const app_state& state, const bool install_ok,
         ImGui::TableNextColumn();
         status_cell("Patcher", script_ok ? "ready" : "missing",
                     script_ok ? 1 : 0);
-        ImGui::TableNextColumn();
-        status_cell("DLL", state.dll_present ? "ready" : "missing",
-                    state.dll_present ? 1 : 0);
         ImGui::EndTable();
     }
 }
@@ -226,14 +218,6 @@ void draw_settings(app_state& state)
     field("##python", "python / python3", state.python,
           state.python_ok != probe_state::unknown,
           state.python_ok == probe_state::works, "Python failed to start");
-
-    muted("version.dll");
-    help_link(state,
-              "Proxy DLL the patcher drops next to WeMod. Default: the copy "
-              "next to the executable.",
-              readme_url);
-    field("##dll", "version.dll next to the exe", state.version_dll, true,
-          state.dll_present, "version.dll not found");
 }
 
 } // namespace

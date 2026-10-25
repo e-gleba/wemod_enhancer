@@ -6,7 +6,7 @@
 
 **The original WeMod app — Pro unlocked — on Steam Deck, Linux & Windows**
 
-One command patches the WeMod client: Pro subscription active, auto-updates disabled, F12 DevTools, no mobile-pairing nag. Zero runtime dependencies — stdlib Python plus a 4 KB C proxy DLL.
+One command patches the WeMod client: Pro subscription active, auto-updates disabled, F12 DevTools, no mobile-pairing nag. Zero runtime dependencies — stdlib Python only.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
 [![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
@@ -26,7 +26,7 @@ One command patches the WeMod client: Pro subscription active, auto-updates disa
 | Feature | How |
 | :------ | :-- |
 | **Pro activation** | Intercepts `/v3/account` → injects `subscription: { period: "yearly", state: "active" }` |
-| **ASAR integrity bypass** | 4 KB `version.dll` proxy flips Electron's fuse in-process via `VirtualProtect` |
+| **ASAR integrity bypass** | One-byte Electron fuse flip (`EnableEmbeddedAsarIntegrityValidation` → removed) in `Wand.exe`/`WeMod.exe`, with automatic backup |
 | **F12 DevTools** | Hotkey hook on `browser-window-created` |
 | **No auto-updates** | `ACTION_CHECK_FOR_UPDATE` → no-op — the patch survives until you say otherwise |
 | **No mobile pairing** | `requestRemoteAuthCode()` → reject |
@@ -40,11 +40,11 @@ One self-contained folder, no terminal. Grab the artifact for your OS from the [
 
 | OS | Artifact | Inside |
 | :- | :------- | :----- |
-| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` + `bin/version.dll` |
-| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` + `bin/version.dll` |
+| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` |
+| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` |
 | Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` | same layout, ARM build |
 
-Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
+Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
 ## Linux / Steam Deck (CLI)
 
@@ -76,10 +76,10 @@ python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_da
 Steam launch options for the game:
 
 ```sh
-WINEDLLOVERRIDES="version=n,b" WEMOD_LOG="$HOME/wemod-launcher/wemod.log" "$HOME/wemod-launcher/wemod" %command%
+WEMOD_LOG="$HOME/wemod-launcher/wemod.log" "$HOME/wemod-launcher/wemod" %command%
 ```
 
-> `version=n,b` forces native-first DLL loading — without it Wine uses its builtin `version.dll` and Electron rejects the patched ASAR.
+> No `WINEDLLOVERRIDES` needed — the patcher flips the ASAR integrity fuse in `WeMod.exe` itself, so there is no extra DLL for Wine to ignore.
 
 Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cleanup: [docs/linux.md](docs/linux.md).
 
@@ -88,7 +88,7 @@ Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cle
 Install WeMod, authorize. Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
 
 ```powershell
-# 1. Download + extract WeMod Enhancer (prebuilt version.dll included)
+# 1. Download + extract WeMod Enhancer
 cd $env:USERPROFILE\Downloads
 Invoke-WebRequest -Uri "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip" -OutFile "wemod_enhancer.zip"
 Expand-Archive wemod_enhancer.zip -DestinationPath wemod_enhancer -Force
@@ -107,8 +107,7 @@ python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 > `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
 
 > [!WARNING]
-> It is really dirty unsafe hack, so for now investigating the ability to make it cleaner.
-> **Unsafe crash-on-start workaround:** With safe DLL search mode enabled (Windows default), the current folder is searched last, after the app folder, System32, and Windows folder, so a copy found earlier can win over your current-folder `version.dll`. If patching alone does not load it, as a last resort run elevated: `reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v SafeDllSearchMode /t REG_DWORD /d 0 /f`, then restart Windows. To restore the safe default, run the same command elevated with `/d 1` and restart again (patched DLL will stop loading until you disable again). While disabled, the current folder moves to just after the app folder for **every** app, which reopens [DLL preloading / binary planting attacks](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-security). Never run patched WeMod elevated. See [DLL search order](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order). 
+> The patcher flips one byte of the signed executable (Electron's ASAR integrity fuse, `1` to `r`), so `Get-AuthenticodeSignature` reports `HashMismatch`. The client runs fine — this is the same operation `@electron/fuses` performs. `restore` puts the original executable back from `Wand.exe.wemod-enhancer-backup` / `WeMod.exe.wemod-enhancer-backup`.
 
 
 ## Restore
@@ -129,14 +128,14 @@ Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wan
 
 | | **WeMod Enhancer** | **Wand-Enhancer** |
 | :-- | :------------------- | :------------------- |
-| **Language** | C + Python (stdlib only) | C# / .NET / WPF |
-| **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
+| **Language** | Python (stdlib only) | C# / .NET / WPF |
+| **Runtime deps** | None — Python stdlib only | .NET Framework 4.8 runtime |
 | **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
 | **Build from source** | `cmake --workflow --preset windows_llvm_mingw_amd64_full` | Fork → GitHub Actions → download artifact |
 | **Platform** | Steam Deck, Linux, Windows | Windows only |
 | **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
-| **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
-| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
+| **Binary size** | One Python script | Full .NET WPF application |
+| **ASAR integrity bypass** | On-disk fuse flip (`1` → `r`), no DLL | In-process fuse flip via DLL |
 | **Pro activation** | Intercepts `/v3/account` responses | Same |
 | **DevTools** | F12 hotkey hook | Not available |
 | **Disable updates** | `ACTION_CHECK_FOR_UPDATE` → no-op | Not available |

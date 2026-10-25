@@ -32,13 +32,12 @@ install(
 
 # Dev builds run straight from the build tree: stage the patcher script
 # next to the GUI binary so no install/CPack step is needed to try a
-# change. The GUI resolves it relative to its own directory (SDL_AppInit);
-# version.dll staging lives in src/version_dll/CMakeLists.txt, next to
-# the target that produces it. $<TARGET_FILE_DIR> follows the per-config
-# subdir of multi-config generators; copy to an explicit file path after
-# make_directory so a missing output directory is never mistaken for
-# the file itself (MSVC MSB3191); copy_if_different keeps repeat builds
-# silent. Install rules stay untouched.
+# change. The GUI resolves it relative to its own directory (SDL_AppInit).
+# $<TARGET_FILE_DIR> follows the per-config subdir of multi-config
+# generators; copy to an explicit file path after make_directory so a
+# missing output directory is never mistaken for the file itself
+# (MSVC MSB3191); copy_if_different keeps repeat builds silent.
+# Install rules stay untouched.
 # Ref: https://cmake.org/cmake/help/latest/command/add_custom_command.html
 add_custom_command(
     TARGET wemod_enhancer_gui

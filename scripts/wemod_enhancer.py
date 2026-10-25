@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Install version.dll and patch Wand/WeMod Electron app.asar."""
+"""Patch Wand/WeMod Electron app.asar and disable ASAR integrity fuse."""
 from __future__ import annotations
 
-import argparse, hashlib, json, re, shutil, struct, sys, tempfile
+import argparse, hashlib, json, mmap, re, shutil, struct, sys, tempfile
 from pathlib import Path, PurePosixPath
 
 BLOCK_SIZE = 4 * 1024 * 1024
@@ -111,65 +111,132 @@ def patch_bundles(root: Path):
     for name in optional: print(f"skipped optional patch {name}: endpoint not present in this client")
     if pending: raise RuntimeError("unsupported client; missing patches: " + ", ".join(pending))
 
-def pe_x64(path: Path):
-    data = path.read_bytes()
-    if len(data) < 0x40: raise RuntimeError("version.dll is truncated")
-    off = u32(data, 0x3c)
-    if off + 6 > len(data) or data[:2] != b"MZ" or data[off:off+4] != b"PE\0\0" or struct.unpack_from("<H", data, off+4)[0] != 0x8664: raise RuntimeError("version.dll is not PE x86-64")
+FUSE_SENTINEL = b"dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX"
+FUSE_EMBEDDED_ASAR_INTEGRITY = 4
+FUSE_OFF, FUSE_ON, FUSE_REMOVED = "0", "1", "r"
 
-def find_bundled_dll() -> Path | None:
-    """Find version.dll next to this script (CMake install layout).
+def find_fuse_wire(data: bytes) -> int:
+    """Offset of the Electron fuse wire inside an executable, or -1.
 
-    After `cmake --install` both wemod_enhancer.py and version.dll
-    land in the same directory.  This lets end users run the patcher
-    with just Python — no CMake or compiler needed.
+    The wire is `sentinel[32] + version(1) + length(1) + fuses[length]`.
     """
-    dll = Path(__file__).resolve().parent / "version.dll"
-    return dll if dll.is_file() else None
+    start = 0
+    while True:
+        off = data.find(FUSE_SENTINEL, start)
+        if off < 0: return -1
+        if off + 34 <= len(data) and data[off + 32] == 1 and data[off + 33] >= 5: return off
+        start = off + 1
 
-def resolve_dll(explicit: Path | None) -> Path:
-    """Pick version.dll: explicit flag > bundled next to this script."""
-    if explicit: return explicit
-    bundled = find_bundled_dll()
-    if bundled: return bundled
-    raise FileNotFoundError("version.dll not found next to script; pass --version-dll")
+def fuse_state(exe: Path) -> str | None:
+    """Current value of the embedded-ASAR-integrity fuse, or None if absent."""
+    with exe.open("rb") as f:
+        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            off = find_fuse_wire(mm)
+            return None if off < 0 else chr(mm[off + 34 + FUSE_EMBEDDED_ASAR_INTEGRITY])
+
+def set_fuse_state(exe: Path, state: str) -> str:
+    """Set the embedded-ASAR-integrity fuse, return the previous value."""
+    if state not in (FUSE_OFF, FUSE_ON, FUSE_REMOVED): raise ValueError(f"invalid fuse state {state!r}")
+    with exe.open("r+b") as f:
+        with mmap.mmap(f.fileno(), 0) as mm:
+            off = find_fuse_wire(mm)
+            if off < 0: raise RuntimeError(f"electron fuse wire not found in {exe}")
+            pos = off + 34 + FUSE_EMBEDDED_ASAR_INTEGRITY
+            previous = chr(mm[pos])
+            if previous not in (FUSE_OFF, FUSE_ON, FUSE_REMOVED): raise RuntimeError(f"unexpected fuse value {previous!r} in {exe}")
+            if previous == state: return previous
+            mm[pos] = ord(state); mm.flush()
+            return previous
+
+def electron_exe(install: Path) -> Path | None:
+    """Electron executable of the install dir (Wand.exe / WeMod.exe)."""
+    for name in ("Wand.exe", "WeMod.exe"):
+        candidate = install / name
+        if candidate.is_file(): return candidate
+    return None
+
+def exe_backup_path(exe: Path) -> Path:
+    return exe.with_name(exe.name + ".wemod-enhancer-backup")
+
+def cleanup_legacy_dll(install: Path):
+    """Remove the retired version.dll proxy, restoring any pre-proxy file."""
+    dll = install / "version.dll"
+    dll_backup = install / "version.dll.wemod-enhancer-backup"
+    if dll_backup.is_file():
+        shutil.copy2(dll_backup, dll)
+        dll_backup.unlink()
+        print(f"restored pre-proxy {dll.name}")
+        return
+    if dll.is_file():
+        print(f"kept unexpected {dll.name} - remove manually if it is the retired proxy")
+        return
+
+def flip_fuse(exe: Path):
+    backup = exe_backup_path(exe)
+    previous = fuse_state(exe)
+    if previous is None:
+        print(f"skipped fuse flip: no electron fuse wire in {exe.name}")
+        return
+    if previous == FUSE_REMOVED:
+        print(f"asar integrity fuse already removed in {exe.name}")
+        return
+    shutil.copy2(exe, backup)
+    set_fuse_state(exe, FUSE_REMOVED)
+    print(f"removed asar integrity fuse in {exe.name} (was '{previous}')")
+
+def restore_fuse(exe: Path):
+    backup = exe_backup_path(exe)
+    legacy_sidecar = exe.parent / "electron-fuse.wemod-enhancer-backup"
+    if backup.is_file():
+        shutil.copy2(backup, exe)
+        backup.unlink()
+        print(f"restored {exe.name} from backup")
+        return
+    if legacy_sidecar.is_file():
+        previous = legacy_sidecar.read_text(encoding="ascii").strip()
+        if previous and fuse_state(exe) == FUSE_REMOVED:
+            set_fuse_state(exe, previous)
+            print(f"restored asar integrity fuse in {exe.name} (was '{previous}')")
+        legacy_sidecar.unlink()
 
 def paths(install: Path):
     resources = install / "resources"
-    return resources / "app.asar", resources / "app.asar.backup", install / "version.dll", install / "version.dll.wemod-enhancer-backup"
+    return resources / "app.asar", resources / "app.asar.backup"
 
-def patch(install: Path, dll: Path | None):
-    asar, backup, target_dll, dll_backup = paths(install)
+def patch(install: Path):
+    asar, backup = paths(install)
     if not asar.is_file(): raise FileNotFoundError(f"missing {asar}")
     if not backup.exists(): shutil.copy2(asar, backup)
     else: shutil.copy2(backup, asar)
-    if target_dll.exists() and not dll_backup.exists(): shutil.copy2(target_dll, dll_backup)
-    dll = resolve_dll(dll); pe_x64(dll)
+    exe = electron_exe(install)
+    exe_touched = False
     try:
         with tempfile.TemporaryDirectory(prefix="wemod-enhancer-") as tmp:
             work = Path(tmp); header = extract_asar(asar, work); patch_bundles(work); pack_asar(work, asar, header)
-        shutil.copy2(dll, target_dll); print(f"patched {install}")
+        cleanup_legacy_dll(install)
+        if exe: flip_fuse(exe); exe_touched = True
+        else: print("skipped fuse flip: no Wand.exe/WeMod.exe next to resources")
+        print(f"patched {install}")
     except Exception:
         shutil.copy2(backup, asar)
-        if dll_backup.exists(): shutil.copy2(dll_backup, target_dll)
-        elif target_dll.exists(): target_dll.unlink()
+        if exe and exe_touched: restore_fuse(exe)
         raise
 
 def restore(install: Path):
-    asar, backup, dll, dll_backup = paths(install)
+    asar, backup = paths(install)
     if not backup.exists(): raise FileNotFoundError(f"missing {backup}")
     shutil.copy2(backup, asar)
-    if dll_backup.exists(): shutil.copy2(dll_backup, dll)
-    elif dll.exists(): dll.unlink()
+    cleanup_legacy_dll(install)
+    exe = electron_exe(install)
+    if exe: restore_fuse(exe)
     print(f"restored {install}")
 
 def main():
     p = argparse.ArgumentParser(); sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("patch", "restore"):
         q = sub.add_parser(name); q.add_argument("--install-dir", type=Path, required=True)
-        if name == "patch": q.add_argument("--version-dll", type=Path)
     a = p.parse_args()
-    if a.cmd == "patch": patch(a.install_dir.resolve(), a.version_dll.resolve() if a.version_dll else None)
+    if a.cmd == "patch": patch(a.install_dir.resolve())
     else: restore(a.install_dir.resolve())
 
 if __name__ == "__main__":
