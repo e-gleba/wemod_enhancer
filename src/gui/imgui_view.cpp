@@ -359,7 +359,7 @@ frame_requests draw(app_state& state)
     if (ImGui::Button("Report bug", ImVec2(tool_width, 0.0F))) {
         requests.report = true;
     }
-    hover_tip("Open a pre-filled GitHub issue");
+    hover_tip("Copy diagnostics + open a pre-filled issue");
     if (state.copied_flash > 0.0F) {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, to_vec(ink_ok));
