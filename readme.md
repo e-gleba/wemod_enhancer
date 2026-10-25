@@ -91,9 +91,6 @@ python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
 
 > `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
 
-> [!WARNING]
-> The patcher flips one byte of the signed executable (Electron's ASAR integrity fuse, `1` to `r`), so `Get-AuthenticodeSignature` reports `HashMismatch`. The client runs fine — this is the same operation `@electron/fuses` performs. `restore` puts the original executable back from `Wand.exe.wemod-enhancer-backup` / `WeMod.exe.wemod-enhancer-backup`.
-
 ## Restore
 
 Originals are backed up automatically. One command reverts everything:
@@ -107,8 +104,6 @@ python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 ```
 
 ## vs Wand-Enhancer
-
-Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) — same core job, zero runtime dependencies, fully cross-platform:
 
 | | **WeMod Enhancer** | **Wand-Enhancer** |
 | :-- | :------------------- | :------------------- |
