@@ -1,0 +1,112 @@
+#include "app.hpp"
+#include "platform.hpp"
+
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlrenderer3.h>
+
+#include <gsl/assert>
+#include <gsl/narrow>
+#include <gsl/pointers>
+#include <gsl/util>
+
+#include <algorithm>
+#include <array>
+#include <format>
+#include <memory>
+#include <string>
+#include <system_error>
+
+namespace wemod::gui
+{
+namespace
+{
+constexpr std::array<float, 4> clear_color{0.10F, 0.10F, 0.12F, 1.00F};
+constexpr auto process_poll_interval{std::chrono::milliseconds{10}};
+
+struct app final
+{
+    platform::context platform;
+    app_state state;
+    background_runner jobs;
+    bool imgui_ready{false};
+};
+
+void start_command(app& value, const run_kind kind,
+                   const std::string_view shown, std::vector<std::string> args)
+{
+    Expects(!shown.empty());
+    Expects(!args.empty());
+    if (value.jobs.busy() || !value.jobs.launch(kind, std::move(args))) {
+        return;
+    }
+    append_log(value.state, std::format("$ {}\n", shown));
+    value.state.kind = kind;
+    value.state.running = true;
+    value.state.has_run |= kind == run_kind::patcher;
+}
+
+void start_run(app& value, const std::string_view subcommand)
+{
+    Expects(subcommand == "patch" || subcommand == "restore");
+    std::string shown{std::format("{} -u {} {} --install-dir {}",
+                                  value.state.python, value.state.script_path,
+                                  subcommand, value.state.install_dir)};
+    std::vector<std::string> args{value.state.python, "-u",
+                                  value.state.script_path,
+                                  std::string{subcommand}, "--install-dir",
+                                  value.state.install_dir};
+    start_command(value, run_kind::patcher, shown, std::move(args));
+}
+
+void start_wemod_download(app& value)
+{
+    if constexpr (is_windows) {
+        const char* downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
+        if (downloads == nullptr) {
+            value.state.want_alert =
+                alert_request{.title = "Cannot download", .message = SDL_GetError()};
+            return;
+        }
+        const fs::path installer{fs::path{downloads} / "wemod_setup.exe"};
+        const std::string script{std::format(
+            "$ProgressPreference='SilentlyContinue';Invoke-WebRequest "
+            "-Uri '{}' -OutFile '{}';Start-Process '{}'",
+            installer_url, installer.string(), installer.string())};
+        const std::string shown{
+            std::format("powershell -NoProfile -ExecutionPolicy Bypass "
+                        "-Command \"{}\"",
+                        script)};
+        start_command(value, run_kind::wemod, shown,
+                      {"powershell", "-NoProfile", "-ExecutionPolicy",
+                       "Bypass", "-Command", script});
+    } else {
+        const char* home{
+            SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
+        if (home == nullptr) {
+            value.state.want_alert =
+                alert_request{.title = "Cannot download", .message = "HOME is not set."};
+            return;
+        }
+        const fs::path directory{fs::path{home} / "wemod-launcher"};
+        std::error_code error;
+        if (fs::is_directory(directory, error)) {
+            value.state.install_dir = directory.string();
+            append_log(value.state,
+                       std::format("wemod-launcher already cloned: {}\n\n",
+                                   directory.string()));
+            value.state.scroll_to_bottom = true;
+            return;
+        }
+        value.state.want_open_url = std::string{launcher_guide_url};
+        const std::string shown{std::format("git clone {} {}",
+                                            launcher_clone_url,
+                                            directory.string())};
+        start_command(value, run_kind::wdeps, shown,
+                      {"git", "clone", std::string{launcher_clone_url},
+                       directory.string()});
+    }
+}
