@@ -168,14 +168,8 @@ def cleanup_legacy_dll(install: Path):
         print(f"restored pre-proxy {dll.name}")
         return
     if dll.is_file():
-        try:
-            if dll.stat().st_size > 64 * 1024:
-                print(f"kept unexpected {dll.name} ({dll.stat().st_size} bytes) - remove manually")
-                return
-        except OSError:
-            pass
-        dll.unlink()
-        print(f"removed legacy {dll.name}")
+        print(f"kept unexpected {dll.name} - remove manually if it is the retired proxy")
+        return
 
 def flip_fuse(exe: Path):
     backup = exe_backup_path(exe)
@@ -186,8 +180,7 @@ def flip_fuse(exe: Path):
     if previous == FUSE_REMOVED:
         print(f"asar integrity fuse already removed in {exe.name}")
         return
-    if not backup.exists():
-        shutil.copy2(exe, backup)
+    shutil.copy2(exe, backup)
     set_fuse_state(exe, FUSE_REMOVED)
     print(f"removed asar integrity fuse in {exe.name} (was '{previous}')")
 
