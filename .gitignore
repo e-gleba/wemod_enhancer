@@ -132,3 +132,4 @@ wrapper.log*
 # Project strange dirs:
 OFF/
 cmake_system_information__/
+imgui.ini
