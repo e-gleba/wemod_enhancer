@@ -51,7 +51,7 @@ Variables:
 - `WEMOD_LOG=...`: put launcher log at a known path
 - `PROTON_LOG=1`: write Steam/Proton log, normally `$HOME/steam-<APPID>.log`
 
-## Confirm the fuse flip
+## Confirm the executable backup
 
 After patching, the executable backup must exist next to `WeMod.exe`:
 
@@ -78,7 +78,7 @@ Useful filter:
 
 ```sh
 grep -nEi \
-  'WeMod\\.exe|app\\.asar|unhandled|fatal|exception|page fault|SyntaxError|ReferenceError|TypeError|unexpected token|err:' \
+  'WeMod\.exe|app\.asar|unhandled|fatal|exception|page fault|SyntaxError|ReferenceError|TypeError|unexpected token|err:' \
   "$HOME/steam-<APPID>.log" | tail -n 300
 ```
 
