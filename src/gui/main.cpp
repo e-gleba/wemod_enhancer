@@ -175,6 +175,9 @@ void execute(app& value, const frame_requests& requests)
         value.state.copied_flash = 0.0F;
     }
     if (requests.report) {
+        // Clipboard first: the form field has a length cap and the URL can
+        // hit the 414 limit on long logs, so pasting stays the fallback.
+        value.state.want_clipboard = report_text(value.state);
         value.state.want_open_url = issue_url(value.state);
     }
 }
