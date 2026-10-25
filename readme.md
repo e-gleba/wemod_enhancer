@@ -4,163 +4,126 @@
 
 # WeMod Enhancer
 
-**The original WeMod app — Pro unlocked — on Steam Deck, Linux & Windows**
+**WeMod Pro. On Steam Deck, Linux, and Windows.**
 
-One command patches the WeMod client: Pro subscription active, auto-updates disabled, F12 DevTools, no mobile-pairing nag. Zero runtime dependencies — stdlib Python plus a 4 KB C proxy DLL.
+Download, patch once, play. Pro stays on, forced updates and the mobile-pairing nag stay off, and you can undo everything in one command.
+
+[Download the latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest) · [Steam Deck & Linux](#steam-deck--linux) · [Windows](#windows) · [Restore](#restore)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
-[![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
 [![release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
-[![CMake](https://img.shields.io/badge/CMake-3.31+-064F8C?logo=cmake)](https://cmake.org)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
-[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#linux--steam-deck)
-
-[![▶ run release](https://img.shields.io/badge/%E2%96%B6_run-release-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml)
-[![▶ run ci](https://img.shields.io/badge/%E2%96%B6_run-ci-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
-[![▶ run renovate](https://img.shields.io/badge/%E2%96%B6_run-renovate-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/renovate.yml)
+[![ci](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=ci)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
+[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#steam-deck--linux)
 
 </div>
 
 ## What you get
 
-| Feature | How |
-| :------ | :-- |
-| **Pro activation** | Intercepts `/v3/account` → injects `subscription: { period: "yearly", state: "active" }` |
-| **ASAR integrity bypass** | 4 KB `version.dll` proxy flips Electron's fuse in-process via `VirtualProtect` |
-| **F12 DevTools** | Hotkey hook on `browser-window-created` |
-| **No auto-updates** | `ACTION_CHECK_FOR_UPDATE` → no-op — the patch survives until you say otherwise |
-| **No mobile pairing** | `requestRemoteAuthCode()` → reject |
-| **Fail-safe** | Automatic backup, all-or-nothing patching, one-command restore |
+- **Pro, unlocked** — the original WeMod app with Pro active, no subscription required.
+- **WeMod where it does not run** — Steam Deck and Linux, through Proton.
+- **No surprises** — auto-updates off, mobile-pairing nag off, your patch stays until you change it.
+- **DevTools when you need them** — press F12 in the client.
+- **Safe to try** — automatic backup before patching, one command to restore the original.
 
-## GUI (optional)
+This is the original client, patched in place. Nothing is downloaded at runtime and there are no runtime dependencies.
+
+## Get started
+
+### GUI — recommended
 
 ![Screenshot presenting GUI](docs/Screenshot_20260930_224227.png)
 
-One self-contained folder, no terminal. Grab the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack, run:
+Download the package for your system from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), unpack it, and run the app. No terminal needed.
 
-| OS | Artifact | Inside |
-| :- | :------- | :----- |
-| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` + `bin/wemod_enhancer.py` + `bin/version.dll` |
-| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` + `bin/wemod_enhancer.py` + `bin/version.dll` |
-| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` | same layout, ARM build |
+| System | Download | Run |
+| :----- | :------- | :-- |
+| Windows x64 | `wemod_enhancer-windows-msvc-amd64.zip` | `bin/wemod_enhancer_gui.exe` |
+| Linux x64 | `wemod_enhancer-linux-amd64.tar.xz` | `bin/wemod_enhancer_gui.elf` |
+| Linux ARM64 | `wemod_enhancer-linux-arm64.tar.xz` | `bin/wemod_enhancer_gui.elf` |
 
-Everything ships inside the package — nothing is downloaded at runtime: the GUI finds the patcher (`wemod_enhancer.py` + `version.dll`) next to the executable, auto-detects the WeMod folder, streams the patch output live. Only requirement: **Python 3.11+** on PATH. **Report bug** opens a pre-filled GitHub issue with the log attached.
+The app finds everything it needs next to itself, detects your WeMod install, and shows the patch output live. If something fails, **Report bug** opens a pre-filled issue with the log attached.
 
-## Linux / Steam Deck (CLI)
+You only need [Python 3.11+](https://python.org) on your `PATH`.
 
-WeMod has no Linux build — [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton. WeMod Enhancer unlocks Pro on top of it.
+### Steam Deck & Linux
+
+WeMod has no Linux build, so this runs the official Windows client through Proton with [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher).
+
+1. Install wemod-launcher and launch a game through it once. Log in to WeMod when it opens.
 
 ```sh
-# 1. Install the launcher
 git clone https://github.com/DeckCheatz/wemod-launcher "$HOME/wemod-launcher"
 chmod +x "$HOME/wemod-launcher/wemod"
-...
-(follow steps in tutorial https://github.com/DeckCheatz/wemod-launcher)
-(Launch any game though wemod, authorize in wemod)
+```
 
-# 2. Get WeMod Enhancer
+Follow the [wemod-launcher tutorial](https://github.com/DeckCheatz/wemod-launcher#quick-guide) for Proton and first-login setup.
+
+2. Download WeMod Enhancer and unpack it.
+
+```sh
 curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
 mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz -C wemod_enhancer
 cd wemod_enhancer
+```
 
-# 3. Launch your game once through the launcher, then patch the WeMod install
+3. Patch the WeMod install, or open the GUI instead.
+
+```sh
 python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
-# Or launch the GUI
+# or
 ./bin/wemod_enhancer_gui.elf
 ```
 
-> **Important:** `wemod_bin` only appears **after** you launch a game through wemod-launcher at least once and log in to your WeMod account. The launcher downloads the WeMod client into `~/wemod-launcher/wemod_data/wemod_bin` on first run — patch only after that folder exists. See the [wemod-launcher tutorial](https://github.com/DeckCheatz/wemod-launcher#quick-guide) for the full setup (Proton, launch options, first login).
+> `wemod_bin` only exists after the first launch in step 1 — the launcher downloads WeMod there. Patch only once that folder is present. No `python3`? It is preinstalled on SteamOS and most distros.
 
-> No `python3`? It's preinstalled on SteamOS and most distros — otherwise install it with your package manager (3.11+).
-
-Steam launch options for the game:
+4. Set the game's Steam launch options.
 
 ```sh
 WINEDLLOVERRIDES="version=n,b" WEMOD_LOG="$HOME/wemod-launcher/wemod.log" "$HOME/wemod-launcher/wemod" %command%
 ```
 
-> `version=n,b` forces native-first DLL loading — without it Wine uses its builtin `version.dll` and Electron rejects the patched ASAR.
+Done. WeMod starts with the game, Pro active. Logs, diagnostics, and cleanup: [docs/linux.md](docs/linux.md).
 
-Done — WeMod starts with the game, Pro active. Diagnostics, log locations, cleanup: [docs/linux.md](docs/linux.md).
+### Windows
 
-## Windows (CLI)
-
-Install WeMod, authorize. Open **PowerShell** (Start → type `powershell` → Enter), make sure WeMod is closed, then paste:
+Install WeMod and log in. Close WeMod, open **PowerShell**, and paste:
 
 ```powershell
-# 1. Download + extract WeMod Enhancer (prebuilt version.dll included)
+# 1. Download and unpack WeMod Enhancer
 cd $env:USERPROFILE\Downloads
 Invoke-WebRequest -Uri "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip" -OutFile "wemod_enhancer.zip"
 Expand-Archive wemod_enhancer.zip -DestinationPath wemod_enhancer -Force
 cd wemod_enhancer
 
-# 2. Auto-detect the newest WeMod install (the app-* folder with resources\app.asar) and patch it
+# 2. Find the newest WeMod install and patch it
 $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
          Where-Object { Test-Path "$_\resources\app.asar" } |
          Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
          Select-Object -First 1
 python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
-# Or launch GUI
+# or launch the GUI
 .\bin\wemod_enhancer_gui.exe
 ```
 
-> `python` not recognized? `winget install Python.Python.3.13`, then reopen PowerShell. Don't want Python staying on your system after patching? Remove it the same way: `winget uninstall Python.Python.3.13`.
-
-> [!WARNING]
-> It is really dirty unsafe hack, so for now investigating the ability to make it cleaner.
-> **Unsafe crash-on-start workaround:** With safe DLL search mode enabled (Windows default), the current folder is searched last, after the app folder, System32, and Windows folder, so a copy found earlier can win over your current-folder `version.dll`. If patching alone does not load it, as a last resort run elevated: `reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager" /v SafeDllSearchMode /t REG_DWORD /d 0 /f`, then restart Windows. To restore the safe default, run the same command elevated with `/d 1` and restart again (patched DLL will stop loading until you disable again). While disabled, the current folder moves to just after the app folder for **every** app, which reopens [DLL preloading / binary planting attacks](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-security). Never run patched WeMod elevated. See [DLL search order](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order). 
-
+> `python` not recognized? Run `winget install Python.Python.3.13`, reopen PowerShell, and try again. Patched, but WeMod does not start? See the Windows note in [docs/details.md](docs/details.md#windows-dll-search-order).
 
 ## Restore
 
-Originals are backed up automatically. One command reverts everything:
+Changed your mind, or something looks wrong? Originals are backed up automatically. One command puts everything back:
 
 ```sh
 # Linux
 python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+```
 
-# Windows (PowerShell, same session as above)
+```powershell
+# Windows, in the same PowerShell session as above
 python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
 ```
 
-## vs Wand-Enhancer
+## For developers
 
-Ground-up rewrite of the original [Wand-Enhancer](https://github.com/k1tbyte/Wand-Enhancer) — same core job, zero runtime dependencies, fully cross-platform:
-
-| | **WeMod Enhancer** | **Wand-Enhancer** |
-| :-- | :------------------- | :------------------- |
-| **Language** | C + Python (stdlib only) | C# / .NET / WPF |
-| **Runtime deps** | None — Python stdlib + a 4 KB C DLL | .NET Framework 4.8 runtime |
-| **Build deps** | CMake + compiler | CMake + Node.js + pnpm + VS 2022 + MSBuild + NuGet |
-| **Build from source** | `cmake --workflow --preset windows_llvm_mingw_amd64_full` | Fork → GitHub Actions → download artifact |
-| **Platform** | Steam Deck, Linux, Windows | Windows only |
-| **Interface** | CLI — scriptable, automatable | WPF GUI — click-through wizard |
-| **Binary size** | ~4 KB proxy DLL | Full .NET WPF application |
-| **ASAR integrity bypass** | In-process fuse flip via `VirtualProtect` | Same approach (shared heritage) |
-| **Pro activation** | Intercepts `/v3/account` responses | Same |
-| **DevTools** | F12 hotkey hook | Not available |
-| **Disable updates** | `ACTION_CHECK_FOR_UPDATE` → no-op | Not available |
-| **Disable mobile pairing** | `requestRemoteAuthCode()` → reject | Not available |
-| **Remote web panel** | Not included | Built-in LAN HTTP/WebSocket server |
-| **Custom script injection** | Not included | Bundled `.js` injection at patch time |
-| **Fail-safe** | Fails closed on mismatched patches | — |
-| **Backup & restore** | Automatic, one-command restore | — |
-| **License** | MIT | Apache-2.0 |
-
-> WeMod Enhancer focuses on the core patching pipeline with the smallest possible footprint. If you need the Remote Web Panel or custom script injection on Windows, Wand-Enhancer remains a solid choice.
-
-## Build from source
-
-For builders, maintainers, and contributors — users should grab a prebuilt package from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest) instead.
-
-Needs CMake 3.31+ and Ninja. On Linux the LLVM-MinGW toolchain is auto-downloaded.
-
-```sh
-cmake --workflow --preset windows_llvm_mingw_amd64_full   # Linux → Windows package
-cmake --workflow --preset windows_msvc_amd64_full         # Windows (MSVC) package
-```
-
-GUI builds on Linux hosts need SDL3 Wayland/X11 dev packages (build-time only) — see [cmake_multi_platform.yml](.github/workflows/cmake_multi_platform.yml) for the exact apt list; Fedora: `sudo dnf install libstdc++-static` for the static C++ runtime.
+How the patch works, the Wand-Enhancer comparison, the Windows DLL search-order workaround, and build-from-source instructions live in [docs/details.md](docs/details.md). Most users never need them.
 
 <div align="center">
 <sub>MIT © 2026 Evgeniy Gleba · Not affiliated with WeMod.</sub>
