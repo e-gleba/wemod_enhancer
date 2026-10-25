@@ -18,7 +18,7 @@ std::string url_encode(const std::string_view text)
     std::string result;
     result.reserve(text.size());
     for (const unsigned char value : text) {
-        if (!unreserved.contains(static_cast<char>(value))) {
+        if (unreserved.contains(static_cast<char>(value))) {
             result += static_cast<char>(value);
         } else {
             result += std::format("%{:02X}", value);
@@ -167,8 +167,9 @@ std::string issue_url(const app_state& state)
                              : std::format("{} {}", state.platform_name,
                                            state.platform_detail)};
     return std::format(
-        "{}?template=bug_report.yml&title={}&os={}&diagnostics={}",
-        issue_new_url, url_encode("bug: gui report"), url_encode(os),
+        "{}?template=bug_report.yml&title={}&version={}&os={}&diagnostics={}",
+        issue_new_url, url_encode("bug: gui report"),
+        url_encode(gui_version), url_encode(os),
         url_encode(diagnostics));
 }
 

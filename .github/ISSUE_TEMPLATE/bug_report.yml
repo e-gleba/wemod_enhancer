@@ -4,28 +4,14 @@ description: The app did not work as expected.
 title: "[Bug]: "
 labels: ["bug"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Press **Report bug** in the app first: it copies diagnostics to your clipboard and opens this form with most fields filled in. Just describe what happened and paste below.
-  - type: dropdown
-    id: source
-    attributes:
-      label: How did you get the app?
-      options:
-        - Downloaded release archive
-        - Built from source
-      default: 0
-    validations:
-      required: true
   - type: input
-    id: build
+    id: version
     attributes:
-      label: Release version or build preset
-      description: Release tag like v1.2.3, or the preset name if you built from source. Leave empty if unsure.
+      label: App version
+      description: Shown in the top-right of the app.
       placeholder: "e.g. v1.2.3"
     validations:
-      required: false
+      required: true
   - type: input
     id: os
     attributes:
@@ -37,14 +23,13 @@ body:
     id: what
     attributes:
       label: What happened?
-      description: What did you see, and what did you expect instead?
       placeholder: "Patch failed with ... I expected ..."
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: What did you do before it failed?
+      label: Steps to reproduce
       placeholder: |
         1. Opened the app
         2. Pressed Patch
@@ -54,16 +39,14 @@ body:
   - type: textarea
     id: diagnostics
     attributes:
-      label: Diagnostics (paste from the app)
-      description: Already on your clipboard after pressing Report bug, just paste. No screenshots of text.
+      label: Diagnostics
+      description: Press Copy in the app, then paste here. No screenshots of text.
     validations:
       required: true
   - type: checkboxes
     id: checks
     attributes:
-      label: Pre-report checks
+      label: Checks
       options:
         - label: I searched existing issues (open + closed)
           required: true
-        - label: I use the latest release (or latest `main` if I built it myself)
-          required: false
