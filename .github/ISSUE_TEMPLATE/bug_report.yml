@@ -1,59 +1,61 @@
 ---
 name: Bug Report
-description: Report a build failure, preset error, or unexpected behavior.
+description: The app did not work as expected.
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. Please fill every section so we can reproduce fast.
-  - type: input
-    id: preset
+        Press **Report bug** in the app first: it copies diagnostics to your clipboard and opens this form with most fields filled in. Just describe what happened and paste below.
+  - type: dropdown
+    id: source
     attributes:
-      label: Preset used
-      description: Exact preset name from `cmake --list-presets`
-      placeholder: "e.g. linux_gcc_amd64_full, windows_msvc_amd64_full, windows_llvm_mingw_amd64_full"
+      label: How did you get the app?
+      options:
+        - Downloaded release archive
+        - Built from source
+      default: 0
     validations:
       required: true
+  - type: input
+    id: build
+    attributes:
+      label: Release version or build preset
+      description: Release tag like v1.2.3, or the preset name if you built from source. Leave empty if unsure.
+      placeholder: "e.g. v1.2.3"
+    validations:
+      required: false
   - type: input
     id: os
     attributes:
-      label: Host OS and version
-      placeholder: "e.g. Ubuntu 24.04, Fedora 40, Windows 11, macOS 14"
-    validations:
-      required: true
-  - type: input
-    id: versions
-    attributes:
-      label: Tool versions
-      description: Output of `cmake --version`, `gcc --version` or `clang --version`, `ninja --version`
-      placeholder: "CMake 3.31.0, GCC 13.2, Ninja 1.12"
+      label: OS
+      placeholder: "e.g. Windows 11, Ubuntu 24.04"
     validations:
       required: true
   - type: textarea
-    id: repro
+    id: what
     attributes:
-      label: Steps to reproduce
-      description: Minimal commands from clean clone to failure
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: "Patch failed with ... I expected ..."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What did you do before it failed?
       placeholder: |
-        1. git clone ...
-        2. cmake --preset=linux_gcc_amd64
-        3. cmake --build --preset=linux_gcc_amd64
-        4. Error occurs
+        1. Opened the app
+        2. Pressed Patch
+        3. Saw the error
     validations:
       required: true
   - type: textarea
-    id: expected
+    id: diagnostics
     attributes:
-      label: Expected behavior
-    validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual behavior / logs
-      description: Paste full terminal output or link to a gist. No screenshots of text.
+      label: Diagnostics (paste from the app)
+      description: Already on your clipboard after pressing Report bug, just paste. No screenshots of text.
     validations:
       required: true
   - type: checkboxes
@@ -63,7 +65,5 @@ body:
       options:
         - label: I searched existing issues (open + closed)
           required: true
-        - label: I tested on latest `main` branch
-          required: true
-        - label: I can reproduce with the steps above on a clean machine
+        - label: I use the latest release (or latest `main` if I built it myself)
           required: false
