@@ -18,7 +18,7 @@ std::string url_encode(const std::string_view text)
     std::string result;
     result.reserve(text.size());
     for (const unsigned char value : text) {
-        if (!unreserved.contains(static_cast<char>(value))) {
+        if (unreserved.contains(static_cast<char>(value))) {
             result += static_cast<char>(value);
         } else {
             result += std::format("%{:02X}", value);
@@ -145,23 +145,32 @@ std::string env_info(const app_state& state)
     return info;
 }
 
+std::string report_text(const app_state& state)
+{
+    return std::format("{}\n{}", state.log, env_info(state));
+}
+
 std::string issue_url(const app_state& state)
 {
+    // Issue forms ignore `body`; fields prefill by their `id` instead.
+    // See: https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue#creating-an-issue-from-a-url-query
     const std::size_t start{state.log.size() > issue_log_budget
                                 ? state.log.size() - issue_log_budget
                                 : 0UZ};
     const std::string_view tail{state.log.data() + start,
                                 state.log.size() - start};
     const std::string prefix{start == 0UZ ? "" : "... (log tail)\n"};
-    const std::string body{std::format(
-        "## Summary\n\nDescribe what failed and what you expected.\n\n"
-        "## Steps to reproduce\n\n1. \n2. \n3. \n\n"
-        "## Diagnostic digest\n\n```text\n{}\n```\n\n"
-        "## Log output\n\n```text\n{}{}\n```",
-        env_info(state), prefix, tail)};
-    return std::format("{}?template=bug_report.yml&title={}&body={}",
-                       issue_new_url, url_encode("bug: gui report"),
-                       url_encode(body));
+    const std::string diagnostics{
+        std::format("{}{}{}", env_info(state), prefix, tail)};
+    const std::string os{state.platform_detail.empty()
+                             ? state.platform_name
+                             : std::format("{} {}", state.platform_name,
+                                           state.platform_detail)};
+    return std::format(
+        "{}?template=bug_report.yml&title={}&version={}&os={}&diagnostics={}",
+        issue_new_url, url_encode("bug: gui report"),
+        url_encode(gui_version), url_encode(os),
+        url_encode(diagnostics));
 }
 
 void parse_probe(app_state& state, const std::string_view output)

@@ -149,6 +149,7 @@ run_block_reason(bool install_ok, bool script_ok) noexcept
 [[nodiscard]] fs::path resolve_wemod_dir(std::string_view dir);
 void append_log(app_state& state, std::string_view text);
 [[nodiscard]] std::string env_info(const app_state& state);
+[[nodiscard]] std::string report_text(const app_state& state);
 [[nodiscard]] std::string issue_url(const app_state& state);
 void parse_probe(app_state& state, std::string_view output);
 [[nodiscard]] run_result run_capture(const std::vector<std::string>& args,
