@@ -52,7 +52,7 @@ All components are included in the package, and nothing is downloaded at runtime
 
 **Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`.
 
-## Linux / Steam Deck (CLI)
+## Linux / Steam Deck
 
 WeMod does not provide a native Linux build. [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton, and WeMod Enhancer then unlocks Pro on top of it.
 
