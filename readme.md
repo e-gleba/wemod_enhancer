@@ -83,7 +83,7 @@ WeMod does not provide a native Linux build. [wemod-launcher](https://github.com
    cd wemod_enhancer
    ```
 
-5. **Launch the game once through the launcher, then patch the WeMod installation**
+5. **Patch the WeMod installation**
 
    ```sh
    python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
