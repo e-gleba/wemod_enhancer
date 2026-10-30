@@ -32,7 +32,7 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 
 ![WeMod Enhancer GUI](docs/Screenshot_20260930_224227.png)
 
-The GUI ships as a self-contained folder and requires no terminal. Download the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), extract it, and run the executable. Make sure to log in to your WeMod account before patching.
+The GUI ships as a self-contained folder and requires no terminal. Download the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), extract it, and run the executable. Make sure to log in at least once to your WeMod account before patching.
 
 | OS          | Artifact                                           |
 | ----------- | -------------------------------------------------- |
