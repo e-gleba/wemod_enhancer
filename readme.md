@@ -28,10 +28,6 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 - [Comparison with Wand-Enhancer](#comparison-with-wand-enhancer)
 - [Build from source](#build-from-source)
 
-> [!WARNING]
-> Sign in to your WeMod account before patching. The patcher does not work without an authorized WeMod session.
-> This requirement is repeated in each platform section to prevent confusion.
-
 ## GUI
 
 ![WeMod Enhancer GUI](docs/Screenshot_20260930_224227.png)
