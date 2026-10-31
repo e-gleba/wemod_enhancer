@@ -10,49 +10,64 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 
 [![CI](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=CI)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
 [![Release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
-[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#linux--steam-deck)
+[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#windows)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [![Run release](https://img.shields.io/badge/%E2%96%B6_Run-Release-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml)
 [![Run CI](https://img.shields.io/badge/%E2%96%B6_Run-CI-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
 [![Run Renovate](https://img.shields.io/badge/%E2%96%B6_Run-Renovate-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/renovate.yml)
 
+![WeMod Enhancer GUI](docs/Screenshot_20260930_224227.png)
+
 </div>
 
 ## Contents
 
-- [Before you start](#before-you-start)
-- [Linux / Steam Deck](#linux--steam-deck)
 - [Windows](#windows)
+- [Linux / Steam Deck](#linux--steam-deck)
 - [Comparison with Wand-Enhancer](#comparison-with-wand-enhancer)
 - [Build from source](#build-from-source)
 
-## Before you start
+## Windows
 
-> [!WARNING]
-> The **GUI** and CLI (command-line interface) are alternative ways to use the tool. Choose either one—you do not need to follow the CLI instructions if you use the GUI.
+**Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`. If `python` is not recognized, install [Python 3.13](https://www.python.org/downloads/) (`winget install Python.Python.3.13`) and reopen your terminal. To remove Python after patching, run `winget uninstall Python.Python.3.13`.
 
-![WeMod Enhancer GUI](docs/Screenshot_20260930_224227.png)
+1. Install WeMod and log in to your WeMod account at least once.
+2. Close WeMod.
+3. Download [`wemod_enhancer-windows-msvc-amd64.zip`][win-x64] from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest) and extract it.
+4. Patch WeMod with the GUI (recommended) or the command line. Choose either one—you do not need both.
 
-The GUI ships as a self-contained folder and requires no terminal. Download the artifact for your OS from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest), extract it, and run the executable. Make sure to log in at least once to your WeMod account before patching.
+### GUI (recommended)
 
-| OS          | Artifact                                           |
-| ----------- | -------------------------------------------------- |
-| Windows x64 | [`wemod_enhancer-windows-msvc-amd64.zip`][win-x64] |
-| Linux x64   | [`wemod_enhancer-linux-amd64.tar.xz`][linux-x64]   |
-| Linux ARM64 | [`wemod_enhancer-linux-arm64.tar.xz`][linux-arm64] |
+The GUI ships as a self-contained folder and requires no terminal. All components are included in the package, and nothing is downloaded at runtime.
 
-[win-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip
-[linux-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-amd64.tar.xz
-[linux-arm64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-arm64.tar.xz
+1. Run `bin\wemod_enhancer_gui.exe`.
+2. The WeMod installation folder is detected automatically. If it is not, select it with **Browse...**.
+3. Click **Patch**.
 
-All components are included in the package, and nothing is downloaded at runtime. The GUI locates `wemod_enhancer.py` next to the executable, detects the WeMod installation folder automatically, and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
+The GUI locates `wemod_enhancer.py` next to the executable and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
-**Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`.
+### Command line (advanced)
+
+Run the patcher from the extracted folder, passing the newest WeMod `app-*` folder that contains `resources\app.asar`:
+
+```powershell
+python bin\wemod_enhancer.py patch --install-dir "C:\Users\<user>\AppData\Local\WeMod\app-<version>"
+```
+
+### Restore on Windows
+
+Original files are backed up automatically. A single action reverts all changes: click **Restore** in the GUI, or run:
+
+```powershell
+python bin\wemod_enhancer.py restore --install-dir "C:\Users\<user>\AppData\Local\WeMod\app-<version>"
+```
 
 ## Linux / Steam Deck
 
 WeMod does not provide a native Linux build. [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton, and WeMod Enhancer then unlocks Pro on top of it.
+
+**Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`. If `python3` is not installed, install Python 3.11+ with your package manager. It is preinstalled on SteamOS and most major distributions.
 
 1. **Install the launcher**
 
@@ -73,81 +88,49 @@ WeMod does not provide a native Linux build. [wemod-launcher](https://github.com
 
 3. **Launch the game and log in to WeMod.**
 
-4. **Download WeMod Enhancer**
+   > **Important:** The `wemod_bin` directory is created only after you launch a game through wemod-launcher at least once and log in to your WeMod account. The launcher downloads the WeMod client to `~/wemod-launcher/wemod_data/wemod_bin` on first run. Patch only after this directory exists.
 
-   ```sh
-   curl -LO https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-llvm-mingw-amd64.tar.xz
-   mkdir -p wemod_enhancer && tar -xf wemod_enhancer-windows-llvm-mingw-amd64.tar.xz -C wemod_enhancer
-   cd wemod_enhancer
-   ```
+4. **Download WeMod Enhancer** from the [latest release](https://github.com/e-gleba/wemod_enhancer/releases/latest) and extract it:
 
-5. **Patch the WeMod installation**
+   | Architecture | Artifact                                           |
+   | ------------ | -------------------------------------------------- |
+   | Linux x64    | [`wemod_enhancer-linux-amd64.tar.xz`][linux-x64]   |
+   | Linux ARM64  | [`wemod_enhancer-linux-arm64.tar.xz`][linux-arm64] |
 
-   ```sh
-   python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
-   ```
+5. **Patch the WeMod installation** with the GUI (recommended) or the command line. Choose either one—you do not need both.
 
-   To launch the GUI instead, run:
+### GUI (recommended)
+
+The GUI ships as a self-contained folder and requires no terminal. All components are included in the package, and nothing is downloaded at runtime.
+
+1. Run the GUI from the extracted folder:
 
    ```sh
    ./bin/wemod_enhancer_gui.elf
    ```
 
-   > **Important:** The `wemod_bin` directory is created only after you launch a game through wemod-launcher at least once and log in to your WeMod account. The launcher downloads the WeMod client to `~/wemod-launcher/wemod_data/wemod_bin` on first run. Patch only after this directory exists.
+2. Select `~/wemod-launcher/wemod_data/wemod_bin` with **Browse...** if it is not detected automatically.
+3. Click **Patch**.
 
-   > **Note:** If `python3` is not installed, install Python 3.11+ with your package manager. It is preinstalled on SteamOS and most major distributions.
+The GUI locates `wemod_enhancer.py` next to the executable and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
+
+### Command line (advanced)
+
+```sh
+python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+```
 
 ### Restore on Linux / Steam Deck
 
-Original files are backed up automatically. A single command reverts all changes:
+Original files are backed up automatically. A single action reverts all changes: click **Restore** in the GUI, or run:
 
 ```sh
 python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
-## Windows
-
-1. Install WeMod and log in.
-2. Close WeMod.
-3. Open **PowerShell** (Start → type `powershell` → Enter).
-4. Download and extract WeMod Enhancer:
-
-   ```powershell
-   cd $env:USERPROFILE\Downloads
-   Invoke-WebRequest -Uri "https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip" -OutFile "wemod_enhancer.zip"
-   Expand-Archive wemod_enhancer.zip -DestinationPath wemod_enhancer -Force
-   cd wemod_enhancer
-   ```
-
-5. Detect the newest WeMod installation (the `app-*` folder that contains `resources\app.asar`) and patch it:
-
-   ```powershell
-   $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
-            Where-Object { Test-Path "$_\resources\app.asar" } |
-            Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
-            Select-Object -First 1
-   python bin\wemod_enhancer.py patch --install-dir $wemod.FullName
-   ```
-
-   To launch the GUI instead, run:
-
-   ```powershell
-   .\bin\wemod_enhancer_gui.exe
-   ```
-
-> **Note:** If `python` is not recognized, install [Python 3.13](https://www.python.org/downloads/) (`winget install Python.Python.3.13`) and reopen PowerShell. To remove Python after patching, run `winget uninstall Python.Python.3.13`.
-
-### Restore on Windows
-
-Original files are backed up automatically. A single command reverts all changes. Run this in PowerShell:
-
-```powershell
-$wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
-         Where-Object { Test-Path "$_\resources\app.asar" } |
-         Sort-Object { [version]($_.Name -replace '^app-','') } -Descending |
-         Select-Object -First 1
-python bin\wemod_enhancer.py restore --install-dir $wemod.FullName
-```
+[win-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-windows-msvc-amd64.zip
+[linux-x64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-amd64.tar.xz
+[linux-arm64]: https://github.com/e-gleba/wemod_enhancer/releases/latest/download/wemod_enhancer-linux-arm64.tar.xz
 
 ## Comparison with Wand-Enhancer
 
