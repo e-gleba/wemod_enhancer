@@ -1,7 +1,7 @@
 #include "patcher.hpp"
 
 #include <ctre.hpp>
-#include <mbedtls/sha256.h>
+#include <psa/crypto.h>
 #include <nlohmann/json.hpp>
 
 #include <array>
@@ -207,21 +207,36 @@ std::pair<json, std::uint64_t> read_asar(const fs::path& path)
     return {std::move(header), 8ULL + header_size};
 }
 
-struct sha_ctx
+// PSA multi-part SHA-256 accumulator (TF-PSA-Crypto 1.x, Mbed TLS 4.x).
+// psa_hash_abort() on the error paths keeps teardown honest: a failed
+// operation must be aborted before the handle is dropped.
+// Ref: https://github.com/Mbed-TLS/TF-PSA-Crypto/blob/development/docs/1.0-migration-guide.md
+struct sha_stream
 {
-    mbedtls_sha256_context ctx{};
-    sha_ctx()
+    psa_hash_operation_t op = PSA_HASH_OPERATION_INIT;
+    bool active = false;
+    sha_stream()
     {
-        mbedtls_sha256_init(&ctx);
+        auto init = psa_crypto_init();
+        if (init != PSA_SUCCESS) {
+            throw std::runtime_error(std::format("psa_crypto_init failed: {}", static_cast<int>(init)));
+        }
+        auto setup = psa_hash_setup(&op, PSA_ALG_SHA_256);
+        if (setup != PSA_SUCCESS) {
+            throw std::runtime_error(std::format("psa_hash_setup failed: {}", static_cast<int>(setup)));
+        }
+        active = true;
     }
-    ~sha_ctx()
+    ~sha_stream()
     {
-        mbedtls_sha256_free(&ctx);
+        if (active) {
+            (void)psa_hash_abort(&op);
+        }
     }
-    sha_ctx(const sha_ctx&) = delete;
-    sha_ctx& operator=(const sha_ctx&) = delete;
-    sha_ctx(sha_ctx&&) = delete;
-    sha_ctx& operator=(sha_ctx&&) = delete;
+    sha_stream(const sha_stream&) = delete;
+    sha_stream& operator=(const sha_stream&) = delete;
+    sha_stream(sha_stream&&) = delete;
+    sha_stream& operator=(sha_stream&&) = delete;
 };
 
 std::string hex_of(std::span<const unsigned char> data)
@@ -238,10 +253,18 @@ std::string hex_of(std::span<const unsigned char> data)
 
 std::string sha_hex(std::span<const unsigned char> data)
 {
+    auto init = psa_crypto_init();
+    if (init != PSA_SUCCESS) {
+        throw std::runtime_error(std::format("psa_crypto_init failed: {}", static_cast<int>(init)));
+    }
     auto out = std::array<unsigned char, 32>();
-    auto ret = mbedtls_sha256(data.data(), data.size(), out.data(), 0);
-    if (ret != 0) {
-        throw std::runtime_error(std::format("sha256 failed: {}", ret));
+    auto out_len = std::size_t{0};
+    auto status = psa_hash_compute(PSA_ALG_SHA_256, data.data(), data.size(), out.data(), out.size(), &out_len);
+    if (status != PSA_SUCCESS) {
+        throw std::runtime_error(std::format("sha256 failed: {}", static_cast<int>(status)));
+    }
+    if (out_len != out.size()) {
+        throw std::runtime_error("sha256 returned short hash");
     }
     return hex_of(std::span<const unsigned char>(out.data(), out.size()));
 }
@@ -252,11 +275,7 @@ json file_integrity(const fs::path& path)
     if (!in) {
         throw std::system_error(errno, std::generic_category(), "open failed: " + path.string());
     }
-    auto whole = sha_ctx();
-    auto started = mbedtls_sha256_starts(&whole.ctx, 0);
-    if (started != 0) {
-        throw std::runtime_error(std::format("sha256 failed: {}", started));
-    }
+    auto whole = sha_stream();
     auto buf = std::vector<unsigned char>(block_size);
     auto blocks = json::array();
     while (true) {
@@ -266,9 +285,10 @@ json file_integrity(const fs::path& path)
             break;
         }
         auto chunk = std::span<const unsigned char>(buf.data(), count);
-        auto updated = mbedtls_sha256_update(&whole.ctx, chunk.data(), chunk.size());
-        if (updated != 0) {
-            throw std::runtime_error(std::format("sha256 failed: {}", updated));
+        auto updated = psa_hash_update(&whole.op, chunk.data(), chunk.size());
+        if (updated != PSA_SUCCESS) {
+            whole.active = false;
+            throw std::runtime_error(std::format("sha256 failed: {}", static_cast<int>(updated)));
         }
         blocks.push_back(sha_hex(chunk));
         if (in.eof()) {
@@ -282,9 +302,14 @@ json file_integrity(const fs::path& path)
         throw std::system_error(errno, std::generic_category(), "read failed: " + path.string());
     }
     auto tail = std::array<unsigned char, 32>();
-    auto finished = mbedtls_sha256_finish(&whole.ctx, tail.data());
-    if (finished != 0) {
-        throw std::runtime_error(std::format("sha256 failed: {}", finished));
+    auto tail_len = std::size_t{0};
+    auto finished = psa_hash_finish(&whole.op, tail.data(), tail.size(), &tail_len);
+    whole.active = false;
+    if (finished != PSA_SUCCESS) {
+        throw std::runtime_error(std::format("sha256 failed: {}", static_cast<int>(finished)));
+    }
+    if (tail_len != tail.size()) {
+        throw std::runtime_error("sha256 returned short hash");
     }
     return {{"algorithm", "SHA256"},
             {"hash", hex_of(std::span<const unsigned char>(tail.data(), tail.size()))},
