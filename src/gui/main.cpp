@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "cli.hpp"
 #include "platform.hpp"
 
 #include <SDL3/SDL.h>
@@ -17,6 +18,8 @@
 #include <array>
 #include <format>
 #include <memory>
+#include <ranges>
+#include <span>
 #include <string>
 #include <system_error>
 
@@ -24,15 +27,15 @@ namespace wemod::gui
 {
 namespace
 {
-constexpr std::array<float, 4> clear_color{0.10F, 0.10F, 0.12F, 1.00F};
-constexpr auto process_poll_interval{std::chrono::milliseconds{10}};
+constexpr std::array<float, 4> clear_color = {0.10F, 0.10F, 0.12F, 1.00F};
+constexpr auto process_poll_interval = std::chrono::milliseconds{10};
 
 struct app final
 {
     platform::context platform;
     app_state state;
     background_runner jobs;
-    bool imgui_ready{false};
+    bool imgui_ready = false;
 };
 
 void start_command(app& value, const run_kind kind,
@@ -52,46 +55,46 @@ void start_command(app& value, const run_kind kind,
 void start_run(app& value, const std::string_view subcommand)
 {
     Expects(subcommand == "patch" || subcommand == "restore");
-    std::string shown{std::format("{} -u {} {} --install-dir {}",
-                                  value.state.python, value.state.script_path,
-                                  subcommand, value.state.install_dir)};
-    std::vector<std::string> args{value.state.python, "-u",
-                                  value.state.script_path,
-                                  std::string{subcommand}, "--install-dir",
-                                  value.state.install_dir};
+    std::string shown = std::format("{} -u {} {} --install-dir {}",
+                                     value.state.python, value.state.script_path,
+                                     subcommand, value.state.install_dir);
+    std::vector<std::string> args = {value.state.python, "-u",
+                                     value.state.script_path,
+                                     std::string{subcommand}, "--install-dir",
+                                     value.state.install_dir};
     start_command(value, run_kind::patcher, shown, std::move(args));
 }
 
 void start_wemod_download(app& value)
 {
     if constexpr (is_windows) {
-        const char* downloads{SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS)};
+        const char* downloads = SDL_GetUserFolder(SDL_FOLDER_DOWNLOADS);
         if (downloads == nullptr) {
             value.state.want_alert =
                 alert_request{.title = "Cannot download", .message = SDL_GetError()};
             return;
         }
-        const fs::path installer{fs::path{downloads} / "wemod_setup.exe"};
-        const std::string script{std::format(
+        const fs::path installer = fs::path{downloads} / "wemod_setup.exe";
+        const std::string script = std::format(
             "$ProgressPreference='SilentlyContinue';Invoke-WebRequest "
             "-Uri '{}' -OutFile '{}';Start-Process '{}'",
-            installer_url, installer.string(), installer.string())};
-        const std::string shown{
-            std::format("powershell -NoProfile -ExecutionPolicy Bypass "
-                        "-Command \"{}\"",
-                        script)};
+            installer_url, installer.string(), installer.string());
+        const std::string shown = std::format(
+            "powershell -NoProfile -ExecutionPolicy Bypass "
+            "-Command \"{}\"",
+            script);
         start_command(value, run_kind::wemod, shown,
                       {"powershell", "-NoProfile", "-ExecutionPolicy",
                        "Bypass", "-Command", script});
     } else {
-        const char* home{
-            SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME")};
+        const char* home =
+            SDL_GetEnvironmentVariable(SDL_GetEnvironment(), "HOME");
         if (home == nullptr) {
             value.state.want_alert =
                 alert_request{.title = "Cannot download", .message = "HOME is not set."};
             return;
         }
-        const fs::path directory{fs::path{home} / "wemod-launcher"};
+        const fs::path directory = fs::path{home} / "wemod-launcher";
         std::error_code error;
         if (fs::is_directory(directory, error)) {
             value.state.install_dir = directory.string();
@@ -102,9 +105,9 @@ void start_wemod_download(app& value)
             return;
         }
         value.state.want_open_url = std::string{launcher_guide_url};
-        const std::string shown{std::format("git clone {} {}",
-                                            launcher_clone_url,
-                                            directory.string())};
+        const std::string shown = std::format("git clone {} {}",
+                                              launcher_clone_url,
+                                              directory.string());
         start_command(value, run_kind::wemod, shown,
                       {"git", "clone", std::string{launcher_clone_url},
                        directory.string()});
@@ -113,18 +116,18 @@ void start_wemod_download(app& value)
 
 void start_probe(app& value)
 {
-    constexpr std::string_view probe{
+    constexpr std::string_view probe =
         "import sys,platform;print(sys.version.split()[0]);"
-        "print(platform.platform())"};
-    const std::string shown{
-        std::format("{} -c \"{}\"", value.state.python, probe)};
+        "print(platform.platform())";
+    const std::string shown =
+        std::format("{} -c \"{}\"", value.state.python, probe);
     start_command(value, run_kind::probe, shown,
                   {value.state.python, "-c", std::string{probe}});
 }
 
 void poll_jobs(app& value)
 {
-    while (auto finished{value.jobs.poll()}) {
+    while (auto finished = value.jobs.poll()) {
         append_log(value.state, finished->result.output);
         if (!finished->result.output.empty() &&
             !finished->result.output.ends_with('\n')) {
@@ -187,7 +190,7 @@ void configure_imgui()
     // Stock ImGui theme on purpose: upstream keeps it coherent across
     // imgui updates, a hand-rolled palette drifts and fights the widgets.
     ImGui::StyleColorsDark();
-    ImGuiStyle& style{ImGui::GetStyle()};
+    ImGuiStyle& style = ImGui::GetStyle();
     style.WindowPadding = ImVec2{18.0F, 14.0F};
     style.FramePadding = ImVec2{12.0F, 8.0F};
     style.ItemSpacing = ImVec2{10.0F, 10.0F};
@@ -207,7 +210,7 @@ void configure_imgui()
 
 [[nodiscard]] bool init_imgui(const platform::context& context) noexcept
 {
-    const platform::native_context handles{platform::native(context)};
+    const platform::native_context handles = platform::native(context);
     Expects(handles.window != nullptr);
     Expects(handles.renderer != nullptr);
     IMGUI_CHECKVERSION();
@@ -230,7 +233,7 @@ void shutdown_imgui() noexcept
     if (ImGui::GetCurrentContext() == nullptr) {
         return;
     }
-    const ImGuiIO& io{ImGui::GetIO()};
+    const ImGuiIO& io = ImGui::GetIO();
     if (io.BackendRendererUserData != nullptr) {
         ImGui_ImplSDLRenderer3_Shutdown();
     }
@@ -238,6 +241,33 @@ void shutdown_imgui() noexcept
         ImGui_ImplSDL3_Shutdown();
     }
     ImGui::DestroyContext();
+}
+
+// noexcept firewall by design: runs inside SDL's entry point, so
+// allocation failure terminates here instead of escaping into SDL.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+void report_cli(const cli::decision& early) noexcept
+{
+    // SDL_Log is the cross-platform console sink: stderr on POSIX, the
+    // debugger elsewhere, and on Windows SDL attaches the parent console
+    // itself — `gui.exe --help` prints in the invoking terminal with no
+    // windows.h in our code. See SDL3 src/SDL_log.c.
+    // One call per line: SDL appends the newline and embedded ones get
+    // platform-specific handling. See SDL3 SDL_log.h docs.
+    const bool error = early.kind == cli::mode::exit_err;
+    for (const auto part : early.output | std::views::split('\n')) {
+        const std::string line = {part.begin(), part.end()};
+        if (line.empty()) {
+            continue;
+        }
+        if (error) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", line.c_str());
+        } else {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+            SDL_Log("%s", line.c_str());
+        }
+    }
 }
 
 } // namespace
@@ -258,7 +288,7 @@ run_result run_capture(const std::vector<std::string>& args,
     }
     argv.push_back(nullptr);
 
-    SDL_PropertiesID props{SDL_CreateProperties()};
+    SDL_PropertiesID props = SDL_CreateProperties();
     if (props == 0) {
         result.output = std::format("error: SDL_CreateProperties failed ({})",
                                     SDL_GetError());
@@ -266,12 +296,12 @@ run_result run_capture(const std::vector<std::string>& args,
     }
     // SDL copies what it needs at create time; argv only has to outlive
     // the SDL_CreateProcessWithProperties call below, not the process.
-    const bool args_set{SDL_SetPointerProperty(
+    const bool args_set = SDL_SetPointerProperty(
         props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
-        // SDL stores args as void*; argv outlives the create call below,
-        // which is all SDL needs. Explicit cast silences
-        // bugprone-multi-level-implicit-pointer-conversion at this boundary.
-        static_cast<void*>(argv.data()))};
+        // SDL stores args as void* and only reads them; argv outlives
+        // the create call below, which is all SDL needs.
+        // NOLINTNEXTLINE(bugprone-multi-level-implicit-pointer-conversion)
+        static_cast<void*>(argv.data()));
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
                           SDL_PROCESS_STDIO_NULL);
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER,
@@ -285,7 +315,7 @@ run_result run_capture(const std::vector<std::string>& args,
         SDL_DestroyProperties(props);
         return result;
     }
-    SDL_Process* process{SDL_CreateProcessWithProperties(props)};
+    SDL_Process* process = SDL_CreateProcessWithProperties(props);
     SDL_DestroyProperties(props);
     if (process == nullptr) {
         result.output = std::format("error: SDL_CreateProcess failed ({})",
@@ -293,7 +323,7 @@ run_result run_capture(const std::vector<std::string>& args,
         return result;
     }
 
-    SDL_IOStream* output{SDL_GetProcessOutput(process)};
+    SDL_IOStream* output = SDL_GetProcessOutput(process);
     if (output == nullptr) {
         result.output = std::format("error: SDL_GetProcessOutput failed ({})",
                                     SDL_GetError());
@@ -302,11 +332,11 @@ run_result run_capture(const std::vector<std::string>& args,
         return result;
     }
 
-    std::array<char, 4096> buffer{};
-    bool killed{false};
+    std::array<char, 4096> buffer = {};
+    bool killed = false;
     while (true) {
-        const std::size_t count{SDL_ReadIO(output, buffer.data(),
-                                           buffer.size())};
+        const std::size_t count =
+            SDL_ReadIO(output, buffer.data(), buffer.size());
         if (count > 0) {
             result.output.append(buffer.data(), count);
             continue;
@@ -314,7 +344,7 @@ run_result run_capture(const std::vector<std::string>& args,
         if (SDL_GetIOStatus(output) == SDL_IO_STATUS_ERROR) {
             break;
         }
-        int exit_code{0};
+        int exit_code = 0;
         if (SDL_WaitProcess(process, false, &exit_code)) {
             break;
         }
@@ -326,14 +356,14 @@ run_result run_capture(const std::vector<std::string>& args,
     }
     // Drain whatever arrived between the last poll and exit.
     while (true) {
-        const std::size_t count{SDL_ReadIO(output, buffer.data(),
-                                           buffer.size())};
+        const std::size_t count =
+            SDL_ReadIO(output, buffer.data(), buffer.size());
         if (count == 0) {
             break;
         }
         result.output.append(buffer.data(), count);
     }
-    int exit_code{0};
+    int exit_code = 0;
     SDL_WaitProcess(process, true, &exit_code);
     result.exit_code = exit_code;
     SDL_DestroyProcess(process);
@@ -342,27 +372,40 @@ run_result run_capture(const std::vector<std::string>& args,
 } // namespace wemod::gui
 
 using wemod::gui::app;
+using wemod::gui::cli::decision;
+using wemod::gui::cli::mode;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 try {
-    (void)argc;
-    (void)argv;
     Expects(appstate != nullptr);
-    auto value{std::make_unique<app>()};
+    // SDL owns argv's lifetime here; the span is a borrowed view only.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    std::span<char*> args{argv, static_cast<std::size_t>(argc)};
+    // CLI first: --help/--version report through SDL_Log and exit
+    // before any window exists. No second main; the GUI path below
+    // is untouched.
+    if (const decision early = wemod::gui::cli::decide(args);
+        early.kind != mode::gui) {
+        wemod::gui::report_cli(early);
+        *appstate = nullptr;
+        return early.kind == mode::exit_ok ? SDL_APP_SUCCESS
+                                           : SDL_APP_FAILURE;
+    }
+    auto value = std::make_unique<app>();
     if (!wemod::gui::platform::init(value->platform, value->state) ||
         !wemod::gui::init_imgui(value->platform)) {
         return SDL_APP_FAILURE;
     }
     value->imgui_ready = true;
 
-    const std::string directory{wemod::gui::platform::exe_dir()};
+    const std::string directory = wemod::gui::platform::exe_dir();
     value->state.install_dir =
         wemod::gui::platform::default_install_dir();
     value->state.script_path =
         (wemod::gui::fs::path{directory} / wemod::gui::patcher_name).string();
 
-    if (const wemod::gui::fs::path detected{
-            wemod::gui::resolve_wemod_dir(value->state.install_dir)};
+    if (const wemod::gui::fs::path detected =
+            wemod::gui::resolve_wemod_dir(value->state.install_dir);
         !detected.empty()) {
         value->state.install_dir = detected.string();
         wemod::gui::append_log(
@@ -401,19 +444,19 @@ try {
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    const wemod::gui::frame_requests requests{
-        wemod::gui::view::draw(value->state)};
+    const wemod::gui::frame_requests requests =
+        wemod::gui::view::draw(value->state);
     wemod::gui::execute(*value, requests);
     ImGui::Render();
 
-    const ImGuiIO& io{ImGui::GetIO()};
+    const ImGuiIO& io = ImGui::GetIO();
     wemod::gui::platform::drain_outbox(value->platform, value->state,
                                        io.DeltaTime);
     wemod::gui::platform::begin_frame(
         value->platform, io.DisplayFramebufferScale.x,
         io.DisplayFramebufferScale.y, wemod::gui::clear_color);
-    const wemod::gui::platform::native_context handles{
-        wemod::gui::platform::native(value->platform)};
+    const wemod::gui::platform::native_context handles =
+        wemod::gui::platform::native(value->platform);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(),
                                           handles.renderer);
     wemod::gui::platform::end_frame(value->platform);
