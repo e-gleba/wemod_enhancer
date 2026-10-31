@@ -19,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace wemod
@@ -26,25 +27,25 @@ namespace wemod
 namespace
 {
 namespace fs = std::filesystem;
-using json = nlohmann::json;
+using nlohmann::json;
 
 constexpr auto block_size = 4UZ * 1024UZ * 1024UZ;
 constexpr auto fuse_sentinel = std::string_view("dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX");
-constexpr auto fuse_index = std::size_t(4);
-constexpr auto fuse_off = char('0');
-constexpr auto fuse_on = char('1');
-constexpr auto fuse_removed = char('r');
+constexpr std::size_t fuse_index{4};
+constexpr char fuse_off{'0'};
+constexpr char fuse_on{'1'};
+constexpr char fuse_removed{'r'};
 
-constexpr std::uint32_t u32_le(std::string_view data, std::size_t pos) noexcept
+constexpr std::uint32_t u32_le(std::string_view data, std::size_t pos)
 {
-    auto b0 = static_cast<std::uint32_t>(static_cast<unsigned char>(data[pos]));
-    auto b1 = static_cast<std::uint32_t>(static_cast<unsigned char>(data[pos + 1]));
-    auto b2 = static_cast<std::uint32_t>(static_cast<unsigned char>(data[pos + 2]));
-    auto b3 = static_cast<std::uint32_t>(static_cast<unsigned char>(data[pos + 3]));
-    return static_cast<std::uint32_t>(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));
+    auto b0 = static_cast<std::uint32_t>(static_cast<unsigned char>(data.at(pos)));
+    auto b1 = static_cast<std::uint32_t>(static_cast<unsigned char>(data.at(pos + 1)));
+    auto b2 = static_cast<std::uint32_t>(static_cast<unsigned char>(data.at(pos + 2)));
+    auto b3 = static_cast<std::uint32_t>(static_cast<unsigned char>(data.at(pos + 3)));
+    return b0 | (b1 << 8U) | (b2 << 16U) | (b3 << 24U);
 }
 
-static std::string read_file(const fs::path& path)
+std::string read_file(const fs::path& path)
 {
     auto in = std::ifstream(path, std::ios::binary);
     if (!in) {
@@ -69,7 +70,7 @@ static std::string read_file(const fs::path& path)
     return data;
 }
 
-static void write_file(const fs::path& path, std::string_view data)
+void write_file(const fs::path& path, std::string_view data)
 {
     auto out = std::ofstream(path, std::ios::binary | std::ios::trunc);
     if (!out) {
@@ -87,7 +88,7 @@ static void write_file(const fs::path& path, std::string_view data)
     }
 }
 
-static void copy_checked(const fs::path& from, const fs::path& to)
+void copy_checked(const fs::path& from, const fs::path& to)
 {
     auto ec = std::error_code();
     fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
@@ -96,7 +97,7 @@ static void copy_checked(const fs::path& from, const fs::path& to)
     }
 }
 
-static void rename_checked(const fs::path& from, const fs::path& to)
+void rename_checked(const fs::path& from, const fs::path& to)
 {
     auto ec = std::error_code();
     fs::rename(from, to, ec);
@@ -105,13 +106,13 @@ static void rename_checked(const fs::path& from, const fs::path& to)
     }
 }
 
-static fs::path safe_path(const fs::path& root, std::string_view rel)
+fs::path safe_path(const fs::path& root, std::string_view rel)
 {
-    if (rel.empty() || rel[0] == '/') {
+    if (rel.empty() || rel.front() == '/') {
         throw std::runtime_error("unsafe ASAR path: " + std::string(rel));
     }
     auto out = fs::path(root);
-    auto start = std::size_t(0);
+    std::size_t start{};
     while (true) {
         auto pos = rel.find('/', start);
         auto token = pos == std::string_view::npos ? rel.substr(start) : rel.substr(start, pos - start);
@@ -148,13 +149,13 @@ struct entry
     json* meta;
 };
 
-static void collect(json& node, std::string_view prefix, std::vector<entry>& out)
+void collect(json& node, std::string_view prefix, std::vector<entry>& out)
 {
     auto it = node.find("files");
     if (it == node.end() || !it->is_object()) {
         return;
     }
-    for (auto& [name, item] : it->items()) {
+    for (const auto& [name, item] : it->items()) {
         auto rel = prefix.empty() ? std::string(name) : std::string(prefix) + "/" + name;
         if (item.contains("files")) {
             collect(item, rel, out);
@@ -164,7 +165,7 @@ static void collect(json& node, std::string_view prefix, std::vector<entry>& out
     }
 }
 
-static std::uint64_t as_u64(const json& value)
+std::uint64_t as_u64(const json& value)
 {
     if (value.is_number_unsigned()) {
         return value.get<std::uint64_t>();
@@ -175,7 +176,7 @@ static std::uint64_t as_u64(const json& value)
     return static_cast<std::uint64_t>(std::stoull(value.get<std::string>()));
 }
 
-static std::pair<json, std::uint64_t> read_asar(const fs::path& path)
+std::pair<json, std::uint64_t> read_asar(const fs::path& path)
 {
     auto in = std::ifstream(path, std::ios::binary);
     if (!in) {
@@ -193,7 +194,7 @@ static std::pair<json, std::uint64_t> read_asar(const fs::path& path)
     auto header_size = u32_le(view, 4);
     auto raw = std::string(header_size, '\0');
     in.read(raw.data(), static_cast<std::streamsize>(header_size));
-    if (static_cast<std::size_t>(in.gcount()) != header_size || header_size < 8) {
+    if (std::cmp_not_equal(in.gcount(), header_size) || header_size < 8) {
         throw std::runtime_error("invalid ASAR header pickle");
     }
     auto raw_view = std::string_view(raw.data(), raw.size());
@@ -203,12 +204,12 @@ static std::pair<json, std::uint64_t> read_asar(const fs::path& path)
         throw std::runtime_error("invalid ASAR header sizes");
     }
     auto header = json::parse(raw.substr(8, json_size));
-    return std::pair<json, std::uint64_t>(std::move(header), 8ULL + header_size);
+    return {std::move(header), 8ULL + header_size};
 }
 
 struct sha_ctx
 {
-    mbedtls_sha256_context ctx;
+    mbedtls_sha256_context ctx{};
     sha_ctx()
     {
         mbedtls_sha256_init(&ctx);
@@ -219,21 +220,23 @@ struct sha_ctx
     }
     sha_ctx(const sha_ctx&) = delete;
     sha_ctx& operator=(const sha_ctx&) = delete;
+    sha_ctx(sha_ctx&&) = delete;
+    sha_ctx& operator=(sha_ctx&&) = delete;
 };
 
-static std::string hex_of(std::span<const unsigned char> data)
+std::string hex_of(std::span<const unsigned char> data)
 {
     constexpr auto digits = std::string_view("0123456789abcdef");
     auto hex = std::string();
     hex.reserve(data.size() * 2);
     for (auto byte : data) {
-        hex += digits[byte >> 4];
-        hex += digits[byte & 0xF];
+        hex += digits.at(static_cast<unsigned int>(byte) >> 4U);
+        hex += digits.at(static_cast<unsigned int>(byte) & 0xFU);
     }
     return hex;
 }
 
-static std::string sha_hex(std::span<const unsigned char> data)
+std::string sha_hex(std::span<const unsigned char> data)
 {
     auto out = std::array<unsigned char, 32>();
     auto ret = mbedtls_sha256(data.data(), data.size(), out.data(), 0);
@@ -243,7 +246,7 @@ static std::string sha_hex(std::span<const unsigned char> data)
     return hex_of(std::span<const unsigned char>(out.data(), out.size()));
 }
 
-static json file_integrity(const fs::path& path)
+json file_integrity(const fs::path& path)
 {
     auto in = std::ifstream(path, std::ios::binary);
     if (!in) {
@@ -283,49 +286,47 @@ static json file_integrity(const fs::path& path)
     if (finished != 0) {
         throw std::runtime_error(std::format("sha256 failed: {}", finished));
     }
-    auto out = json();
-    out["algorithm"] = "SHA256";
-    out["hash"] = hex_of(std::span<const unsigned char>(tail.data(), tail.size()));
-    out["blockSize"] = block_size;
-    out["blocks"] = std::move(blocks);
-    return out;
+    return {{"algorithm", "SHA256"},
+            {"hash", hex_of(std::span<const unsigned char>(tail.data(), tail.size()))},
+            {"blockSize", block_size},
+            {"blocks", std::move(blocks)},};
 }
 
-static std::string pickle_blob(std::string_view payload)
+std::string pickle_blob(std::string_view payload)
 {
     auto body_len = static_cast<std::uint32_t>(payload.size()) + 4;
-    auto pad = static_cast<std::size_t>((4 - body_len % 4) % 4);
+    auto pad = static_cast<std::size_t>((4 - (body_len % 4)) % 4);
     auto body = std::string(body_len + pad, '\0');
-    body[0] = static_cast<char>(body_len & 0xFF);
-    body[1] = static_cast<char>((body_len >> 8) & 0xFF);
-    body[2] = static_cast<char>((body_len >> 16) & 0xFF);
-    body[3] = static_cast<char>((body_len >> 24) & 0xFF);
+    body.at(0) = static_cast<char>(body_len & 0xFFU);
+    body.at(1) = static_cast<char>((body_len >> 8U) & 0xFFU);
+    body.at(2) = static_cast<char>((body_len >> 16U) & 0xFFU);
+    body.at(3) = static_cast<char>((body_len >> 24U) & 0xFFU);
     body.replace(4, payload.size(), payload.data(), payload.size());
     auto total = static_cast<std::uint32_t>(body.size());
     auto out = std::string(4 + body.size(), '\0');
-    out[0] = static_cast<char>(total & 0xFF);
-    out[1] = static_cast<char>((total >> 8) & 0xFF);
-    out[2] = static_cast<char>((total >> 16) & 0xFF);
-    out[3] = static_cast<char>((total >> 24) & 0xFF);
+    out.at(0) = static_cast<char>(total & 0xFFU);
+    out.at(1) = static_cast<char>((total >> 8U) & 0xFFU);
+    out.at(2) = static_cast<char>((total >> 16U) & 0xFFU);
+    out.at(3) = static_cast<char>((total >> 24U) & 0xFFU);
     out.replace(4, body.size(), body.data(), body.size());
     return out;
 }
 
-static std::string size_pickle(std::uint32_t value)
+std::string size_pickle(std::uint32_t value)
 {
     auto out = std::string(8, '\0');
-    out[0] = 4;
-    out[1] = 0;
-    out[2] = 0;
-    out[3] = 0;
-    out[4] = static_cast<char>(value & 0xFF);
-    out[5] = static_cast<char>((value >> 8) & 0xFF);
-    out[6] = static_cast<char>((value >> 16) & 0xFF);
-    out[7] = static_cast<char>((value >> 24) & 0xFF);
+    out.at(0) = 4;
+    out.at(1) = 0;
+    out.at(2) = 0;
+    out.at(3) = 0;
+    out.at(4) = static_cast<char>(value & 0xFFU);
+    out.at(5) = static_cast<char>((value >> 8U) & 0xFFU);
+    out.at(6) = static_cast<char>((value >> 16U) & 0xFFU);
+    out.at(7) = static_cast<char>((value >> 24U) & 0xFFU);
     return out;
 }
 
-static json extract_asar(const fs::path& asar, const fs::path& out_dir)
+json extract_asar(const fs::path& asar, const fs::path& out_dir)
 {
     auto parsed = read_asar(asar);
     auto header = std::move(parsed.first);
@@ -365,7 +366,7 @@ static json extract_asar(const fs::path& asar, const fs::path& out_dir)
         auto blob = std::string(size, '\0');
         if (size > 0) {
             in.read(blob.data(), static_cast<std::streamsize>(size));
-            if (static_cast<std::size_t>(in.gcount()) != size) {
+            if (std::cmp_not_equal(in.gcount(), size)) {
                 throw std::runtime_error("truncated ASAR payload: " + ent.rel);
             }
         }
@@ -374,12 +375,12 @@ static json extract_asar(const fs::path& asar, const fs::path& out_dir)
     return header;
 }
 
-static void pack_asar(const fs::path& root, const fs::path& out, json& header)
+void pack_asar(const fs::path& root, const fs::path& out, json& header)
 {
     auto ents = std::vector<entry>();
     collect(header, "", ents);
     auto packed = std::vector<fs::path>();
-    auto offset = std::uint64_t(0);
+    std::uint64_t offset{};
     for (auto& ent : ents) {
         if (ent.meta->contains("link")) {
             continue;
@@ -393,13 +394,12 @@ static void pack_asar(const fs::path& root, const fs::path& out, json& header)
         if (ec) {
             throw fs::filesystem_error("size failed", src, ec);
         }
-        (*ent.meta)["size"] = size;
-        (*ent.meta)["integrity"] = file_integrity(src);
+        ent.meta->update({{"size", size}, {"integrity", file_integrity(src)}});
         if (ent.meta->value("unpacked", false)) {
             ent.meta->erase("offset");
             continue;
         }
-        (*ent.meta)["offset"] = std::to_string(offset);
+        ent.meta->update({{"offset", std::to_string(offset)}});
         packed.push_back(src);
         offset += size;
     }
@@ -473,11 +473,11 @@ static void pack_asar(const fs::path& root, const fs::path& out, json& header)
 // mode CTRE does not implement. CTRE quirk vs Python: a literal }
 // outside a character class must be escaped as \} or the pattern is
 // a syntax error, so all six patterns below use \} for closers.
-template <ctll::fixed_string Pat>
-static bool replace_once(std::string& text, std::string_view name, auto&& make)
+template <ctll::fixed_string pat>
+bool replace_once(std::string& text, std::string_view name, auto&& make)
 {
     auto view = std::string_view(text.data(), text.size());
-    auto first = ctre::search<Pat>(view);
+    auto first = ctre::search<pat>(view);
     if (!first) {
         return false;
     }
@@ -485,10 +485,10 @@ static bool replace_once(std::string& text, std::string_view name, auto&& make)
     auto off = static_cast<std::size_t>(whole.data() - text.data());
     auto after_off = off + whole.size();
     auto after = std::string_view(text.data() + after_off, text.size() - after_off);
-    auto extra = std::size_t(0);
+    std::size_t extra{};
     auto rest = after;
     while (true) {
-        auto next = ctre::search<Pat>(rest);
+        auto next = ctre::search<pat>(rest);
         if (!next) {
             break;
         }
@@ -514,18 +514,18 @@ static bool replace_once(std::string& text, std::string_view name, auto&& make)
     return true;
 }
 
-static bool apply_account(std::string& text)
+bool apply_account(std::string& text)
 {
     return replace_once<R"regex(getUserAccount\(\)\{[\s\S]*?return\s+this\.#([\w$]+)\.fetch\(\{[\s\S]*?\}\)\})regex">(text, "activate-pro-account", [](auto& m) {
         auto s = m.template get<1>().to_view();
         auto out = std::string("getUserAccount(){return this.#");
         out.append(s.data(), s.size());
-        out += std::string(R"js(.fetch({endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}).then(response=>{response.subscription={period:"yearly",state:"active"};return response;})}js");
+        out += std::string(R"js(.fetch({endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}).then(response=>{response.subscription={period:"yearly",state:"active"};return response;})})js");
         return out;
     });
 }
 
-static bool apply_language(std::string& text)
+bool apply_language(std::string& text)
 {
     return replace_once<R"regex(setAccountLanguage\(([^)]*)\)\{\s*return\s+(this\.#\w+\.post\("/v3/account/language",\{[^}]*\}\))\s*;?\s*\})regex">(text, "activate-pro-language", [](auto& m) {
         auto p = m.template get<1>().to_view();
@@ -534,26 +534,26 @@ static bool apply_language(std::string& text)
         out.append(p.data(), p.size());
         out += std::string("){return (");
         out.append(e.data(), e.size());
-        out += std::string(R"js().then(response=>{response&&"object"==typeof response&&(response.subscription={period:"yearly",state:"active"});return response;})}js");
+        out += std::string(R"js().then(response=>{response&&"object"==typeof response&&(response.subscription={period:"yearly",state:"active"});return response;})})js");
         return out;
     });
 }
 
-static bool apply_pairing(std::string& text)
+bool apply_pairing(std::string& text)
 {
     return replace_once<R"regex(requestRemoteAuthCode\(\)\{return this\.#\w+\.post\("/v3/auth/remote_code"\)\})regex">(text, "disable-native-pairing", [](auto&) {
         return std::string(R"js(requestRemoteAuthCode(){return Promise.reject(new Error("wemod-enhancer: native mobile pairing disabled"))})js");
     });
 }
 
-static bool apply_updates(std::string& text)
+bool apply_updates(std::string& text)
 {
     return replace_once<R"regex(registerHandler\("ACTION_CHECK_FOR_UPDATE"[\s\S]*?\)\)\)\))regex">(text, "disable-updates", [](auto&) {
         return std::string(R"js(registerHandler("ACTION_CHECK_FOR_UPDATE",(e=>expectUpdateFeedUrl(e,(e=>null)))js");
     });
 }
 
-static bool apply_devtools(std::string& text)
+bool apply_devtools(std::string& text)
 {
     return replace_once<R"regex((\w+)\.whenReady\(\)\.then\()regex">(text, "devtools-f12", [](auto& m) {
         auto a = m.template get<1>().to_view();
@@ -565,18 +565,18 @@ static bool apply_devtools(std::string& text)
     });
 }
 
-static bool apply_brand(std::string& text)
+bool apply_brand(std::string& text)
 {
     return replace_once<R"regex(setAccountWandBrandExperience\(\)\{[\s\S]*?return\s+this\.#([\w$]+)\.post\("/v3/account/brand_experience_wand"\)\})regex">(text, "activate-pro-brand", [](auto& m) {
         auto s = m.template get<1>().to_view();
         auto out = std::string("setAccountWandBrandExperience(){return this.#");
         out.append(s.data(), s.size());
-        out += std::string(R"js(.post("/v3/account/brand_experience_wand").then(response=>{response.subscription={period:"yearly",state:"active"};return response;})}js");
+        out += std::string(R"js(.post("/v3/account/brand_experience_wand").then(response=>{response.subscription={period:"yearly",state:"active"};return response;})})js");
         return out;
     });
 }
 
-static bool apply_named(std::string_view name, std::string& text)
+bool apply_named(std::string_view name, std::string& text)
 {
     if (name == "activate-pro-account") {
         return apply_account(text);
@@ -605,7 +605,7 @@ struct todo
     bool done;
 };
 
-static void patch_bundles(const fs::path& root)
+void patch_bundles(const fs::path& root)
 {
     auto ec = std::error_code();
     auto cands = std::vector<fs::path>();
@@ -683,15 +683,15 @@ static void patch_bundles(const fs::path& root)
     }
 }
 
-static std::optional<std::size_t> find_fuse_wire(std::string_view data)
+std::optional<std::size_t> find_fuse_wire(std::string_view data)
 {
-    auto start = std::size_t(0);
+    std::size_t start{};
     while (start < data.size()) {
         auto pos = data.find(fuse_sentinel, start);
         if (pos == std::string_view::npos) {
             return std::nullopt;
         }
-        if (pos + 34 <= data.size() && static_cast<unsigned char>(data[pos + 32]) == 1 && static_cast<unsigned char>(data[pos + 33]) >= 5) {
+        if (data.size() - pos >= 34 + fuse_index + 1 && static_cast<unsigned char>(data.at(pos + 32)) == 1 && static_cast<unsigned char>(data.at(pos + 33)) >= 5) {
             return pos;
         }
         start = pos + 1;
@@ -699,7 +699,7 @@ static std::optional<std::size_t> find_fuse_wire(std::string_view data)
     return std::nullopt;
 }
 
-static std::optional<char> fuse_state(const fs::path& exe)
+std::optional<char> fuse_state(const fs::path& exe)
 {
     auto data = read_file(exe);
     auto view = std::string_view(data.data(), data.size());
@@ -707,10 +707,10 @@ static std::optional<char> fuse_state(const fs::path& exe)
     if (!off) {
         return std::nullopt;
     }
-    return data[*off + 34 + fuse_index];
+    return data.at(*off + 34 + fuse_index);
 }
 
-static char set_fuse_state(const fs::path& exe, char state)
+char set_fuse_state(const fs::path& exe, char state)
 {
     if (state != fuse_off && state != fuse_on && state != fuse_removed) {
         throw std::runtime_error(std::format("invalid fuse state '{}'", state));
@@ -722,19 +722,19 @@ static char set_fuse_state(const fs::path& exe, char state)
         throw std::runtime_error("electron fuse wire not found in " + exe.string());
     }
     auto pos = *off + 34 + fuse_index;
-    auto prev = data[pos];
+    auto prev = data.at(pos);
     if (prev != fuse_off && prev != fuse_on && prev != fuse_removed) {
         throw std::runtime_error(std::format("unexpected fuse value '{}' in {}", prev, exe.string()));
     }
     if (prev == state) {
         return prev;
     }
-    data[pos] = state;
+    data.at(pos) = state;
     write_file(exe, data);
     return prev;
 }
 
-static std::optional<fs::path> electron_exe(const fs::path& install)
+std::optional<fs::path> electron_exe(const fs::path& install)
 {
     auto names = std::array<std::string_view, 2>({"Wand.exe", "WeMod.exe"});
     for (auto name : names) {
@@ -750,12 +750,12 @@ static std::optional<fs::path> electron_exe(const fs::path& install)
     return std::nullopt;
 }
 
-static fs::path exe_backup_path(const fs::path& exe)
+fs::path exe_backup_path(const fs::path& exe)
 {
-    return fs::path(exe.string() + ".wemod-enhancer-backup");
+    return {exe.string() + ".wemod-enhancer-backup"};
 }
 
-static void cleanup_legacy_dll(const fs::path& install)
+void cleanup_legacy_dll(const fs::path& install)
 {
     auto dll = install / "version.dll";
     auto saved = install / "version.dll.wemod-enhancer-backup";
@@ -781,7 +781,7 @@ static void cleanup_legacy_dll(const fs::path& install)
     }
 }
 
-static void flip_fuse(const fs::path& exe)
+void flip_fuse(const fs::path& exe)
 {
     auto backup = exe_backup_path(exe);
     auto prev = fuse_state(exe);
@@ -806,7 +806,7 @@ static void flip_fuse(const fs::path& exe)
     std::print(stdout, "removed asar integrity fuse in {} (was '{}')\n", exe.filename().string(), *prev);
 }
 
-static void restore_fuse(const fs::path& exe)
+void restore_fuse(const fs::path& exe)
 {
     auto backup = exe_backup_path(exe);
     auto legacy = exe.parent_path() / "electron-fuse.wemod-enhancer-backup";
@@ -842,7 +842,7 @@ static void restore_fuse(const fs::path& exe)
                 throw fs::filesystem_error("remove stale tmp failed", staged, ec);
             }
             copy_checked(exe, staged);
-            set_fuse_state(staged, prev[0]);
+            set_fuse_state(staged, prev.front());
             rename_checked(staged, exe);
             std::print(stdout, "restored asar integrity fuse in {} (was '{}')\n", exe.filename().string(), prev);
         }
