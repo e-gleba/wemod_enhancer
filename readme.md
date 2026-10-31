@@ -83,8 +83,9 @@ WeMod does not provide a native Linux build. [wemod-launcher](https://github.com
 2. **Set the Steam launch options** for the game (better do it on some offline game to avoid anti-cheat problems):
 
    ```sh
-   WEMOD_LOG="$HOME/wemod-launcher/wemod.log" "$HOME/wemod-launcher/wemod" %command%
+   "$HOME/wemod-launcher/wemod" %command%
    ```
+   > **Note:** To see wemod log you can add as a first launch option `WEMOD_LOG="$HOME/wemod-launcher/wemod.log"`
 
 3. **Launch the game and log in to WeMod.**
 
