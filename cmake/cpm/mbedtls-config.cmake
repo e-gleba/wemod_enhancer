@@ -1,18 +1,17 @@
-# PSA-only SHA-256 via TF-PSA-Crypto (Mbed TLS 4.x split crypto out of Mbed TLS).
-# Link MbedTLS::tfpsacrypto and call psa_hash_compute() — the legacy
+# SHA-256 via TF-PSA-Crypto inside Mbed TLS 4.x. patcher.cpp calls the PSA
+# hash API (psa_hash_compute/setup/update/finish); the legacy
 # mbedtls_sha256.h API is gone in 4.x.
 # Ref: https://github.com/Mbed-TLS/mbedtls/blob/development/docs/4.0-migration-guide.md
 # Ref: https://github.com/Mbed-TLS/TF-PSA-Crypto/blob/development/docs/1.0-migration-guide.md
 #
-# 4.x tags no longer ship generated sources (error.c,
+# The official release tarball (mbedtls-4.2.0.tar.bz2) already contains the
+# tf-psa-crypto submodule contents and the generated sources (error.c,
 # ssl_debug_helpers_generated.c, psa_crypto_driver_wrappers_no_static.c),
-# so GEN_FILES must stay ON. That needs Python 3 with Jinja2 + jsonschema
-# and Perl on the build host.
-# Ref: https://github.com/momo5502/sogen/pull/1475
-#
-# Shallow git clones break the 4.x build (missing tf-psa-crypto submodule
-# and version files), so keep full history here.
-# Ref: https://docs.pjsip.org/en/latest/specific-guides/security/mbedtls.html
+# so GEN_FILES stays OFF and no Python/Jinja2/Perl is needed on the host.
+# GitHub auto-generated source zips lack submodules and generated files and
+# cannot be configured, so do not switch this back to GIT_TAG.
+# Ref: https://github.com/Mbed-TLS/mbedtls/releases (4.2.0 note)
+# Ref: https://pigweed.googlesource.com/third_party/github/ARMmbed/mbedtls/
 
 # Both headers live in the binary dir so the source tree stays clean.
 file(
@@ -44,16 +43,12 @@ set(MBEDTLS_CONFIG_FILE
 cpmaddpackage(
   NAME
   mbedtls
-  GITHUB_REPOSITORY
-  Mbed-TLS/mbedtls
+  URL
+  "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-4.2.0/mbedtls-4.2.0.tar.bz2"
+  URL_HASH
+  "SHA256=2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
   VERSION
   4.2.0
-  GIT_TAG
-  v4.2.0
-  GIT_SHALLOW
-  FALSE
-  GIT_PROGRESS
-  TRUE
   EXCLUDE_FROM_ALL
   YES
   SYSTEM
@@ -67,4 +62,18 @@ cpmaddpackage(
   "USE_SHARED_MBEDTLS_LIBRARY OFF"
   "LINK_WITH_PTHREAD OFF"
   "LINK_WITH_TRUSTED_STORAGE OFF"
-  "GEN_FILES ON")
+  "GEN_FILES OFF")
+
+# 4.x subproject target names differ by level: TF-PSA-Crypto exposes plain
+# `tfpsacrypto`, the Mbed TLS package wrapper exposes `MbedTLS::tfpsacrypto`.
+# Accept either so the patcher links whatever actually exists.
+# Ref: https://github.com/Mbed-TLS/TF-PSA-Crypto (add_subdirectory usage)
+if(NOT TARGET wemod_tfpsacrypto)
+  if(TARGET MbedTLS::tfpsacrypto)
+    add_library(wemod_tfpsacrypto ALIAS MbedTLS::tfpsacrypto)
+  elseif(TARGET tfpsacrypto)
+    add_library(wemod_tfpsacrypto ALIAS tfpsacrypto)
+  else()
+    message(FATAL_ERROR "Mbed TLS 4.2.0 provided neither MbedTLS::tfpsacrypto nor tfpsacrypto")
+  endif()
+endif()
