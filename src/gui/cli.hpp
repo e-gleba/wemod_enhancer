@@ -14,6 +14,5 @@ struct decision final
 };
 
 [[nodiscard]] decision decide(int argc, char* argv[]) noexcept;
-void emit(const decision& value) noexcept;
 
 } // namespace wemod::gui::cli

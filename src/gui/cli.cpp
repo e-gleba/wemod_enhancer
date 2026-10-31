@@ -1,19 +1,14 @@
 // CLI boundary: the only TU that includes <cxxopts.hpp>. The public
-// surface (cli.hpp) is pure std C++23; SDL and the GUI talk to it
-// through decide()/emit() only.
+// surface (cli.hpp) is pure std C++23; output delivery stays on the
+// SDL side, which already owns every platform quirk.
 
 #include "cli.hpp"
 
 #include <cxxopts.hpp>
 
-#include <cstdio>
 #include <format>
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
-#endif
+#include <string>
+#include <string_view>
 
 #ifndef WEMOD_ENHANCER_GUI_VERSION
 #define WEMOD_ENHANCER_GUI_VERSION "0.0.0"
@@ -23,22 +18,10 @@ namespace wemod::gui::cli
 {
 namespace
 {
-void attach_parent_console() noexcept
-{
-#ifdef _WIN32
-    // WIN32 GUI apps own no console: borrow the parent terminal so
-    // `gui.exe --help` prints where it was invoked. No parent (launched
-    // from Explorer) means nowhere to print; the caller still exits.
-    if (AttachConsole(ATTACH_PARENT_PROCESS) == 0) {
-        return;
-    }
-    FILE* reopened{nullptr};
-    (void)freopen_s(&reopened, "CONOUT$", "w", stdout);
-    (void)freopen_s(&reopened, "CONOUT$", "w", stderr);
-#else
-    return;
-#endif
-}
+constexpr std::string_view program_name{"wemod_enhancer_gui"};
+constexpr std::string_view program_about{"WeMod Enhancer GUI and CLI"};
+
+static_assert(program_name == "wemod_enhancer_gui");
 } // namespace
 
 decision decide(int argc, char* argv[]) noexcept
@@ -46,8 +29,8 @@ try {
     if (argc <= 0 || argv == nullptr) {
         return {.mode = mode::gui};
     }
-    cxxopts::Options options{"wemod_enhancer_gui",
-                             "WeMod Enhancer GUI and CLI"};
+    cxxopts::Options options{std::string{program_name},
+                             std::string{program_about}};
     options.add_options()("h,help", "Print help",
                           cxxopts::value<bool>()->default_value("false"))(
         "V,version", "Print version",
@@ -60,27 +43,15 @@ try {
     }
     if (parsed["version"].as<bool>()) {
         return {.mode = mode::exit_ok,
-                .output = std::format("wemod_enhancer_gui {}\n",
+                .output = std::format("{} {}\n", program_name,
                                       WEMOD_ENHANCER_GUI_VERSION)};
     }
     return {.mode = mode::gui};
 } catch (const std::exception& error) {
     return {.mode = mode::exit_err,
-            .output =
-                std::format("error: {}\nTry '--help'.\n", error.what())};
+            .output = std::format("{}\nTry '--help'.\n", error.what())};
 } catch (...) {
     return {.mode = mode::exit_err,
-            .output = "error: failed to parse arguments\n"};
-}
-
-void emit(const decision& value) noexcept
-{
-    if (value.mode == mode::gui) {
-        return;
-    }
-    attach_parent_console();
-    FILE* stream{value.mode == mode::exit_err ? stderr : stdout};
-    (void)std::fputs(value.output.c_str(), stream);
-    (void)std::fflush(stream);
+            .output = "failed to parse arguments\n"};
 }
 } // namespace wemod::gui::cli
