@@ -6,14 +6,13 @@ add_library(wemod::patcher ALIAS wemod_patcher)
 target_compile_features(wemod_patcher PUBLIC cxx_std_23)
 # PUBLIC: an OBJECT library produces no binary to absorb these, so usage
 # requirements must propagate to whatever links the objects.
-# tfpsacrypto (not mbedcrypto): Mbed TLS 4.x moved all crypto, including
-# SHA-256, into TF-PSA-Crypto; patcher.cpp uses the PSA hash API.
-# Ref: https://github.com/Mbed-TLS/mbedtls/blob/development/docs/4.0-migration-guide.md
+# wemod_tfpsacrypto: alias from cmake/cpm/mbedtls-config.cmake for the
+# Mbed TLS 4.x crypto target (plain `tfpsacrypto` as a subproject).
 target_link_libraries(
     wemod_patcher
     PUBLIC
         nlohmann_json::nlohmann_json
-        MbedTLS::tfpsacrypto
+        wemod_tfpsacrypto
         ctre::ctre)
 target_include_directories(
     wemod_patcher
