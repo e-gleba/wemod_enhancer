@@ -1,2 +1,3 @@
-# GUI and patcher script install into the same bindir.
+# GUI and patcher library.
+add_subdirectory(patcher)
 add_subdirectory(gui)
