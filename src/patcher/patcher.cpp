@@ -468,6 +468,11 @@ static void pack_asar(const fs::path& root, const fs::path& out, json& header)
     rename_checked(staged, out);
 }
 
+// Single-match CTRE replace: exactly one match is applied, zero skips,
+// more than one throws. [\s\S] emulates Python re.S without a (?s)
+// mode CTRE does not implement. CTRE quirk vs Python: a literal }
+// outside a character class must be escaped as \} or the pattern is
+// a syntax error, so all six patterns below use \} for closers.
 template <ctll::fixed_string Pat>
 static bool replace_once(std::string& text, std::string_view name, auto&& make)
 {
@@ -511,7 +516,7 @@ static bool replace_once(std::string& text, std::string_view name, auto&& make)
 
 static bool apply_account(std::string& text)
 {
-    return replace_once<R"regex(ACCOUNT)regex">(text, "activate-pro-account", [](auto& m) {
+    return replace_once<R"regex(getUserAccount\(\)\{[\s\S]*?return\s+this\.#([\w$]+)\.fetch\(\{[\s\S]*?\}\)\})regex">(text, "activate-pro-account", [](auto& m) {
         auto s = m.template get<1>().to_view();
         auto out = std::string("getUserAccount(){return this.#");
         out.append(s.data(), s.size());
@@ -522,7 +527,7 @@ static bool apply_account(std::string& text)
 
 static bool apply_language(std::string& text)
 {
-    return replace_once<R"regex(LANGUAGE)regex">(text, "activate-pro-language", [](auto& m) {
+    return replace_once<R"regex(setAccountLanguage\(([^)]*)\)\{\s*return\s+(this\.#\w+\.post\("/v3/account/language",\{[^}]*\}\))\s*;?\s*\})regex">(text, "activate-pro-language", [](auto& m) {
         auto p = m.template get<1>().to_view();
         auto e = m.template get<2>().to_view();
         auto out = std::string("setAccountLanguage(");
@@ -536,21 +541,21 @@ static bool apply_language(std::string& text)
 
 static bool apply_pairing(std::string& text)
 {
-    return replace_once<R"regex(PAIRING)regex">(text, "disable-native-pairing", [](auto&) {
+    return replace_once<R"regex(requestRemoteAuthCode\(\)\{return this\.#\w+\.post\("/v3/auth/remote_code"\)\})regex">(text, "disable-native-pairing", [](auto&) {
         return std::string(R"js(requestRemoteAuthCode(){return Promise.reject(new Error("wemod-enhancer: native mobile pairing disabled"))})js");
     });
 }
 
 static bool apply_updates(std::string& text)
 {
-    return replace_once<R"regex(UPDATES)regex">(text, "disable-updates", [](auto&) {
+    return replace_once<R"regex(registerHandler\("ACTION_CHECK_FOR_UPDATE"[\s\S]*?\)\)\)\))regex">(text, "disable-updates", [](auto&) {
         return std::string(R"js(registerHandler("ACTION_CHECK_FOR_UPDATE",(e=>expectUpdateFeedUrl(e,(e=>null)))js");
     });
 }
 
 static bool apply_devtools(std::string& text)
 {
-    return replace_once<R"regex(DEVTOOLS)regex">(text, "devtools-f12", [](auto& m) {
+    return replace_once<R"regex((\w+)\.whenReady\(\)\.then\()regex">(text, "devtools-f12", [](auto& m) {
         auto a = m.template get<1>().to_view();
         auto out = std::string(a.data(), a.size());
         out += std::string(R"js(.on("browser-window-created",((_,w)=>{try{w.webContents.on("before-input-event",((_,i)=>{if("F12"===i.key&&"keyDown"===i.type){w.webContents.isDevToolsOpened()?w.webContents.closeDevTools():w.webContents.openDevTools({mode:"detach"})}}))}catch(e){}})),)js");
@@ -562,7 +567,7 @@ static bool apply_devtools(std::string& text)
 
 static bool apply_brand(std::string& text)
 {
-    return replace_once<R"regex(BRAND)regex">(text, "activate-pro-brand", [](auto& m) {
+    return replace_once<R"regex(setAccountWandBrandExperience\(\)\{[\s\S]*?return\s+this\.#([\w$]+)\.post\("/v3/account/brand_experience_wand"\)\})regex">(text, "activate-pro-brand", [](auto& m) {
         auto s = m.template get<1>().to_view();
         auto out = std::string("setAccountWandBrandExperience(){return this.#");
         out.append(s.data(), s.size());
