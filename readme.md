@@ -10,7 +10,7 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 
 [![CI](https://img.shields.io/github/actions/workflow/status/e-gleba/wemod_enhancer/cmake_multi_platform.yml?branch=main&label=CI)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/cmake_multi_platform.yml)
 [![Release](https://img.shields.io/github/v/release/e-gleba/wemod_enhancer)](https://github.com/e-gleba/wemod_enhancer/releases)
-[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#linux--steam-deck-cli)
+[![Platform](https://img.shields.io/badge/Platform-Steam_Deck_·_Linux_·_Windows-121212?logo=steam&logoColor=white)](#linux--steam-deck)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [![Run release](https://img.shields.io/badge/%E2%96%B6_Run-Release-2ea44f)](https://github.com/e-gleba/wemod_enhancer/actions/workflows/publish_release.yml)
@@ -21,14 +21,13 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 
 ## Contents
 
-- [GUI](#gui)
-- [Linux / Steam Deck (CLI)](#linux--steam-deck-cli)
-- [Windows (CLI)](#windows-cli)
-- [Restore](#restore)
+- [Before you start](#before-you-start)
+- [Linux / Steam Deck](#linux--steam-deck)
+- [Windows](#windows)
 - [Comparison with Wand-Enhancer](#comparison-with-wand-enhancer)
 - [Build from source](#build-from-source)
 
-## GUI
+## Before you start
 
 > [!WARNING]
 > The **GUI** and CLI (command-line interface) are alternative ways to use the tool. Choose either one—you do not need to follow the CLI instructions if you use the GUI.
@@ -51,7 +50,7 @@ All components are included in the package, and nothing is downloaded at runtime
 
 **Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`.
 
-## Linux / Steam Deck (CLI)
+## Linux / Steam Deck
 
 WeMod does not provide a native Linux build. [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton, and WeMod Enhancer then unlocks Pro on top of it.
 
@@ -98,7 +97,15 @@ WeMod does not provide a native Linux build. [wemod-launcher](https://github.com
 
    > **Note:** If `python3` is not installed, install Python 3.11+ with your package manager. It is preinstalled on SteamOS and most major distributions.
 
-## Windows (CLI)
+### Restore on Linux / Steam Deck
+
+Original files are backed up automatically. A single command reverts all changes:
+
+```sh
+python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
+```
+
+## Windows
 
 1. Install WeMod and log in.
 2. Close WeMod.
@@ -130,17 +137,9 @@ WeMod does not provide a native Linux build. [wemod-launcher](https://github.com
 
 > **Note:** If `python` is not recognized, install [Python 3.13](https://www.python.org/downloads/) (`winget install Python.Python.3.13`) and reopen PowerShell. To remove Python after patching, run `winget uninstall Python.Python.3.13`.
 
-## Restore
+### Restore on Windows
 
-Original files are backed up automatically. A single command reverts all changes.
-
-On Linux:
-
-```sh
-python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
-```
-
-On Windows, run this in PowerShell:
+Original files are backed up automatically. A single command reverts all changes. Run this in PowerShell:
 
 ```powershell
 $wemod = Get-ChildItem "$env:LOCALAPPDATA\WeMod\app-*" -Directory |
