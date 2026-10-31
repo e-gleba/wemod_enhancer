@@ -10,7 +10,7 @@ enum class mode : unsigned char { gui, exit_ok, exit_err };
 
 struct decision final
 {
-    mode mode = mode::gui;
+    mode kind = mode::gui;
     std::string output;
 };
 

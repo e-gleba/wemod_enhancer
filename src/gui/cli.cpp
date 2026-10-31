@@ -24,7 +24,7 @@ namespace wemod::gui::cli
 decision decide(std::span<char*> args) noexcept
 try {
     if (args.empty()) {
-        return {.mode = mode::gui};
+        return {.kind = mode::gui};
     }
     // Direct-list-init: the constructor is explicit, so copy-list-init
     // with '=' cannot compile.
@@ -48,19 +48,19 @@ try {
         return parsed[name].as<bool>();
     };
     if (is_set("help")) {
-        return {.mode = mode::exit_ok, .output = options.help()};
+        return {.kind = mode::exit_ok, .output = options.help()};
     }
     if (is_set("version")) {
-        return {.mode = mode::exit_ok,
+        return {.kind = mode::exit_ok,
                 .output = std::format("{} {}\n", program_name,
                                       gui_version)};
     }
-    return {.mode = mode::gui};
+    return {.kind = mode::gui};
 } catch (const std::exception& error) {
-    return {.mode = mode::exit_err,
+    return {.kind = mode::exit_err,
             .output = std::format("{}\nTry '--help'.\n", error.what())};
 } catch (...) {
-    return {.mode = mode::exit_err,
+    return {.kind = mode::exit_err,
             .output = "failed to parse arguments\n"};
 }
 } // namespace wemod::gui::cli
