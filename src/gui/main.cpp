@@ -19,6 +19,7 @@
 #include <format>
 #include <memory>
 #include <ranges>
+#include <span>
 #include <string>
 #include <system_error>
 
@@ -377,10 +378,13 @@ using wemod::gui::cli::mode;
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 try {
     Expects(appstate != nullptr);
+    // SDL owns argv's lifetime here; the span is a borrowed view only.
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    std::span<char*> args{argv, static_cast<std::size_t>(argc)};
     // CLI first: --help/--version report through SDL_Log and exit
     // before any window exists. No second main; the GUI path below
     // is untouched.
-    if (const decision early = wemod::gui::cli::decide(argc, argv);
+    if (const decision early = wemod::gui::cli::decide(args);
         early.mode != mode::gui) {
         wemod::gui::report_cli(early);
         *appstate = nullptr;
