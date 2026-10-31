@@ -12,33 +12,33 @@
 # cannot be configured, so do not switch this back to GIT_TAG.
 # Ref: https://github.com/Mbed-TLS/mbedtls/releases (4.2.0 note)
 # Ref: https://pigweed.googlesource.com/third_party/github/ARMmbed/mbedtls/
+#
+# No custom TF_PSA_CRYPTO_CONFIG_FILE / MBEDTLS_CONFIG_FILE: replacing the
+# default crypto config with a SHA-256-only header zeroes
+# MBEDTLS_PK_MAX_PUBKEY_RAW_LEN (it only grows when RSA/ECC key types are
+# enabled), and MSVC rejects the resulting zero-sized pub_raw[] with C2229.
+# Instead the additive user config below only ensures PSA_WANT_ALG_SHA_256
+# on top of upstream defaults.
+# Ref: https://github.com/Mbed-TLS/TF-PSA-Crypto/blob/tf-psa-crypto-1.2.0/include/mbedtls/pk.h
+# Ref: https://mcuxpresso.nxp.com/mcuxsdk/latest/middleware/mbedtls3x/docs/psa-transition.html
 
-# Both headers live in the binary dir so the source tree stays clean.
+# Header lives in the binary dir so the source tree stays clean.
 file(
-  WRITE "${CMAKE_CURRENT_BINARY_DIR}/tf-psa-crypto-config.h"
+  WRITE "${CMAKE_CURRENT_BINARY_DIR}/wemod-tf-psa-crypto-user-config.h"
   [[
-#ifndef WEMOD_TF_PSA_CRYPTO_CONFIG_H
-#define WEMOD_TF_PSA_CRYPTO_CONFIG_H
+#ifndef WEMOD_TF_PSA_CRYPTO_USER_CONFIG_H
+#define WEMOD_TF_PSA_CRYPTO_USER_CONFIG_H
 
+#if !defined(PSA_WANT_ALG_SHA_256)
 #define PSA_WANT_ALG_SHA_256 1
-
 #endif
-]])
-file(
-  WRITE "${CMAKE_CURRENT_BINARY_DIR}/mbedtls-config.h"
-  [[
-#ifndef WEMOD_MBEDTLS_CONFIG_H
-#define WEMOD_MBEDTLS_CONFIG_H
 
 #endif
 ]])
 
-set(TF_PSA_CRYPTO_CONFIG_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/tf-psa-crypto-config.h"
-    CACHE FILEPATH "TF-PSA-Crypto feature selection: SHA-256 only" FORCE)
-set(MBEDTLS_CONFIG_FILE
-    "${CMAKE_CURRENT_BINARY_DIR}/mbedtls-config.h"
-    CACHE FILEPATH "Mbed TLS feature selection: TLS/X.509 defaults" FORCE)
+set(MBEDTLS_PSA_CRYPTO_USER_CONFIG_FILE
+    "${CMAKE_CURRENT_BINARY_DIR}/wemod-tf-psa-crypto-user-config.h"
+    CACHE FILEPATH "Additive TF-PSA-Crypto config: ensure SHA-256" FORCE)
 
 cpmaddpackage(
   NAME
