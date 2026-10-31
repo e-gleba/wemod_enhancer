@@ -18,6 +18,7 @@
 #include <array>
 #include <format>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <system_error>
 
@@ -241,6 +242,33 @@ void shutdown_imgui() noexcept
     ImGui::DestroyContext();
 }
 
+// noexcept firewall by design: runs inside SDL's entry point, so
+// allocation failure terminates here instead of escaping into SDL.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+void report_cli(const cli::decision& early) noexcept
+{
+    // SDL_Log is the cross-platform console sink: stderr on POSIX, the
+    // debugger elsewhere, and on Windows SDL attaches the parent console
+    // itself — `gui.exe --help` prints in the invoking terminal with no
+    // windows.h in our code. See SDL3 src/SDL_log.c.
+    // One call per line: SDL appends the newline and embedded ones get
+    // platform-specific handling. See SDL3 SDL_log.h docs.
+    const bool error{early.mode == cli::mode::exit_err};
+    for (const auto part : early.output | std::views::split('\n')) {
+        const std::string line{part.begin(), part.end()};
+        if (line.empty()) {
+            continue;
+        }
+        if (error) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", line.c_str());
+        } else {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+            SDL_Log("%s", line.c_str());
+        }
+    }
+}
+
 } // namespace
 
 run_result run_capture(const std::vector<std::string>& args,
@@ -349,11 +377,12 @@ using wemod::gui::cli::mode;
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 try {
     Expects(appstate != nullptr);
-    // CLI first: --help/--version print and exit before any window
-    // exists. No second main; the GUI path below is untouched.
+    // CLI first: --help/--version report through SDL_Log and exit
+    // before any window exists. No second main; the GUI path below
+    // is untouched.
     if (const decision early{wemod::gui::cli::decide(argc, argv)};
         early.mode != mode::gui) {
-        wemod::gui::cli::emit(early);
+        wemod::gui::report_cli(early);
         *appstate = nullptr;
         return early.mode == mode::exit_ok ? SDL_APP_SUCCESS
                                            : SDL_APP_FAILURE;
