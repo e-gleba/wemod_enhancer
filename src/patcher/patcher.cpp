@@ -511,9 +511,424 @@ static bool replace_once(std::string& text, std::string_view name, auto&& make)
 
 static bool apply_account(std::string& text)
 {
-    return replace_once<R"regex(getUserAccount\(\)\{[\s\S]*?return\s+this\.#[\w$]+\.fetch\(\{[\s\S]*?\}\}\)\})regex">(text, "activate-pro-account", [](auto& m) {
-        auto star = m.template get<0>().to_view();
-        (void)star;
-        return std::string();
+    return replace_once<R"regex(XPLACEHOLDER_ACCOUNT)regex">(text, "activate-pro-account", [](auto& m) {
+        auto s = m.template get<1>().to_view();
+        auto out = std::string("getUserAccount(){return this.#");
+        out.append(s.data(), s.size());
+        out += std::string(R"js(.fetch({endpoint:"/v3/account",method:"GET",name:"/v3/account",collectMetrics:0}).then(response=>{response.subscription={period:"yearly",state:"active"};return response;})}js");
+        return out;
     });
 }
+
+static bool apply_language(std::string& text)
+{
+    return replace_once<R"regex(XPLACEHOLDER_LANGUAGE)regex">(text, "activate-pro-language", [](auto& m) {
+        auto p = m.template get<1>().to_view();
+        auto e = m.template get<2>().to_view();
+        auto out = std::string("setAccountLanguage(");
+        out.append(p.data(), p.size());
+        out += std::string("){return (");
+        out.append(e.data(), e.size());
+        out += std::string(R"js().then(response=>{response&&"object"==typeof response&&(response.subscription={period:"yearly",state:"active"});return response;})}js");
+        return out;
+    });
+}
+
+static bool apply_pairing(std::string& text)
+{
+    return replace_once<R"regex(XPLACEHOLDER_PAIRING)regex">(text, "disable-native-pairing", [](auto&) {
+        return std::string(R"js(requestRemoteAuthCode(){return Promise.reject(new Error("wemod-enhancer: native mobile pairing disabled"))})js");
+    });
+}
+
+static bool apply_updates(std::string& text)
+{
+    return replace_once<R"regex(XPLACEHOLDER_UPDATES)regex">(text, "disable-updates", [](auto&) {
+        return std::string(R"js(registerHandler("ACTION_CHECK_FOR_UPDATE",(e=>expectUpdateFeedUrl(e,(e=>null)))js");
+    });
+}
+
+static bool apply_devtools(std::string& text)
+{
+    return replace_once<R"regex(XPLACEHOLDER_DEVTOOLS)regex">(text, "devtools-f12", [](auto& m) {
+        auto a = m.template get<1>().to_view();
+        auto out = std::string(a.data(), a.size());
+        out += std::string(R"js(.on("browser-window-created",((_,w)=>{try{w.webContents.on("before-input-event",((_,i)=>{if("F12"===i.key&&"keyDown"===i.type){w.webContents.isDevToolsOpened()?w.webContents.closeDevTools():w.webContents.openDevTools({mode:"detach"})}}))}catch(e){}})),)js");
+        out.append(a.data(), a.size());
+        out += std::string(".whenReady().then(");
+        return out;
+    });
+}
+
+static bool apply_brand(std::string& text)
+{
+    return replace_once<R"regex(XPLACEHOLDER_BRAND)regex">(text, "activate-pro-brand", [](auto& m) {
+        auto s = m.template get<1>().to_view();
+        auto out = std::string("setAccountWandBrandExperience(){return this.#");
+        out.append(s.data(), s.size());
+        out += std::string(R"js(.post("/v3/account/brand_experience_wand").then(response=>{response.subscription={period:"yearly",state:"active"};return response;})}js");
+        return out;
+    });
+}
+
+static bool apply_named(std::string_view name, std::string& text)
+{
+    if (name == "activate-pro-account") {
+        return apply_account(text);
+    }
+    if (name == "activate-pro-language") {
+        return apply_language(text);
+    }
+    if (name == "disable-native-pairing") {
+        return apply_pairing(text);
+    }
+    if (name == "disable-updates") {
+        return apply_updates(text);
+    }
+    if (name == "devtools-f12") {
+        return apply_devtools(text);
+    }
+    if (name == "activate-pro-brand") {
+        return apply_brand(text);
+    }
+    throw std::runtime_error("unknown patch: " + std::string(name));
+}
+
+struct todo
+{
+    std::string_view name;
+    bool done;
+};
+
+static void patch_bundles(const fs::path& root)
+{
+    auto ec = std::error_code();
+    auto cands = std::vector<fs::path>();
+    auto iter = fs::directory_iterator(root, ec);
+    if (ec) {
+        throw fs::filesystem_error("list failed", root, ec);
+    }
+    auto stop = fs::directory_iterator();
+    for (; iter != stop; iter.increment(ec)) {
+        if (ec) {
+            throw fs::filesystem_error("list failed", root, ec);
+        }
+        auto ec2 = std::error_code();
+        auto regular = iter->is_regular_file(ec2);
+        if (ec2) {
+            throw fs::filesystem_error("stat failed", iter->path(), ec2);
+        }
+        if (!regular) {
+            continue;
+        }
+        auto name = iter->path().filename().string();
+        if (name == "index.js" || (name.starts_with("app-") && name.ends_with(".bundle.js"))) {
+            cands.push_back(iter->path());
+        }
+    }
+    auto pend = std::vector<todo>();
+    pend.emplace_back("activate-pro-account", false);
+    pend.emplace_back("activate-pro-language", false);
+    pend.emplace_back("disable-native-pairing", false);
+    pend.emplace_back("disable-updates", false);
+    pend.emplace_back("devtools-f12", false);
+    auto opt = std::vector<todo>();
+    opt.emplace_back("activate-pro-brand", false);
+    for (auto& path : cands) {
+        auto text = read_file(path);
+        auto changed = false;
+        for (auto& item : pend) {
+            if (item.done) {
+                continue;
+            }
+            if (apply_named(item.name, text)) {
+                item.done = true;
+                changed = true;
+                std::print(stdout, "patched {}: {}\n", item.name, path.filename().string());
+            }
+        }
+        for (auto& item : opt) {
+            if (item.done) {
+                continue;
+            }
+            if (apply_named(item.name, text)) {
+                item.done = true;
+                changed = true;
+                std::print(stdout, "patched {}: {}\n", item.name, path.filename().string());
+            }
+        }
+        if (changed) {
+            write_file(path, text);
+        }
+    }
+    for (auto& item : opt) {
+        if (!item.done) {
+            std::print(stdout, "skipped optional patch {}: endpoint not present in this client\n", item.name);
+        }
+    }
+    auto missing = std::string();
+    for (auto name : pend | std::views::filter([](const todo& item) { return !item.done; }) | std::views::transform(&todo::name)) {
+        if (!missing.empty()) {
+            missing += ", ";
+        }
+        missing.append(name.data(), name.size());
+    }
+    if (!missing.empty()) {
+        throw std::runtime_error("unsupported client; missing patches: " + missing);
+    }
+}
+
+static std::optional<std::size_t> find_fuse_wire(std::string_view data)
+{
+    auto start = std::size_t(0);
+    while (start < data.size()) {
+        auto pos = data.find(fuse_sentinel, start);
+        if (pos == std::string_view::npos) {
+            return std::nullopt;
+        }
+        if (pos + 34 <= data.size() && static_cast<unsigned char>(data[pos + 32]) == 1 && static_cast<unsigned char>(data[pos + 33]) >= 5) {
+            return pos;
+        }
+        start = pos + 1;
+    }
+    return std::nullopt;
+}
+
+static std::optional<char> fuse_state(const fs::path& exe)
+{
+    auto data = read_file(exe);
+    auto view = std::string_view(data.data(), data.size());
+    auto off = find_fuse_wire(view);
+    if (!off) {
+        return std::nullopt;
+    }
+    return data[*off + 34 + fuse_index];
+}
+
+static char set_fuse_state(const fs::path& exe, char state)
+{
+    if (state != fuse_off && state != fuse_on && state != fuse_removed) {
+        throw std::runtime_error(std::format("invalid fuse state '{}'", state));
+    }
+    auto data = read_file(exe);
+    auto view = std::string_view(data.data(), data.size());
+    auto off = find_fuse_wire(view);
+    if (!off) {
+        throw std::runtime_error("electron fuse wire not found in " + exe.string());
+    }
+    auto pos = *off + 34 + fuse_index;
+    auto prev = data[pos];
+    if (prev != fuse_off && prev != fuse_on && prev != fuse_removed) {
+        throw std::runtime_error(std::format("unexpected fuse value '{}' in {}", prev, exe.string()));
+    }
+    if (prev == state) {
+        return prev;
+    }
+    data[pos] = state;
+    write_file(exe, data);
+    return prev;
+}
+
+static std::optional<fs::path> electron_exe(const fs::path& install)
+{
+    auto names = std::array<std::string_view, 2>({"Wand.exe", "WeMod.exe"});
+    for (auto name : names) {
+        auto cand = install / std::string(name);
+        auto ec = std::error_code();
+        if (fs::is_regular_file(cand, ec) && !ec) {
+            return cand;
+        }
+        if (ec) {
+            throw fs::filesystem_error("stat failed", cand, ec);
+        }
+    }
+    return std::nullopt;
+}
+
+static fs::path exe_backup_path(const fs::path& exe)
+{
+    return fs::path(exe.string() + ".wemod-enhancer-backup");
+}
+
+static void cleanup_legacy_dll(const fs::path& install)
+{
+    auto dll = install / "version.dll";
+    auto saved = install / "version.dll.wemod-enhancer-backup";
+    auto ec = std::error_code();
+    if (fs::is_regular_file(saved, ec) && !ec) {
+        copy_checked(saved, dll);
+        fs::remove(saved, ec);
+        if (ec) {
+            throw fs::filesystem_error("remove failed", saved, ec);
+        }
+        std::print(stdout, "restored pre-proxy {}\n", dll.filename().string());
+        return;
+    }
+    if (ec) {
+        throw fs::filesystem_error("stat failed", saved, ec);
+    }
+    if (fs::is_regular_file(dll, ec) && !ec) {
+        std::print(stdout, "kept unexpected {} - remove manually if it is the retired proxy\n", dll.filename().string());
+        return;
+    }
+    if (ec) {
+        throw fs::filesystem_error("stat failed", dll, ec);
+    }
+}
+
+static void flip_fuse(const fs::path& exe)
+{
+    auto backup = exe_backup_path(exe);
+    auto prev = fuse_state(exe);
+    if (!prev) {
+        std::print(stdout, "skipped fuse flip: no electron fuse wire in {}\n", exe.filename().string());
+        return;
+    }
+    if (*prev == fuse_removed) {
+        std::print(stdout, "asar integrity fuse already removed in {}\n", exe.filename().string());
+        return;
+    }
+    copy_checked(exe, backup);
+    auto staged = fs::path(exe.string() + ".wemod-enhancer-tmp");
+    auto ec = std::error_code();
+    fs::remove(staged, ec);
+    if (ec) {
+        throw fs::filesystem_error("remove stale tmp failed", staged, ec);
+    }
+    copy_checked(exe, staged);
+    set_fuse_state(staged, fuse_removed);
+    rename_checked(staged, exe);
+    std::print(stdout, "removed asar integrity fuse in {} (was '{}')\n", exe.filename().string(), *prev);
+}
+
+static void restore_fuse(const fs::path& exe)
+{
+    auto backup = exe_backup_path(exe);
+    auto legacy = exe.parent_path() / "electron-fuse.wemod-enhancer-backup";
+    auto ec = std::error_code();
+    if (fs::is_regular_file(backup, ec) && !ec) {
+        auto staged = fs::path(exe.string() + ".wemod-enhancer-tmp");
+        fs::remove(staged, ec);
+        if (ec) {
+            throw fs::filesystem_error("remove stale tmp failed", staged, ec);
+        }
+        copy_checked(backup, staged);
+        rename_checked(staged, exe);
+        fs::remove(backup, ec);
+        if (ec) {
+            throw fs::filesystem_error("remove failed", backup, ec);
+        }
+        std::print(stdout, "restored {} from backup\n", exe.filename().string());
+        return;
+    }
+    if (ec) {
+        throw fs::filesystem_error("stat failed", backup, ec);
+    }
+    if (fs::is_regular_file(legacy, ec) && !ec) {
+        auto text = read_file(legacy);
+        auto start = text.find_first_not_of(" \t\r\n");
+        auto stop = text.find_last_not_of(" \t\r\n");
+        auto prev = start == std::string::npos ? std::string() : text.substr(start, stop - start + 1);
+        auto cur = fuse_state(exe);
+        if (!prev.empty() && cur && *cur == fuse_removed) {
+            auto staged = fs::path(exe.string() + ".wemod-enhancer-tmp");
+            fs::remove(staged, ec);
+            if (ec) {
+                throw fs::filesystem_error("remove stale tmp failed", staged, ec);
+            }
+            copy_checked(exe, staged);
+            set_fuse_state(staged, prev[0]);
+            rename_checked(staged, exe);
+            std::print(stdout, "restored asar integrity fuse in {} (was '{}')\n", exe.filename().string(), prev);
+        }
+        fs::remove(legacy, ec);
+        if (ec) {
+            throw fs::filesystem_error("remove failed", legacy, ec);
+        }
+    } else if (ec) {
+        throw fs::filesystem_error("stat failed", legacy, ec);
+    }
+}
+
+} // namespace
+
+void patch(const fs::path& install)
+{
+    auto asar = install / "resources" / "app.asar";
+    auto backup = install / "resources" / "app.asar.backup";
+    auto ec = std::error_code();
+    if (!fs::is_regular_file(asar, ec) || ec) {
+        throw std::runtime_error("missing " + asar.string());
+    }
+    if (!fs::exists(backup, ec) || ec) {
+        if (ec) {
+            throw fs::filesystem_error("stat failed", backup, ec);
+        }
+        copy_checked(asar, backup);
+    } else {
+        copy_checked(backup, asar);
+    }
+    auto exe = electron_exe(install);
+    auto touched = false;
+    try {
+        auto work = asar.parent_path() / ".wemod-enhancer-work-tmp";
+        auto stale = fs::path(asar.string() + ".tmp");
+        fs::remove_all(work, ec);
+        if (ec) {
+            throw fs::filesystem_error("remove stale work failed", work, ec);
+        }
+        fs::remove(stale, ec);
+        if (ec) {
+            throw fs::filesystem_error("remove stale tmp failed", stale, ec);
+        }
+        fs::create_directories(work, ec);
+        if (ec) {
+            throw fs::filesystem_error("mkdir failed", work, ec);
+        }
+        auto header = extract_asar(asar, work);
+        patch_bundles(work);
+        pack_asar(work, asar, header);
+        fs::remove_all(work, ec);
+        if (ec) {
+            throw fs::filesystem_error("cleanup work failed", work, ec);
+        }
+        cleanup_legacy_dll(install);
+        if (exe) {
+            flip_fuse(*exe);
+            touched = true;
+        } else {
+            std::print(stdout, "skipped fuse flip: no Wand.exe/WeMod.exe next to resources\n");
+        }
+        std::print(stdout, "patched {}\n", install.string());
+    } catch (...) {
+        copy_checked(backup, asar);
+        if (exe && touched) {
+            restore_fuse(*exe);
+        }
+        throw;
+    }
+}
+
+void unpatch(const fs::path& install)
+{
+    auto asar = install / "resources" / "app.asar";
+    auto backup = install / "resources" / "app.asar.backup";
+    auto ec = std::error_code();
+    if (!fs::exists(backup, ec) || ec) {
+        throw std::runtime_error("missing " + backup.string());
+    }
+    auto staged = fs::path(asar.string() + ".wemod-enhancer-tmp");
+    fs::remove(staged, ec);
+    if (ec) {
+        throw fs::filesystem_error("remove stale tmp failed", staged, ec);
+    }
+    copy_checked(backup, staged);
+    rename_checked(staged, asar);
+    cleanup_legacy_dll(install);
+    if (auto exe = electron_exe(install)) {
+        restore_fuse(*exe);
+    }
+    std::print(stdout, "restored {}\n", install.string());
+}
+
+} // namespace wemod
