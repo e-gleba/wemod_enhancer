@@ -1,7 +1,6 @@
 // C++23 port of scripts/wemod_enhancer.py (fuse-wire variant).
 // Public surface is pure std (patcher.hpp); nlohmann_json + Mbed-TLS stay
-// in this translation unit. Behaviour mirrors the script 1:1, including
-// messages on stdout and the strong guarantee for app.asar.
+// in this translation unit. Behaviour mirrors the script 1:1.
 // Ref: scripts/wemod_enhancer.py
 // Ref: https://github.com/nlohmann/json
 // Ref: https://github.com/Mbed-TLS/mbedtls
@@ -13,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -46,13 +46,13 @@ constexpr char fuse_removed{'r'};
 struct temp_dir final
 {
     fs::path path;
-    explicit temp_dir(const fs::path& base)
+    explicit temp_dir(const std::string& base)
     {
         const auto stamp = std::chrono::steady_clock::now()
                                .time_since_epoch()
                                .count();
         path = fs::temp_directory_path()
-               / (base.string() + std::to_string(stamp));
+               / (base + std::to_string(stamp));
         fs::create_directories(path);
     }
     temp_dir(const temp_dir&) = delete;
@@ -90,23 +90,9 @@ void append_u32_le(std::vector<std::uint8_t>& out, std::uint32_t value)
     if (!in) {
         throw std::runtime_error("cannot open " + path.string());
     }
-    return {std::istreambuf_iterator<char>{in},
-            std::istreambuf_iterator<char>{}};
-}
-
-void write_bytes(const fs::path& path, const std::vector<std::uint8_t>& data)
-{
-    std::ofstream out{path, std::ios::binary | std::ios::trunc};
-    if (!out) {
-        throw std::runtime_error("cannot write " + path.string());
-    }
-    if (!data.empty()) {
-        out.write(reinterpret_cast<const char*>(data.data()),
-                  static_cast<std::streamsize>(data.size()));
-    }
-    if (!out) {
-        throw std::runtime_error("failed writing " + path.string());
-    }
+    std::string tmp{std::istreambuf_iterator<char>{in},
+                    std::istreambuf_iterator<char>{}};
+    return {tmp.begin(), tmp.end()};
 }
 
 [[nodiscard]] std::string read_text(const fs::path& path)
@@ -147,7 +133,6 @@ void write_text(const fs::path& path, const std::string& text)
 sha256_once(const std::uint8_t* data, std::size_t size)
 {
     std::array<std::uint8_t, 32> out{};
-    // is224 = 0 selects SHA-256 (not SHA-224).
     if (mbedtls_sha256(data, size, out.data(), 0) != 0) {
         throw std::runtime_error("sha256 failed");
     }
@@ -167,7 +152,6 @@ sha256_once(const std::uint8_t* data, std::size_t size)
     }
     std::vector<char> block(block_size);
     std::vector<std::string> blocks;
-    bool any{false};
     while (in) {
         in.read(block.data(),
                 static_cast<std::streamsize>(block.size()));
@@ -175,7 +159,6 @@ sha256_once(const std::uint8_t* data, std::size_t size)
         if (got == 0) {
             break;
         }
-        any = true;
         if (mbedtls_sha256_update_ret(
                 &ctx, reinterpret_cast<const unsigned char*>(block.data()),
                 got)
@@ -183,13 +166,8 @@ sha256_once(const std::uint8_t* data, std::size_t size)
             mbedtls_sha256_free(&ctx);
             throw std::runtime_error("sha256 update failed");
         }
-        const auto* bytes =
-            reinterpret_cast<const std::uint8_t*>(block.data());
-        blocks.push_back(hex_of(sha256_once(bytes, got)));
-    }
-    // Hash of the empty file: mbedtls over zero bytes.
-    if (!any) {
-        blocks.clear();
+        blocks.push_back(hex_of(sha256_once(
+            reinterpret_cast<const std::uint8_t*>(block.data()), got)));
     }
     std::array<std::uint8_t, 32> whole{};
     if (mbedtls_sha256_finish_ret(&ctx, whole.data()) != 0) {
@@ -246,14 +224,12 @@ struct asar_view final
         throw std::runtime_error("invalid ASAR header pickle");
     }
     const std::size_t off{8};
-    const auto payload =
-        static_cast<std::uint32_t>(bytes[off] | (bytes[off + 1] << 8)
-                                   | (bytes[off + 2] << 16)
-                                   | (bytes[off + 3] << 24));
-    const auto json_size =
-        static_cast<std::uint32_t>(bytes[off + 4] | (bytes[off + 5] << 8)
-                                   | (bytes[off + 6] << 16)
-                                   | (bytes[off + 7] << 24));
+    const std::uint32_t payload = static_cast<std::uint32_t>(
+        bytes[off] | (bytes[off + 1] << 8) | (bytes[off + 2] << 16)
+        | (bytes[off + 3] << 24));
+    const std::uint32_t json_size = static_cast<std::uint32_t>(
+        bytes[off + 4] | (bytes[off + 5] << 8) | (bytes[off + 6] << 16)
+        | (bytes[off + 7] << 24));
     if (payload + 4 != header_size || json_size > payload - 4) {
         throw std::runtime_error("invalid ASAR header sizes");
     }
@@ -381,10 +357,10 @@ void collect_rels(const json& node, const std::string& prefix,
     if (!any) {
         throw std::runtime_error("unsafe ASAR path: " + rel);
     }
-    const auto root_norm = fs::absolute(root).lexically_normal();
-    const auto out_norm = fs::absolute(out).lexically_normal();
-    const auto root_text = root_norm.generic_string();
-    const auto out_text = out_norm.generic_string();
+    const auto root_text =
+        fs::absolute(root).lexically_normal().generic_string();
+    const auto out_text =
+        fs::absolute(out).lexically_normal().generic_string();
     if (out_text != root_text
         && (out_text.size() <= root_text.size()
             || out_text.compare(0, root_text.size(), root_text) != 0
@@ -474,7 +450,6 @@ void pack_asar(const fs::path& root, const fs::path& out, json& header)
         packed.push_back(src);
         offset += json_u64(meta.at("size"));
     }
-    // nlohmann dump() already uses `,`/`:` separators and keeps UTF-8.
     const std::string raw = header.dump();
     const auto header_pickle = pickle(
         reinterpret_cast<const std::uint8_t*>(raw.data()), raw.size());
@@ -548,8 +523,6 @@ void pack_asar(const fs::path& root, const fs::path& out, json& header)
     return out;
 }
 
-// std::regex has no dotall flag: unescaped `.` outside `[...]` becomes
-// `[\\s\\S]` so `.*?` spans newlines exactly like Python re.S.
 [[nodiscard]] std::string to_dotall(const std::string& pattern)
 {
     std::string out;
@@ -601,7 +574,6 @@ void apply_patches_in_text(std::string& text,
                            const std::string& file_name)
 {
     for (auto it = pending.begin(); it != pending.end();) {
-        std::smatch first;
         std::size_t count{0};
         std::smatch only;
         for (std::sregex_iterator cur{text.begin(), text.end(),
@@ -620,14 +592,12 @@ void apply_patches_in_text(std::string& text,
             continue;
         }
         if (count != 1) {
-            throw std::runtime_error(
-                it->name + ": expected one match, got many");
+            throw std::runtime_error(it->name
+                                     + ": expected one match, got many");
         }
         const std::string replacement = it->make(only);
-        const auto pos = static_cast<std::size_t>(
-            only.position(static_cast<std::size_t>(0)));
-        const auto len = static_cast<std::size_t>(
-            only.length(static_cast<std::size_t>(0)));
+        const auto pos = static_cast<std::size_t>(only.position(0));
+        const auto len = static_cast<std::size_t>(only.length(0));
         text = text.substr(0, pos) + replacement + text.substr(pos + len);
         std::cout << "patched " << it->name << ": " << file_name << "\n";
         it = pending.erase(it);
@@ -744,7 +714,6 @@ void patch_bundles(const fs::path& root)
 [[nodiscard]] std::optional<std::size_t>
 find_fuse_wire(const std::vector<std::uint8_t>& data)
 {
-    // Layout: sentinel[32] + version(1) + length(1) + fuses[length].
     if (fuse_sentinel.size() != 32) {
         throw std::runtime_error("bad fuse sentinel size");
     }
@@ -755,13 +724,12 @@ find_fuse_wire(const std::vector<std::uint8_t>& data)
             reinterpret_cast<const char*>(data.data() + start);
         const auto* end =
             reinterpret_cast<const char*>(data.data() + data.size());
-        const auto* found = std::search(
-            begin, end, needle.begin(), needle.end());
+        const auto* found =
+            std::search(begin, end, needle.begin(), needle.end());
         if (found == end) {
             return std::nullopt;
         }
-        const auto off = static_cast<std::size_t>(found - begin)
-                         + start;
+        const auto off = static_cast<std::size_t>(found - begin) + start;
         if (off + 34 <= data.size() && data[off + 32] == 1
             && data[off + 33] >= 5) {
             return off;
@@ -837,8 +805,7 @@ char set_fuse_state(const fs::path& exe, char state)
 void cleanup_legacy_dll(const fs::path& install)
 {
     const fs::path dll{install / "version.dll"};
-    const fs::path dll_backup{install
-                              / "version.dll.wemod-enhancer-backup"};
+    const fs::path dll_backup{install / "version.dll.wemod-enhancer-backup"};
     if (fs::is_regular_file(dll_backup)) {
         fs::copy_file(dll_backup, dll,
                       fs::copy_options::overwrite_existing);
@@ -886,12 +853,11 @@ void restore_fuse(const fs::path& exe)
     }
     if (fs::is_regular_file(legacy)) {
         std::string prev = read_text(legacy);
-        prev.erase(
-            std::remove_if(prev.begin(), prev.end(),
-                           [](unsigned char cur) {
-                               return std::isspace(cur) != 0;
-                           }),
-            prev.end());
+        prev.erase(std::remove_if(prev.begin(), prev.end(),
+                                  [](unsigned char cur) {
+                                      return std::isspace(cur) != 0;
+                                  }),
+                   prev.end());
         if (!prev.empty() && fuse_state(exe) == fuse_removed) {
             set_fuse_state(exe, prev.front());
             std::cout << "restored asar integrity fuse in "
@@ -925,10 +891,7 @@ void patch(const fs::path& install_dir)
     if (!fs::exists(backup)) {
         fs::copy_file(asar, backup);
     } else {
-        fs::copy_file(asar, backup,
-                      fs::copy_options::overwrite_existing);
-        fs::copy_file(backup, asar,
-                      fs::copy_options::overwrite_existing);
+        fs::copy_file(backup, asar, fs::copy_options::overwrite_existing);
     }
     const auto exe = electron_exe(install_dir);
     bool exe_touched{false};
@@ -947,8 +910,7 @@ void patch(const fs::path& install_dir)
         }
         std::cout << "patched " << install_dir.string() << "\n";
     } catch (...) {
-        fs::copy_file(backup, asar,
-                      fs::copy_options::overwrite_existing);
+        fs::copy_file(backup, asar, fs::copy_options::overwrite_existing);
         if (exe.has_value() && exe_touched) {
             restore_fuse(*exe);
         }
