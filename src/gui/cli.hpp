@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 
 namespace wemod::gui::cli
@@ -13,6 +14,6 @@ struct decision final
     std::string output;
 };
 
-[[nodiscard]] decision decide(int argc, char* argv[]) noexcept;
+[[nodiscard]] decision decide(std::span<char*> args) noexcept;
 
 } // namespace wemod::gui::cli

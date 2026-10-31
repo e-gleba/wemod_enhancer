@@ -8,29 +8,49 @@
 
 #include <cxxopts.hpp>
 
+#include <gsl/narrow>
+
 #include <format>
 #include <string>
+#include <vector>
 
 namespace wemod::gui::cli
 {
-decision decide(int argc, char* argv[]) noexcept
+// noexcept firewall by design: runs inside SDL's entry point, so any
+// failure (allocation, format, parse) becomes exit_err or terminates
+// instead of escaping into SDL. The format strings below are literals,
+// so only OOM can escape — the firewall contract.
+// NOLINTNEXTLINE(bugprone-exception-escape)
+decision decide(std::span<char*> args) noexcept
 try {
-    if (argc <= 0 || argv == nullptr) {
+    if (args.empty()) {
         return {.mode = mode::gui};
     }
-    cxxopts::Options options = {std::string{program_name},
-                                std::string{program_about}};
+    // Direct-list-init: the constructor is explicit, so copy-list-init
+    // with '=' cannot compile.
+    cxxopts::Options options{std::string{program_name},
+                             std::string{program_about}};
     options.add_options()("h,help", "Print help",
                           cxxopts::value<bool>()->default_value("false"))(
         "V,version", "Print version",
         cxxopts::value<bool>()->default_value("false"));
     // Consuming (int&, char**&) overload: recognised options are
-    // removed from argv; unknown ones throw cxxopts::OptionException.
+    // removed from the copy; unknown ones throw cxxopts::OptionException.
+    // Parsing a copy keeps SDL's argv untouched for the GUI path.
+    std::vector<char*> owned{args.begin(), args.end()};
+    int argc = gsl::narrow<int>(args.size());
+    char** argv = owned.data();
     const cxxopts::ParseResult parsed = options.parse(argc, argv);
-    if (parsed["help"].as<bool>()) {
+    // Both keys are registered above with defaults, so lookup cannot
+    // miss; if it ever did, the throw lands in the firewall handlers.
+    const auto is_set = [&](const char* name) {
+        // NOLINTNEXTLINE
+        return parsed[name].as<bool>();
+    };
+    if (is_set("help")) {
         return {.mode = mode::exit_ok, .output = options.help()};
     }
-    if (parsed["version"].as<bool>()) {
+    if (is_set("version")) {
         return {.mode = mode::exit_ok,
                 .output = std::format("{} {}\n", program_name,
                                       gui_version)};
