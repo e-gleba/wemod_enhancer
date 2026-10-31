@@ -7,6 +7,7 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <variant>
 
 namespace wemod
 {
