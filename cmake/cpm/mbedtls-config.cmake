@@ -1,6 +1,9 @@
 # Mbed-TLS SHA-256-only via MBEDTLS_CONFIG_FILE pointing at a generated
 # header below. Exposes MbedTLS::mbedcrypto — link it for mbedtls_sha256().
 # Ref: https://mbed-tls.readthedocs.io/en/latest/kb/how-to/using-loose-modules-without-the-full-library/
+# NOTE: no mbedtls/check_config.h include here. Mbed TLS 3.x pulls it in
+# automatically at the right point; including it manually trips -W#warnings.
+# Ref: https://github.com/Mbed-TLS/mbedtls/blob/v3.6.5/include/mbedtls/build_info.h
 
 file(
   WRITE "${CMAKE_CURRENT_BINARY_DIR}/mbedtls-sha256-config.h"
@@ -11,8 +14,6 @@ file(
 #define MBEDTLS_PLATFORM_C
 #define MBEDTLS_PLATFORM_MEMORY
 #define MBEDTLS_SHA256_C
-
-#include "mbedtls/check_config.h"
 
 #endif
 ]])
