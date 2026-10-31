@@ -254,7 +254,7 @@ void report_cli(const cli::decision& early) noexcept
     // windows.h in our code. See SDL3 src/SDL_log.c.
     // One call per line: SDL appends the newline and embedded ones get
     // platform-specific handling. See SDL3 SDL_log.h docs.
-    const bool error = early.mode == cli::mode::exit_err;
+    const bool error = early.kind == cli::mode::exit_err;
     for (const auto part : early.output | std::views::split('\n')) {
         const std::string line = {part.begin(), part.end()};
         if (line.empty()) {
@@ -298,9 +298,9 @@ run_result run_capture(const std::vector<std::string>& args,
     // the SDL_CreateProcessWithProperties call below, not the process.
     const bool args_set = SDL_SetPointerProperty(
         props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER,
-        // SDL stores args as void*; argv outlives the create call below,
-        // which is all SDL needs. Explicit cast silences
-        // bugprone-multi-level-implicit-pointer-conversion at this boundary.
+        // SDL stores args as void* and only reads them; argv outlives
+        // the create call below, which is all SDL needs.
+        // NOLINTNEXTLINE(bugprone-multi-level-implicit-pointer-conversion)
         static_cast<void*>(argv.data()));
     SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,
                           SDL_PROCESS_STDIO_NULL);
@@ -385,10 +385,10 @@ try {
     // before any window exists. No second main; the GUI path below
     // is untouched.
     if (const decision early = wemod::gui::cli::decide(args);
-        early.mode != mode::gui) {
+        early.kind != mode::gui) {
         wemod::gui::report_cli(early);
         *appstate = nullptr;
-        return early.mode == mode::exit_ok ? SDL_APP_SUCCESS
+        return early.kind == mode::exit_ok ? SDL_APP_SUCCESS
                                            : SDL_APP_FAILURE;
     }
     auto value = std::make_unique<app>();
