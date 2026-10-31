@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "cli.hpp"
 #include "platform.hpp"
 
 #include <SDL3/SDL.h>
@@ -342,12 +343,21 @@ run_result run_capture(const std::vector<std::string>& args,
 } // namespace wemod::gui
 
 using wemod::gui::app;
+using wemod::gui::cli::decision;
+using wemod::gui::cli::mode;
 
 SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 try {
-    (void)argc;
-    (void)argv;
     Expects(appstate != nullptr);
+    // CLI first: --help/--version print and exit before any window
+    // exists. No second main; the GUI path below is untouched.
+    if (const decision early{wemod::gui::cli::decide(argc, argv)};
+        early.mode != mode::gui) {
+        wemod::gui::cli::emit(early);
+        *appstate = nullptr;
+        return early.mode == mode::exit_ok ? SDL_APP_SUCCESS
+                                           : SDL_APP_FAILURE;
+    }
     auto value{std::make_unique<app>()};
     if (!wemod::gui::platform::init(value->platform, value->state) ||
         !wemod::gui::init_imgui(value->platform)) {
