@@ -56,24 +56,28 @@ jobs:
                       install-deps: |-
                           choco install ninja --yes
                           pip install "cmake>=3.31"
-                    - os: ubuntu-24.04
+                    # Ubuntu 26.04 ships GCC 15 (default g++ 15.2.0) which
+                    # provides C++23 <print>. Ubuntu 24.04 defaults to GCC 13
+                    # which lacks <print>, so the patcher cannot build there.
+                    # Ref: https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2604-Readme.md
+                    - os: ubuntu-26.04
                       preset: linux_gcc_amd64_full
                       artifact-name: linux-gcc-amd64
                       build-dir: build/linux_gcc_amd64
                       install-deps: ''
-                    - os: ubuntu-24.04
+                    - os: ubuntu-26.04
                       preset: linux_clang_amd64_full
                       artifact-name: linux-clang-amd64
                       build-dir: build/linux_clang_amd64
                       install-deps: |-
                           sudo apt-get update
                           sudo apt-get install -y clang lld ninja-build
-                    - os: ubuntu-24.04-arm
+                    - os: ubuntu-26.04-arm
                       preset: linux_gcc_arm64_full
                       artifact-name: linux-gcc-arm64
                       build-dir: build/linux_gcc_arm64
                       install-deps: ''
-                    - os: ubuntu-24.04-arm
+                    - os: ubuntu-26.04-arm
                       preset: linux_clang_arm64_full
                       artifact-name: linux-clang-arm64
                       build-dir: build/linux_clang_arm64
@@ -179,7 +183,7 @@ jobs:
     # ── cross-compile: Linux → Windows (llvm-mingw) ─────────────────────────────
     cross-windows:
         name: ${{ matrix.artifact-name }}
-        runs-on: ubuntu-latest
+        runs-on: ubuntu-26.04
         strategy:
             fail-fast: false
             matrix:
