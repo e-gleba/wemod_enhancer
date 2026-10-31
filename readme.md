@@ -28,7 +28,7 @@ One command patches the WeMod client to enable Pro, disable auto-updates, enable
 - [Comparison with Wand-Enhancer](#comparison-with-wand-enhancer)
 - [Build from source](#build-from-source)
 
-## GUI
+## GUI (optional)
 
 ![WeMod Enhancer GUI](docs/Screenshot_20260930_224227.png)
 
@@ -48,7 +48,7 @@ All components are included in the package, and nothing is downloaded at runtime
 
 **Requirements:** [Python 3.11+](https://www.python.org/downloads/) available on `PATH`.
 
-## Linux / Steam Deck (CLI)
+## Linux / Steam Deck (command line interface)
 
 WeMod does not provide a native Linux build. [wemod-launcher](https://github.com/DeckCheatz/wemod-launcher) runs the official Windows client through Proton, and WeMod Enhancer then unlocks Pro on top of it.
 
@@ -95,7 +95,7 @@ WeMod does not provide a native Linux build. [wemod-launcher](https://github.com
 
    > **Note:** If `python3` is not installed, install Python 3.11+ with your package manager. It is preinstalled on SteamOS and most major distributions.
 
-## Windows (CLI)
+## Windows (command line interface)
 
 1. Install WeMod and log in.
 2. Close WeMod.
