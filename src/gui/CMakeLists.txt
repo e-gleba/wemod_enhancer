@@ -1,6 +1,6 @@
 add_executable(
     wemod_enhancer_gui WIN32 MACOSX_BUNDLE main.cpp app.cpp cli.cpp
-    sdl_platform.cpp imgui_view.cpp app.hpp cli.hpp platform.hpp)
+    sdl_platform.cpp imgui_view.cpp app.hpp cli.hpp meta.hpp platform.hpp)
 
 target_link_libraries(wemod_enhancer_gui PRIVATE imgui::sdl3_renderer
                                                  Microsoft.GSL::GSL

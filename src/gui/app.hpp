@@ -1,8 +1,9 @@
 #pragma once
 
+#include "meta.hpp"
+
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -16,42 +17,9 @@
 #include <utility>
 #include <vector>
 
-#ifndef WEMOD_ENHANCER_GUI_VERSION
-#define WEMOD_ENHANCER_GUI_VERSION "0.0.0"
-#endif
-
 namespace wemod::gui
 {
 namespace fs = std::filesystem;
-
-inline constexpr std::string_view gui_version{WEMOD_ENHANCER_GUI_VERSION};
-inline constexpr std::string_view patcher_name{"wemod_enhancer.py"};
-inline constexpr std::string_view installer_url{
-    "https://api.wemod.com/client/download"};
-inline constexpr std::string_view launcher_clone_url{
-    "https://github.com/DeckCheatz/wemod-launcher.git"};
-inline constexpr std::string_view launcher_guide_url{
-    "https://github.com/DeckCheatz/wemod-launcher"};
-inline constexpr std::string_view issue_new_url{
-    "https://github.com/e-gleba/wemod_enhancer/issues/new"};
-inline constexpr std::string_view releases_url{
-    "https://github.com/e-gleba/wemod_enhancer/releases/latest"};
-inline constexpr std::string_view quickstart_url{
-    "https://github.com/e-gleba/wemod_enhancer#quick-start"};
-inline constexpr std::string_view python_url{
-    "https://www.python.org/downloads/"};
-inline constexpr std::size_t log_budget{512UZ * 1024UZ};
-inline constexpr std::size_t issue_log_budget{3000UZ};
-inline constexpr auto reprobe_interval{std::chrono::milliseconds{500}};
-
-#ifdef _WIN32
-inline constexpr bool is_windows{true};
-#else
-inline constexpr bool is_windows{false};
-#endif
-
-inline constexpr std::string_view default_python{
-    is_windows ? std::string_view{"python"} : std::string_view{"python3"}};
 
 enum class run_kind : std::uint8_t { patcher, probe, wemod };
 enum class probe_state : std::uint8_t { unknown, failed, works };
