@@ -43,7 +43,9 @@ The GUI ships as a self-contained folder and requires no terminal. All component
 
 1. Run `bin\wemod_enhancer_gui.exe`.
 2. The WeMod installation folder is detected automatically. If it is not, select it with **Browse...**.
-3. Click **Patch**. To undo the patch, click **Restore**.
+3. Click **Patch**.
+
+To revert the changes later, click **Restore** in the same window. Do not click it while patching; it is only for undoing the patch.
 
 The GUI locates `wemod_enhancer.py` next to the executable and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
@@ -55,9 +57,7 @@ Run the patcher from the extracted folder, passing the newest WeMod `app-*` fold
 python bin\wemod_enhancer.py patch --install-dir "C:\Users\<user>\AppData\Local\WeMod\app-<version>"
 ```
 
-#### Restore
-
-Original files are backed up automatically. A single command reverts all changes:
+Original files are backed up automatically. To revert the changes, run:
 
 ```powershell
 python bin\wemod_enhancer.py restore --install-dir "C:\Users\<user>\AppData\Local\WeMod\app-<version>"
@@ -110,7 +110,9 @@ The GUI ships as a self-contained folder and requires no terminal. All component
    ```
 
 2. Select `~/wemod-launcher/wemod_data/wemod_bin` with **Browse...** if it is not detected automatically.
-3. Click **Patch**. To undo the patch, click **Restore**.
+3. Click **Patch**.
+
+To revert the changes later, click **Restore** in the same window. Do not click it while patching; it is only for undoing the patch.
 
 The GUI locates `wemod_enhancer.py` next to the executable and streams patch output live. **Report bug** opens a pre-filled GitHub issue with the log attached.
 
@@ -120,9 +122,7 @@ The GUI locates `wemod_enhancer.py` next to the executable and streams patch out
 python3 bin/wemod_enhancer.py patch --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
 ```
 
-#### Restore
-
-Original files are backed up automatically. A single command reverts all changes:
+Original files are backed up automatically. To revert the changes, run:
 
 ```sh
 python3 bin/wemod_enhancer.py restore --install-dir "$HOME/wemod-launcher/wemod_data/wemod_bin"
