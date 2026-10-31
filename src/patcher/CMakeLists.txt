@@ -1,4 +1,4 @@
-add_library(wemod_patcher STATIC Patcher.cpp Patcher.hpp)
+add_library(wemod_patcher STATIC asar.cpp bundles.cpp patcher.cpp asar.hpp bundles.hpp patcher.hpp)
 add_library(wemod::patcher ALIAS wemod_patcher)
 
 target_compile_features(wemod_patcher PUBLIC cxx_std_23)
