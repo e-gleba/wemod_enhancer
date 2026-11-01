@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <string>
 
 namespace wemod::gui::cli
 {
 
-enum class mode : unsigned char { gui, exit_ok, exit_err };
+enum class mode : std::uint8_t { gui, exit_ok, exit_err };
 
 struct decision final
 {
