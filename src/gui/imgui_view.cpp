@@ -20,11 +20,11 @@ namespace
 {
 
 #if defined(__x86_64__) || defined(_M_X64)
-constexpr std::string_view arch{"x86_64"};
+constexpr std::string_view arch = "x86_64";
 #elif defined(__aarch64__) || defined(_M_ARM64)
-constexpr std::string_view arch{"arm64"};
+constexpr std::string_view arch = "arm64";
 #else
-constexpr std::string_view arch{"unknown"};
+constexpr std::string_view arch = "unknown";
 #endif
 
 // Status semantics only, sampled from the stock dark palette so text
@@ -45,7 +45,7 @@ void muted(const std::string_view text)
 {
     // Wrap at the available edge, not the window edge, so this stays
     // correct inside table columns as well as full-width rows.
-    const float wrap{ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x};
+    const float wrap = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
     ImGui::PushStyleColor(ImGuiCol_Text, to_vec(ink_dim));
     ImGui::PushTextWrapPos(wrap);
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
@@ -100,8 +100,8 @@ status_label(const status_kind kind) noexcept
 
 void status_tag(const status_kind kind)
 {
-    const std::string_view label{status_label(kind)};
-    ImVec4 tint{to_vec(ink_dim)};
+    const std::string_view label = status_label(kind);
+    ImVec4 tint = to_vec(ink_dim);
     if (kind == status_kind::ok) {
         tint = to_vec(ink_ok);
     } else if (kind == status_kind::failed) {
@@ -145,7 +145,7 @@ void field(const char* id, const char* hint, std::string& value,
 
 void probe_filesystem(app_state& state)
 {
-    const auto now{std::chrono::steady_clock::now()};
+    const auto now = std::chrono::steady_clock::now();
     if (state.probed_install_dir == state.install_dir &&
         state.probed_script_path == state.script_path &&
         (now - state.last_probe) < reprobe_interval) {
@@ -182,8 +182,10 @@ void draw_settings(app_state& state)
 
     muted("Python command");
     help_link(state,
-              "Runs the patcher. Default: python on Windows, python3 "
-              "elsewhere. Use a full path when Python is not on PATH.",
+              "Runs the patcher. At startup the known names py, "
+              "python3, python are probed in order and the first one "
+              "that runs wins. Use a full path when Python is not on "
+              "PATH.",
               python_url);
     field("##python", "python / python3", state.python,
           state.python_ok != probe_state::unknown,
@@ -195,7 +197,7 @@ void draw_settings(app_state& state)
 frame_requests draw(app_state& state)
 {
     frame_requests requests;
-    const ImGuiViewport* viewport{ImGui::GetMainViewport()};
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
 
@@ -205,11 +207,11 @@ frame_requests draw(app_state& state)
         ImGuiWindowFlags_NoSavedSettings};
     ImGui::Begin("##main", nullptr, flags);
 
-    const float action_height{ImGui::GetFrameHeight() * 1.55F};
+    const float action_height = ImGui::GetFrameHeight() * 1.55F;
 
     probe_filesystem(state);
-    const bool install_ok{!state.resolved_install_dir.empty()};
-    const bool script_ok{state.script_present};
+    const bool install_ok = !state.resolved_install_dir.empty();
+    const bool script_ok = state.script_present;
 
     ImGui::TextUnformatted("WeMod Enhancer");
     {
@@ -233,7 +235,7 @@ frame_requests draw(app_state& state)
         ImGui::CalcTextSize("Browse...").x +
             ImGui::GetStyle().FramePadding.x * 2.0F + 24.0F,
         96.0F)};
-    const bool tinted{!state.install_dir.empty()};
+    const bool tinted = !state.install_dir.empty();
     if (tinted) {
         ImGui::PushStyleColor(ImGuiCol_FrameBg,
                               to_vec(install_ok ? tint_ok : tint_bad));
@@ -273,10 +275,10 @@ frame_requests draw(app_state& state)
     }
 
     ImGui::Spacing();
-    const std::size_t actions{install_ok ? 2UZ : 3UZ};
-    const float width{equal_width(actions)};
+    const std::size_t actions = install_ok ? 2UZ : 3UZ;
+    const float width = equal_width(actions);
     const std::string_view blocked{run_block_reason(install_ok, script_ok)};
-    const bool actions_ready{!state.running && blocked.empty()};
+    const bool actions_ready = !state.running && blocked.empty();
     ImGui::BeginDisabled(!actions_ready);
     const bool patch_pressed{ImGui::Button("Patch",
                                            ImVec2(width, action_height))};
@@ -337,7 +339,7 @@ frame_requests draw(app_state& state)
     muted("Output");
     help_link(state, "Live patcher output. Copy it when reporting a bug.",
               issue_new_url);
-    const float line{ImGui::GetTextLineHeightWithSpacing()};
+    const float line = ImGui::GetTextLineHeightWithSpacing();
     const float log_height{std::max(ImGui::GetContentRegionAvail().y -
                                         (action_height + line * 3.0F),
                                     line * 4.0F)};
@@ -358,7 +360,7 @@ frame_requests draw(app_state& state)
     ImGui::EndChild();
 
     ImGui::Spacing();
-    const float tool_width{equal_width(3UZ)};
+    const float tool_width = equal_width(3UZ);
     if (ImGui::Button("Copy", ImVec2(tool_width, 0.0F))) {
         requests.copy = true;
     }
