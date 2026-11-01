@@ -6,6 +6,7 @@
 // variables have internal linkage, so including this header anywhere
 // is safe with zero ODR risk.
 
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <string_view>
@@ -43,9 +44,13 @@ constexpr bool is_windows = true;
 constexpr bool is_windows = false;
 #endif
 
-constexpr std::string_view default_python =
-    is_windows ? "python" : "python3";
+// Every known launcher name, tried in order by the startup probe
+// until one actually runs. One array for all platforms keeps the
+// retry loop platform-free; the first entry that exits 0 wins.
+constexpr std::array<std::string_view, 3> python_candidates = {
+    "py", "python3", "python"};
 
+static_assert(!python_candidates.empty());
 static_assert(!program_name.empty());
 static_assert(!gui_version.empty());
 static_assert(!patcher_name.empty());

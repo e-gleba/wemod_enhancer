@@ -9,8 +9,8 @@ struct context;
 
 struct native_context final
 {
-    SDL_Window* window{nullptr};
-    SDL_Renderer* renderer{nullptr};
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
 };
 
 [[nodiscard]] native_context native(const context& ctx) noexcept;
