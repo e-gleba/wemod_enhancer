@@ -26,7 +26,7 @@ enum class probe_state : std::uint8_t { unknown, failed, works };
 
 struct run_result final
 {
-    std::int32_t exit_code{-1};
+    std::int32_t exit_code = -1;
     std::string output;
 };
 
@@ -40,32 +40,33 @@ struct dialog_result final
 {
     std::mutex mutex;
     std::optional<std::string> folder;
-    bool pending{false};
+    bool pending = false;
 };
 
 struct app_state final
 {
     std::string install_dir;
     std::string script_path;
-    std::string python{default_python};
+    std::string python = std::string{python_candidates.front()};
     std::string log;
-    bool running{false};
-    run_kind kind{run_kind::patcher};
-    bool scroll_to_bottom{false};
-    bool has_run{false};
-    std::int32_t last_exit_code{0};
-    float copied_flash{0.0F};
+    bool running = false;
+    run_kind kind = run_kind::patcher;
+    bool scroll_to_bottom = false;
+    bool has_run = false;
+    std::int32_t last_exit_code = 0;
+    float copied_flash = 0.0F;
     std::string probed_install_dir;
     std::string probed_script_path;
     fs::path resolved_install_dir;
-    bool script_present{false};
+    bool script_present = false;
     std::chrono::steady_clock::time_point last_probe;
-    probe_state python_ok{probe_state::unknown};
+    probe_state python_ok = probe_state::unknown;
+    std::size_t python_attempt = 0UZ;
     std::string python_version;
     std::string platform_detail;
     std::string platform_name;
     std::string exe_dir_text;
-    bool want_browse{false};
+    bool want_browse = false;
     std::optional<std::string> want_open_url;
     std::optional<std::string> want_clipboard;
     std::optional<alert_request> want_alert;
@@ -73,12 +74,12 @@ struct app_state final
 
 struct frame_requests final
 {
-    bool patch{false};
-    bool restore{false};
-    bool download{false};
-    bool copy{false};
-    bool clear{false};
-    bool report{false};
+    bool patch = false;
+    bool restore = false;
+    bool download = false;
+    bool copy = false;
+    bool clear = false;
+    bool report = false;
 };
 
 [[nodiscard]] constexpr std::string_view
@@ -120,6 +121,9 @@ void append_log(app_state& state, std::string_view text);
 [[nodiscard]] std::string report_text(const app_state& state);
 [[nodiscard]] std::string issue_url(const app_state& state);
 void parse_probe(app_state& state, std::string_view output);
+// Advance to the next untried candidate after a failed probe.
+// Returns false when the list is exhausted (python left as-is).
+[[nodiscard]] bool try_next_python(app_state& state) noexcept;
 [[nodiscard]] run_result run_capture(const std::vector<std::string>& args,
                                      const std::stop_token& token);
 
@@ -128,7 +132,7 @@ class background_runner final
   public:
     struct finished_job final
     {
-        run_kind kind{run_kind::patcher};
+        run_kind kind = run_kind::patcher;
         run_result result;
     };
 
@@ -149,7 +153,7 @@ class background_runner final
     mutable std::mutex mutex_;
     std::jthread worker_;
     std::queue<finished_job> finished_;
-    bool busy_{false};
+    bool busy_ = false;
 };
 
 namespace view
@@ -161,8 +165,8 @@ namespace platform
 {
 struct context final
 {
-    void* window{nullptr};
-    void* renderer{nullptr};
+    void* window = nullptr;
+    void* renderer = nullptr;
     std::unique_ptr<dialog_result> dialog;
 };
 
