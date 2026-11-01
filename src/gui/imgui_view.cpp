@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <format>
 #include <string_view>
 
@@ -79,32 +80,46 @@ void help_link(app_state& state, const std::string_view text,
     }
 }
 
+enum class status_kind : std::uint8_t { none, ok, failed };
+
 // ASCII status tag, airborne-console style. Plain text keeps every
 // column aligned in any font, at any DPI: OK, ERR, -- states.
-void status_tag(const int state)
+[[nodiscard]] constexpr std::string_view
+status_label(const status_kind kind) noexcept
 {
-    const char* label{"--"};
+    switch (kind) {
+    case status_kind::ok:
+        return "OK";
+    case status_kind::failed:
+        return "ERR";
+    case status_kind::none:
+        return "--";
+    }
+    return "--";
+}
+
+void status_tag(const status_kind kind)
+{
+    const std::string_view label{status_label(kind)};
     ImVec4 tint{to_vec(ink_dim)};
-    if (state > 0) {
-        label = "OK";
+    if (kind == status_kind::ok) {
         tint = to_vec(ink_ok);
-    } else if (state == 0) {
-        label = "ERR";
+    } else if (kind == status_kind::failed) {
         tint = to_vec(ink_bad);
     }
     ImGui::PushStyleColor(ImGuiCol_Text, tint);
-    ImGui::TextUnformatted(label);
+    ImGui::TextUnformatted(label.data(), label.data() + label.size());
     ImGui::PopStyleColor();
     ImGui::SameLine(0.0F, ImGui::GetFontSize() * 0.6F);
 }
 
-[[nodiscard]] float equal_width(const int count)
+[[nodiscard]] float equal_width(const std::size_t count)
 {
-    if (count <= 0) {
+    if (count == 0UZ) {
         return 1.0F;
     }
     const float gaps{ImGui::GetStyle().ItemSpacing.x *
-                     static_cast<float>(count - 1)};
+                     static_cast<float>(count - 1UZ)};
     return std::max((ImGui::GetContentRegionAvail().x - gaps) /
                         static_cast<float>(count),
                     1.0F);
@@ -258,7 +273,7 @@ frame_requests draw(app_state& state)
     }
 
     ImGui::Spacing();
-    const int actions{install_ok ? 2 : 3};
+    const std::size_t actions{install_ok ? 2UZ : 3UZ};
     const float width{equal_width(actions)};
     const std::string_view blocked{run_block_reason(install_ok, script_ok)};
     const bool actions_ready{!state.running && blocked.empty()};
@@ -298,14 +313,14 @@ frame_requests draw(app_state& state)
 
     ImGui::Spacing();
     if (state.running) {
-        status_tag(-1);
+        status_tag(status_kind::none);
         muted(running_status(state.kind));
     } else if (state.has_run) {
         if (state.last_exit_code == 0) {
-            status_tag(1);
+            status_tag(status_kind::ok);
             ImGui::TextUnformatted("Done - launch WeMod, Pro is active.");
         } else {
-            status_tag(0);
+            status_tag(status_kind::failed);
             const std::string failed{std::format("Failed (exit {})",
                                                  state.last_exit_code)};
             ImGui::TextUnformatted(failed.c_str());
@@ -343,7 +358,7 @@ frame_requests draw(app_state& state)
     ImGui::EndChild();
 
     ImGui::Spacing();
-    const float tool_width{equal_width(3)};
+    const float tool_width{equal_width(3UZ)};
     if (ImGui::Button("Copy", ImVec2(tool_width, 0.0F))) {
         requests.copy = true;
     }
