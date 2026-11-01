@@ -29,11 +29,11 @@ constexpr std::string_view arch = "unknown";
 
 // Status semantics only, sampled from the stock dark palette so text
 // and fields stay readable without a custom theme to maintain.
-constexpr std::array<float, 4> tint_ok{0.16F, 0.26F, 0.16F, 0.90F};
-constexpr std::array<float, 4> tint_bad{0.30F, 0.14F, 0.14F, 0.90F};
-constexpr std::array<float, 4> ink_ok{0.40F, 0.80F, 0.40F, 1.00F};
-constexpr std::array<float, 4> ink_bad{0.90F, 0.35F, 0.35F, 1.00F};
-constexpr std::array<float, 4> ink_dim{0.55F, 0.55F, 0.55F, 1.00F};
+constexpr std::array<float, 4> tint_ok = {0.16F, 0.26F, 0.16F, 0.90F};
+constexpr std::array<float, 4> tint_bad = {0.30F, 0.14F, 0.14F, 0.90F};
+constexpr std::array<float, 4> ink_ok = {0.40F, 0.80F, 0.40F, 1.00F};
+constexpr std::array<float, 4> ink_bad = {0.90F, 0.35F, 0.35F, 1.00F};
+constexpr std::array<float, 4> ink_dim = {0.55F, 0.55F, 0.55F, 1.00F};
 
 [[nodiscard]] ImVec4 to_vec(const std::array<float, 4>& color)
 {
@@ -277,7 +277,7 @@ frame_requests draw(app_state& state)
     ImGui::Spacing();
     const std::size_t actions = install_ok ? 2UZ : 3UZ;
     const float width = equal_width(actions);
-    const std::string_view blocked{run_block_reason(install_ok, script_ok)};
+    const std::string_view blocked = run_block_reason(install_ok, script_ok);
     const bool actions_ready = !state.running && blocked.empty();
     ImGui::BeginDisabled(!actions_ready);
     const bool patch_pressed{ImGui::Button("Patch",
