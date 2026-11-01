@@ -27,7 +27,7 @@ namespace wemod::gui
 {
 namespace
 {
-constexpr std::array<float, 4> clear_color = {0.10F, 0.10F, 0.12F, 1.00F};
+constexpr std::array clear_color{0.10F, 0.10F, 0.12F, 1.00F};
 constexpr auto process_poll_interval = std::chrono::milliseconds{10};
 
 struct app final
@@ -344,7 +344,9 @@ run_result run_capture(const std::vector<std::string>& args,
         if (SDL_GetIOStatus(output) == SDL_IO_STATUS_ERROR) {
             break;
         }
-        int exit_code = 0;
+        // SDL fixes the exit-code out-param as int* (SDL3 process
+        // API); keep the bare int, do not narrow to std::int32_t.
+        int exit_code{0};
         if (SDL_WaitProcess(process, false, &exit_code)) {
             break;
         }
@@ -363,7 +365,8 @@ run_result run_capture(const std::vector<std::string>& args,
         }
         result.output.append(buffer.data(), count);
     }
-    int exit_code = 0;
+    // Same SDL-forced int as above (SDL3 process API).
+    int exit_code{0};
     SDL_WaitProcess(process, true, &exit_code);
     result.exit_code = exit_code;
     SDL_DestroyProcess(process);
@@ -379,8 +382,10 @@ SDL_AppResult SDL_AppInit(void** appstate, int argc, char* argv[])
 try {
     Expects(appstate != nullptr);
     // SDL owns argv's lifetime here; the span is a borrowed view only.
+    // SDL fixes argc as int (SDL3 main callbacks); gsl::narrow rejects
+    // a negative count instead of wrapping into a huge std::size_t.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    std::span<char*> args{argv, static_cast<std::size_t>(argc)};
+    std::span<char*> args{argv, gsl::narrow<std::size_t>(argc)};
     // CLI first: --help/--version report through SDL_Log and exit
     // before any window exists. No second main; the GUI path below
     // is untouched.
@@ -470,9 +475,8 @@ try {
 }
 
 // NOLINTNEXTLINE(readability-identifier-naming)
-void SDL_AppQuit(void* appstate, SDL_AppResult result)
+void SDL_AppQuit(void* appstate, [[maybe_unused]] SDL_AppResult result)
 {
-    (void)result;
     std::unique_ptr<app> value{static_cast<app*>(appstate)};
     if (!value) {
         return;
