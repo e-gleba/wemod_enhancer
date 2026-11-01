@@ -1,10 +1,10 @@
 #include "app.hpp"
 
 #include <gsl/assert>
-#include <gsl/narrow>
 
 #include <algorithm>
 #include <charconv>
+#include <cstdint>
 #include <format>
 #include <ranges>
 
@@ -17,11 +17,13 @@ std::string url_encode(const std::string_view text)
                                            "0123456789-_.~"};
     std::string result;
     result.reserve(text.size());
-    for (const unsigned char value : text) {
-        if (unreserved.contains(static_cast<char>(value))) {
-            result += static_cast<char>(value);
+    for (const char raw : text) {
+        const auto byte{static_cast<std::uint8_t>(raw)};
+        const char value{static_cast<char>(byte)};
+        if (unreserved.contains(value)) {
+            result += value;
         } else {
-            result += std::format("%{:02X}", value);
+            result += std::format("%{:02X}", byte);
         }
     }
     return result;
@@ -157,8 +159,7 @@ std::string issue_url(const app_state& state)
     const std::size_t start{state.log.size() > issue_log_budget
                                 ? state.log.size() - issue_log_budget
                                 : 0UZ};
-    const std::string_view tail{state.log.data() + start,
-                                state.log.size() - start};
+    const std::string_view tail{std::string_view{state.log}.substr(start)};
     const std::string prefix{start == 0UZ ? "" : "... (log tail)\n"};
     const std::string diagnostics{
         std::format("{}{}{}", env_info(state), prefix, tail)};
