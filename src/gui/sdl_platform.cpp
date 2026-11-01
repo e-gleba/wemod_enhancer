@@ -50,9 +50,11 @@ void message_box(SDL_Window* window, const SDL_MessageBoxFlags flags,
 }
 
 void SDLCALL on_folder(void* userdata, const char* const* file_list,
-                       int filter) noexcept
+                       // SDL fixes this dialog callback signature
+                       // (SDL3 file dialog API); a folder picker has
+                       // no filter index to consume.
+                       [[maybe_unused]] int filter) noexcept
 {
-    (void)filter;
     auto* result{static_cast<dialog_result*>(userdata)};
     if (result == nullptr) {
         return;
@@ -270,12 +272,13 @@ void end_frame(context& ctx) noexcept
 void shutdown(context& ctx) noexcept
 {
     ctx.dialog.reset();
-    if (ctx.renderer != nullptr) {
-        SDL_DestroyRenderer(static_cast<SDL_Renderer*>(ctx.renderer));
+    const native_context handles{native(ctx)};
+    if (handles.renderer != nullptr) {
+        SDL_DestroyRenderer(handles.renderer);
         ctx.renderer = nullptr;
     }
-    if (ctx.window != nullptr) {
-        SDL_DestroyWindow(static_cast<SDL_Window*>(ctx.window));
+    if (handles.window != nullptr) {
+        SDL_DestroyWindow(handles.window);
         ctx.window = nullptr;
     }
     SDL_Quit();
