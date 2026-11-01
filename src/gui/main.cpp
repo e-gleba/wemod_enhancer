@@ -27,7 +27,7 @@ namespace wemod::gui
 {
 namespace
 {
-constexpr std::array clear_color{0.10F, 0.10F, 0.12F, 1.00F};
+constexpr std::array<float, 4> clear_color = {0.10F, 0.10F, 0.12F, 1.00F};
 constexpr auto process_poll_interval = std::chrono::milliseconds{10};
 
 struct app final
@@ -114,15 +114,16 @@ void start_wemod_download(app& value)
     }
 }
 
-void start_probe(app& value)
+// Probe one candidate command; the runner stays single-shot, the
+// caller in poll_jobs walks python_candidates on failure.
+void start_probe(app& value, const std::string_view python)
 {
     constexpr std::string_view probe =
         "import sys,platform;print(sys.version.split()[0]);"
         "print(platform.platform())";
-    const std::string shown =
-        std::format("{} -c \"{}\"", value.state.python, probe);
+    const std::string shown = std::format("{} -c \"{}\"", python, probe);
     start_command(value, run_kind::probe, shown,
-                  {value.state.python, "-c", std::string{probe}});
+                  {std::string{python}, "-c", std::string{probe}});
 }
 
 void poll_jobs(app& value)
@@ -140,10 +141,18 @@ void poll_jobs(app& value)
         value.state.scroll_to_bottom = true;
 
         if (finished->kind == run_kind::probe) {
-            value.state.python_ok = finished->result.exit_code == 0
-                ? probe_state::works
-                : probe_state::failed;
-            parse_probe(value.state, finished->result.output);
+            const bool works = finished->result.exit_code == 0;
+            value.state.python_ok = works ? probe_state::works
+                                          : probe_state::failed;
+            if (works) {
+                parse_probe(value.state, finished->result.output);
+            } else if (try_next_python(value.state)) {
+                // Stale output from the failed candidate must not
+                // overwrite the next probe's version/platform lines.
+                value.state.python_version.clear();
+                value.state.platform_detail.clear();
+                start_probe(value, value.state.python);
+            }
         } else if (finished->kind == run_kind::wemod &&
                    finished->result.exit_code == 0 && !is_windows) {
             value.state.install_dir = platform::default_install_dir();
@@ -346,7 +355,7 @@ run_result run_capture(const std::vector<std::string>& args,
         }
         // SDL fixes the exit-code out-param as int* (SDL3 process
         // API); keep the bare int, do not narrow to std::int32_t.
-        int exit_code{0};
+        int exit_code = 0;
         if (SDL_WaitProcess(process, false, &exit_code)) {
             break;
         }
@@ -366,7 +375,7 @@ run_result run_capture(const std::vector<std::string>& args,
         result.output.append(buffer.data(), count);
     }
     // Same SDL-forced int as above (SDL3 process API).
-    int exit_code{0};
+    int exit_code = 0;
     SDL_WaitProcess(process, true, &exit_code);
     result.exit_code = exit_code;
     SDL_DestroyProcess(process);
@@ -418,7 +427,7 @@ try {
             std::format("auto-detected WeMod install: {}\n\n",
                         value->state.install_dir));
     }
-    wemod::gui::start_probe(*value);
+    wemod::gui::start_probe(*value, value->state.python);
     *appstate = value.release();
     return SDL_APP_CONTINUE;
 } catch (const std::exception& error) {
