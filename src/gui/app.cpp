@@ -13,8 +13,8 @@ namespace wemod::gui
 std::string url_encode(const std::string_view text)
 {
     constexpr std::string_view unreserved = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                           "abcdefghijklmnopqrstuvwxyz"
-                                           "0123456789-_.~"};
+                                            "abcdefghijklmnopqrstuvwxyz"
+                                            "0123456789-_.~";
     std::string result;
     result.reserve(text.size());
     for (const char raw : text) {
@@ -88,7 +88,7 @@ fs::path newest_app_dir(const fs::path& root)
     const auto newest = std::ranges::max_element(
         candidates, {}, [](const fs::path& path) {
             return version_parts(path.filename().string());
-        })};
+        });
     return newest == candidates.end() ? fs::path{} : fs::path{*newest};
 }
 
@@ -177,16 +177,16 @@ std::string issue_url(const app_state& state)
     // Issue forms ignore `body`; fields prefill by their `id` instead.
     // See: https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue#creating-an-issue-from-a-url-query
     const std::size_t start = state.log.size() > issue_log_budget
-                                ? state.log.size() - issue_log_budget
-                                : 0UZ};
+                                  ? state.log.size() - issue_log_budget
+                                  : 0UZ;
     const std::string_view tail = std::string_view{state.log}.substr(start);
     const std::string prefix = start == 0UZ ? "" : "... (log tail)\n";
     const std::string diagnostics =
-        std::format("{}{}{}", env_info(state), prefix, tail)};
+        std::format("{}{}{}", env_info(state), prefix, tail);
     const std::string os = state.platform_detail.empty()
-                             ? state.platform_name
-                             : std::format("{} {}", state.platform_name,
-                                           state.platform_detail)};
+                               ? state.platform_name
+                               : std::format("{} {}", state.platform_name,
+                                             state.platform_detail);
     return std::format(
         "{}?template=bug_report.yml&title={}&version={}&os={}&diagnostics={}",
         issue_new_url, url_encode("bug: gui report"),
