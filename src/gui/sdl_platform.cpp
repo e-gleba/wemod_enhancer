@@ -14,19 +14,19 @@ namespace wemod::gui::platform
 {
 namespace
 {
-constexpr std::int32_t window_fallback_width{1024};
-constexpr std::int32_t window_fallback_height{680};
-constexpr std::int32_t window_min_width{880};
-constexpr std::int32_t window_min_height{600};
-constexpr std::int32_t window_max_width{1680};
-constexpr std::int32_t window_max_height{1050};
+constexpr std::int32_t window_fallback_width = 1024;
+constexpr std::int32_t window_fallback_height = 680;
+constexpr std::int32_t window_min_width = 880;
+constexpr std::int32_t window_min_height = 600;
+constexpr std::int32_t window_max_width = 1680;
+constexpr std::int32_t window_max_height = 1050;
 
 // SDL-owned C string: unique_ptr with SDL_free as deleter.
 using sdl_text = std::unique_ptr<char, decltype(&SDL_free)>;
 
 void log_message(const std::string_view message) noexcept
 {
-    const std::string text{message};
+    const std::string text = message;
     // SDL logging is variadic by API design; isolate that boundary here.
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_ERROR, "%s",
@@ -40,8 +40,8 @@ void message_box(SDL_Window* window, const SDL_MessageBoxFlags flags,
                  const std::string_view title,
                  const std::string_view message) noexcept
 {
-    const std::string title_text{title};
-    const std::string message_text{message};
+    const std::string title_text = title;
+    const std::string message_text = message;
     if (!SDL_ShowSimpleMessageBox(flags, title_text.c_str(),
                                   message_text.c_str(), window)) {
         log_message(std::format("SDL_ShowSimpleMessageBox: {}",
@@ -55,7 +55,7 @@ void SDLCALL on_folder(void* userdata, const char* const* file_list,
                        // no filter index to consume.
                        [[maybe_unused]] int filter) noexcept
 {
-    auto* result{static_cast<dialog_result*>(userdata)};
+    auto* result = static_cast<dialog_result*>(userdata);
     if (result == nullptr) {
         return;
     }
@@ -118,7 +118,7 @@ std::string exe_dir()
 
 std::string default_install_dir()
 {
-    SDL_Environment* environment{SDL_GetEnvironment()};
+    SDL_Environment* environment = SDL_GetEnvironment();
     if constexpr (is_windows) {
         if (const char* local{
                 SDL_GetEnvironmentVariable(environment, "LOCALAPPDATA")}) {
@@ -144,8 +144,8 @@ try {
     }
 
     const auto [width, height]{preferred_size()};
-    SDL_Window* window{nullptr};
-    SDL_Renderer* renderer{nullptr};
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
     if (!SDL_CreateWindowAndRenderer(
             "WeMod Enhancer", width, height,
             SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY, &window,
@@ -186,7 +186,7 @@ try {
 void drain_outbox(context& ctx, app_state& state,
                   const float delta_seconds) noexcept
 try {
-    const native_context handles{native(ctx)};
+    const native_context handles = native(ctx);
     Expects(handles.window != nullptr);
     Expects(handles.renderer != nullptr);
     Expects(ctx.dialog != nullptr);
@@ -201,7 +201,7 @@ try {
     }
 
     if (std::exchange(state.want_browse, false)) {
-        bool open{false};
+        bool open = false;
         {
             const std::scoped_lock lock{ctx.dialog->mutex};
             if (!ctx.dialog->pending) {
@@ -215,14 +215,14 @@ try {
         }
     }
     if (state.want_open_url) {
-        const std::string url{std::move(*state.want_open_url)};
+        const std::string url = std::move(*state.want_open_url);
         state.want_open_url.reset();
         if (!SDL_OpenURL(url.c_str())) {
             log_error("SDL_OpenURL");
         }
     }
     if (state.want_clipboard) {
-        const std::string text{std::move(*state.want_clipboard)};
+        const std::string text = std::move(*state.want_clipboard);
         state.want_clipboard.reset();
         if (!SDL_SetClipboardText(text.c_str())) {
             log_error("SDL_SetClipboardText");
@@ -231,7 +231,7 @@ try {
         }
     }
     if (state.want_alert) {
-        alert_request alert{std::move(*state.want_alert)};
+        alert_request alert = std::move(*state.want_alert);
         state.want_alert.reset();
         message_box(handles.window, SDL_MESSAGEBOX_WARNING, alert.title,
                     alert.message);
@@ -245,7 +245,7 @@ try {
 void begin_frame(context& ctx, const float scale_x, const float scale_y,
                  const std::array<float, 4>& clear) noexcept
 {
-    const native_context handles{native(ctx)};
+    const native_context handles = native(ctx);
     Expects(handles.renderer != nullptr);
     const auto& [red, green, blue, alpha]{clear};
     if (!SDL_SetRenderScale(handles.renderer, scale_x, scale_y)) {
@@ -262,7 +262,7 @@ void begin_frame(context& ctx, const float scale_x, const float scale_y,
 
 void end_frame(context& ctx) noexcept
 {
-    const native_context handles{native(ctx)};
+    const native_context handles = native(ctx);
     Expects(handles.renderer != nullptr);
     if (!SDL_RenderPresent(handles.renderer)) {
         log_error("SDL_RenderPresent");
@@ -272,7 +272,7 @@ void end_frame(context& ctx) noexcept
 void shutdown(context& ctx) noexcept
 {
     ctx.dialog.reset();
-    const native_context handles{native(ctx)};
+    const native_context handles = native(ctx);
     if (handles.renderer != nullptr) {
         SDL_DestroyRenderer(handles.renderer);
         ctx.renderer = nullptr;
@@ -296,11 +296,11 @@ void fatal(const std::string_view title,
 
 void persist_log(const app_state& state) noexcept
 try {
-    const std::string path{preference_file("gui.log")};
+    const std::string path = preference_file("gui.log");
     if (path.empty() || state.log.empty()) {
         return;
     }
-    const std::string body{state.log + "\n" + env_info(state)};
+    const std::string body = state.log + "\n" + env_info(state);
     SDL_IOStream* stream{SDL_IOFromFile(path.c_str(), "w")};
     if (stream == nullptr) {
         log_error("SDL_IOFromFile");
